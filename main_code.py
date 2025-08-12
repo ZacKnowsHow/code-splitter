@@ -3627,39 +3627,128 @@ class VintedScraper:
     
     def setup_driver(self):
         """
-        Enhanced driver setup that reuses your existing configuration
+        Enhanced Chrome driver setup with better stability and crash prevention
         """
         chrome_opts = Options()
+        
+        # Basic preferences
         prefs = {
             "profile.default_content_setting_values.notifications": 2,
             "profile.default_content_setting_values.popups": 0,
             "download.prompt_for_download": False,
         }
         chrome_opts.add_experimental_option("prefs", prefs)
+        
+        # User data directory setup
         chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
         chrome_opts.add_argument(f"--profile-directory=Profile 2")
         
-        # Keep headless for button requests to avoid disruption
+        # Core stability arguments
         #chrome_opts.add_argument("--headless")
         chrome_opts.add_argument("--no-sandbox")
         chrome_opts.add_argument("--disable-dev-shm-usage")
-        chrome_opts.add_argument("--log-level=3")
-        chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging'])
-        
-        # Add stability options
         chrome_opts.add_argument("--disable-gpu")
         chrome_opts.add_argument("--disable-software-rasterizer")
+        
+        # Memory and process management
         chrome_opts.add_argument("--disable-background-timer-throttling")
         chrome_opts.add_argument("--disable-backgrounding-occluded-windows")
         chrome_opts.add_argument("--disable-renderer-backgrounding")
-        chrome_opts.add_argument("--disable-features=TranslateUI")
+        chrome_opts.add_argument("--disable-features=TranslateUI,VizDisplayCompositor")
         chrome_opts.add_argument("--disable-ipc-flooding-protection")
-
-        service = Service(
-            ChromeDriverManager().install(),
-            log_path=os.devnull
-        )
-        return webdriver.Chrome(service=service, options=chrome_opts)
+        chrome_opts.add_argument("--disable-background-networking")
+        chrome_opts.add_argument("--disable-default-apps")
+        chrome_opts.add_argument("--disable-extensions")
+        chrome_opts.add_argument("--disable-sync")
+        chrome_opts.add_argument("--disable-translate")
+        chrome_opts.add_argument("--hide-scrollbars")
+        chrome_opts.add_argument("--mute-audio")
+        chrome_opts.add_argument("--no-first-run")
+        chrome_opts.add_argument("--disable-logging")
+        chrome_opts.add_argument("--disable-permissions-api")
+        chrome_opts.add_argument("--disable-web-security")
+        
+        # Critical for preventing crashes
+        chrome_opts.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_opts.add_argument("--disable-dev-shm-usage")
+        chrome_opts.add_argument("--remote-debugging-port=0")  # Let Chrome choose available port
+        chrome_opts.add_argument("--disable-crash-reporter")
+        chrome_opts.add_argument("--disable-component-update")
+        chrome_opts.add_argument("--disable-domain-reliability")
+        chrome_opts.add_argument("--disable-client-side-phishing-detection")
+        chrome_opts.add_argument("--disable-hang-monitor")
+        chrome_opts.add_argument("--disable-prompt-on-repost")
+        chrome_opts.add_argument("--disable-background-mode")
+        
+        # Memory limits to prevent crashes
+        chrome_opts.add_argument("--max_old_space_size=2048")
+        chrome_opts.add_argument("--memory-pressure-off")
+        
+        # Window settings for headless mode
+        chrome_opts.add_argument("--window-size=1280,720")
+        chrome_opts.add_argument("--disable-infobars")
+        
+        # Logging control
+        chrome_opts.add_argument("--log-level=3")
+        chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        chrome_opts.add_experimental_option('useAutomationExtension', False)
+        
+        # Additional stability options
+        chrome_opts.add_argument("--no-zygote")
+        chrome_opts.add_argument("--single-process")  # Use single process to avoid multi-process crashes
+        chrome_opts.add_argument("--disable-features=VizDisplayCompositor")
+        
+        try:
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull  # Suppress driver logs
+            )
+            
+            # Add service arguments for additional stability
+            service_args = [
+                '--verbose=false',
+                '--silent',
+                '--log-level=3'
+            ]
+            
+            print("🚀 Starting Chrome driver with enhanced stability settings...")
+            driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set timeouts
+            driver.implicitly_wait(10)
+            driver.set_page_load_timeout(30)
+            driver.set_script_timeout(30)
+            
+            print("✅ Chrome driver initialized successfully")
+            return driver
+            
+        except Exception as e:
+            print(f"❌ CRITICAL: Chrome driver failed to start: {e}")
+            print("Troubleshooting steps:")
+            print("1. Ensure all Chrome instances are closed")
+            print("2. Check Chrome and ChromeDriver versions")
+            print("3. Verify user data directory permissions")
+            print("4. Try restarting the system")
+            
+            # Try fallback options
+            print("⏳ Attempting fallback configuration...")
+            
+            # Fallback: Remove problematic arguments
+            fallback_opts = Options()
+            fallback_opts.add_experimental_option("prefs", prefs)
+            #fallback_opts.add_argument("--headless")
+            fallback_opts.add_argument("--no-sandbox")
+            fallback_opts.add_argument("--disable-dev-shm-usage")
+            fallback_opts.add_argument("--disable-gpu")
+            fallback_opts.add_argument("--remote-debugging-port=0")
+            
+            try:
+                fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
+                print("✅ Fallback Chrome driver started successfully")
+                return fallback_driver
+            except Exception as fallback_error:
+                print(f"❌ Fallback also failed: {fallback_error}")
+                raise Exception(f"Could not start Chrome driver: {e}")
 
     def extract_vinted_price(self, text):
         """
