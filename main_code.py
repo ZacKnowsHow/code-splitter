@@ -2402,7 +2402,7 @@ class FacebookScraper:
         current_listing_index = 0 
 
         while True:
-            # Clear temporary variables at start of each loop
+            # Clear temporary variables at start of each loop.
             if 'current_listing_images' in globals():
                 for img in current_listing_images:
                     try:

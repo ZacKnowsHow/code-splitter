@@ -26,7 +26,7 @@ jobs:
         with open('main_code.py', 'r') as f:
             lines = f.readlines()
 
-        split_line = 2500
+        split_line = 2400
         part1_lines = lines[:split_line]
         part2_lines = lines[split_line:]
 
