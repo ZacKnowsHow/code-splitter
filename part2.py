@@ -1,4 +1,104 @@
-# Continuation from line 2501
+# Continuation from line 2401
+        suitable_listings.clear() 
+        current_listing_index = 0 
+
+        while True:
+            # Clear temporary variables at start of each loop.
+            if 'current_listing_images' in globals():
+                for img in current_listing_images:
+                    try:
+                        img.close()  # Close all images
+                    except Exception as e:
+                        print(f"Error closing image: {str(e)}")
+                current_listing_images.clear()  # Clear the list
+            listings_scanned = 0
+            scanned_urls = []
+            scanned_urls.clear()
+            current_listing_index = 0
+            listing_queue.clear()
+            listing_queue = []
+            
+            # Get fresh marketplace page
+            driver.get(marketplace_url) 
+            print(f"Searching for: {search_query}") 
+            main_window = driver.current_window_handle 
+
+            try:
+                # Wait for marketplace to load
+                WebDriverWait(driver, 30).until( 
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div[role='main']")) 
+                ) 
+                print("Marketplace feed loaded.") 
+
+                # Apply sorting and filtering
+                self.apply_sorting_and_filtering(driver) 
+
+                # Initialize prices
+                all_prices = self.initialize_prices() 
+
+                # Scroll to top and wait
+                driver.execute_script("window.scrollTo(0, 0);") 
+                time.sleep(2) 
+
+                # Find all listing elements
+                listing_elements = driver.find_elements(By.XPATH, "//div[contains(@class, 'x78zum5 xdt5ytf x1n2onr6')]//a[contains(@href, '/marketplace/item/')]")
+
+                # NEW Collection Logic with duplicate prevention
+                new_urls_added = 0
+                for element in listing_elements:
+                    try:
+                        url = element.get_attribute('href')
+                        if url and url not in scanned_urls and url not in listing_queue:
+                            listing_queue.append(url)
+                            new_urls_added += 1
+                    except Exception as e:
+                        print(f"Error processing listing element: {str(e)}")
+                        continue
+
+                print(f"Added {new_urls_added} new URLs to queue. Total queue size: {len(listing_queue)}")
+
+                if not listing_elements: 
+                    print("🚨 No listings found. Waiting for new listings to load...") 
+                    time.sleep(5)  
+                    continue
+
+                # Process listings from queue
+                while listing_queue:
+                    if listings_scanned >= MAX_LISTINGS_TO_SCAN:
+                        break
+                    try:
+                        # Get next URL from queue
+                        listing_url = listing_queue.pop(0)
+                        print(f"Processing listing {visible_listings_scanned + 1}: {listing_url}")
+                        print(f"Remaining listings in queue: {len(listing_queue)}")
+                        
+                        # Skip if already scanned (double-check)
+                        if listing_url in scanned_urls:
+                            print(f"Skipping already scanned URL: {listing_url}")
+                            continue
+                        listing_id_url = self.extract_item_id(listing_url)
+                    
+                        try:
+                            with open('listing_ids.txt', 'r') as f:
+                                existing_ids = f.read().splitlines()
+                            
+                            if listing_id_url in existing_ids:
+                                print('DUPLICATE FOUND')
+                                consecutive_duplicate_count += 1
+                        except Exception as e:
+                            print(f"Error in determing if duplicate listing ID: {str(e)}")
+                        try:
+                            with open('listing_ids.txt', 'a') as f:
+                                f.write(f"{listing_id_url}\n")
+                            print(f"Saved listing ID: {listing_id_url}")
+                        except Exception as e:
+                            print(f"Error saving listing ID: {str(e)}")
+
+                        if consecutive_duplicate_count >= 1:  
+                            print(f"Consecutive duplicate count: {consecutive_duplicate_count}") 
+
+                            if consecutive_duplicate_count >= 2: 
+                                print(f"Detected 2 consecutive duplicates. Waiting for {WAIT_TIME_AFTER_REFRESH} seconds before refreshing.") 
                                 time.sleep(WAIT_TIME_AFTER_REFRESH) 
                                 consecutive_duplicate_count = 0 
                                 break
