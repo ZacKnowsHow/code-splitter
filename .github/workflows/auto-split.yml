@@ -1,0 +1,49 @@
+name: Auto Split Code File
+
+on:
+  push:
+    paths:
+      - 'main_code.py'
+
+jobs:
+  split-file:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Split the file
+      run: |
+        python3 << 'EOF'
+        with open('main_code.py', 'r') as f:
+            lines = f.readlines()
+        
+        split_line = 2500
+        part1_lines = lines[:split_line]
+        part2_lines = lines[split_line:]
+        
+        with open('part1.py', 'w') as f:
+            f.writelines(part1_lines)
+        
+        with open('part2.py', 'w') as f:
+            f.write(f"# Continuation from line {split_line + 1}\n")
+            f.writelines(part2_lines)
+        
+        print(f"Split complete: {len(part1_lines)} + {len(part2_lines)} lines")
+        EOF
+    
+    - name: Commit split files
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add part1.py part2.py
+        git diff --staged --quiet || git commit -m "Auto-split code files"
+        git push
