@@ -4342,7 +4342,7 @@ class VintedScraper:
             text=True
         )
         
-        # Function to read and print cloudflared output asynchronously
+        # Function to read and print cloudflared output asynchronously.
         def read_output(proc):
             for line in proc.stdout:
                 print("[cloudflared]", line.strip())
