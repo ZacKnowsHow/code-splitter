@@ -1,6 +1,4 @@
 # Continuation from line 2401
-        suitable_listings.clear() 
-        current_listing_index = 0 
 
         while True:
             # Clear temporary variables at start of each loop.
@@ -792,6 +790,10 @@ class VintedScraper:
         suitable_listings = []
         current_listing_index = 0
 
+        self.vinted_button_queue = queue.Queue()
+        self.vinted_processing_active = threading.Event()  # To track if we're currently processing
+        self.main_driver = None
+
     def run_pygame_window(self):
         global LOCK_POSITION, current_listing_index, suitable_listings
         screen, clock = self.initialize_pygame_window()
@@ -1125,23 +1127,127 @@ class VintedScraper:
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
 
+    def vinted_button_clicked_enhanced(self, url):
+        """
+        Enhanced button click handler for Vinted with the requested functionality:
+        1. Start a stopwatch
+        2. Pause main scraping
+        3. Open second driver
+        4. Navigate to listing
+        5. Wait 3 seconds
+        6. Close second driver
+        7. Continue main scraping
+        """
+        print(f"🔘 Vinted button clicked for: {url}")
+        
+        # Add to queue
+        self.vinted_button_queue.put(url)
+        
+        # Start processing if not already active
+        if not self.vinted_processing_active.is_set():
+            processing_thread = threading.Thread(target=self.process_vinted_button_queue)
+            processing_thread.daemon = True
+            processing_thread.start()
+        else:
+            print("📋 Request added to queue (currently processing another request)")
+    
+    def process_vinted_button_queue(self):
+        """
+        Process the Vinted button request queue
+        """
+        self.vinted_processing_active.set()
+        
+        while not self.vinted_button_queue.empty():
+            try:
+                url = self.vinted_button_queue.get(timeout=1)
+                self.handle_single_vinted_button_request(url)
+                self.vinted_button_queue.task_done()
+            except queue.Empty:
+                break
+            except Exception as e:
+                print(f"❌ Error processing Vinted button request: {e}")
+                continue
+        
+        self.vinted_processing_active.clear()
+        print("✅ Vinted button queue processing complete")
+    
+    def handle_single_vinted_button_request(self, url):
+        """
+        Handle a single Vinted button request with all the specified requirements
+        """
+        print(f"🚀 Starting Vinted button request for: {url}")
+        
+        # 1. Start stopwatch
+        start_time = time.time()
+        
+        # 2. Pause main scraping (signal to main driver if needed)
+        print("⏸️ Pausing main scraping...")
+        self.pause_main_scraping = True
+        
+        # 3. Open second driver on same account
+        second_driver = None
+        try:
+            print("🌐 Opening second driver...")
+            second_driver = self.setup_driver()  # Use same setup as main driver
+            
+            # 4. Navigate to the listing link
+            print(f"📍 Navigating to: {url}")
+            second_driver.get(url)
+            
+            # Wait for page to load
+            WebDriverWait(second_driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            print("✅ Page loaded successfully")
+            
+            # 5. Wait 3 seconds
+            print("⏱️ Waiting 3 seconds...")
+            time.sleep(3)
+            
+        except Exception as e:
+            print(f"❌ Error during second driver operation: {e}")
+        finally:
+            # 6. Close second driver
+            if second_driver:
+                try:
+                    second_driver.quit()
+                    print("🔒 Second driver closed")
+                except Exception as e:
+                    print(f"⚠️ Warning: Error closing second driver: {e}")
+            
+            # 7. Continue main scraping
+            self.pause_main_scraping = False
+            print("▶️ Resuming main scraping...")
+        
+        # Check if we hit the 10-second limit
+        elapsed_time = time.time() - start_time
+        if elapsed_time >= 10:
+            print(f"⏰ Process completed at 10-second limit (actual: {elapsed_time:.2f}s)")
+        else:
+            print(f"✅ Process completed in {elapsed_time:.2f} seconds")
+    
     def setup_driver(self):
+        """
+        Enhanced driver setup that reuses your existing configuration
+        """
         chrome_opts = Options()
         prefs = {
-            "profile.default_content_setting_values.notifications": 2,  # Disable notifications
-            "profile.default_content_setting_values.popups": 0,         # Block popups (default = 0)
-            "download.prompt_for_download": False,                      # Disable download prompt
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.default_content_setting_values.popups": 0,
+            "download.prompt_for_download": False,
         }
         chrome_opts.add_experimental_option("prefs", prefs)
         chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
         chrome_opts.add_argument(f"--profile-directory=Profile 2")
-        chrome_opts.add_argument("--headless")
+        
+        # Keep headless for button requests to avoid disruption
+        #chrome_opts.add_argument("--headless")
         chrome_opts.add_argument("--no-sandbox")
         chrome_opts.add_argument("--disable-dev-shm-usage")
         chrome_opts.add_argument("--log-level=3")
         chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging'])
         
-        # ADD THESE LINES TO FIX THE CRASH:
+        # Add stability options
         chrome_opts.add_argument("--disable-gpu")
         chrome_opts.add_argument("--disable-software-rasterizer")
         chrome_opts.add_argument("--disable-background-timer-throttling")
@@ -1149,21 +1255,6 @@ class VintedScraper:
         chrome_opts.add_argument("--disable-renderer-backgrounding")
         chrome_opts.add_argument("--disable-features=TranslateUI")
         chrome_opts.add_argument("--disable-ipc-flooding-protection")
-        chrome_opts.add_argument("--max_old_space_size=4096")
-        chrome_opts.add_argument("--memory-pressure-off")
-        chrome_opts.add_argument("--disable-background-networking")
-        chrome_opts.add_argument("--disable-default-apps")
-        chrome_opts.add_argument("--disable-extensions")
-        chrome_opts.add_argument("--disable-sync")
-        chrome_opts.add_argument("--disable-translate")
-        chrome_opts.add_argument("--hide-scrollbars")
-        chrome_opts.add_argument("--metrics-recording-only")
-        chrome_opts.add_argument("--mute-audio")
-        chrome_opts.add_argument("--no-first-run")
-        chrome_opts.add_argument("--safebrowsing-disable-auto-update")
-        chrome_opts.add_argument("--disable-logging")
-        chrome_opts.add_argument("--disable-permissions-api")
-        chrome_opts.add_argument("--disable-web-security")
 
         service = Service(
             ChromeDriverManager().install(),
@@ -1822,7 +1913,14 @@ class VintedScraper:
 
     
     def search_vinted(self, driver, search_query):
+        """
+        Enhanced search method that respects pause requests
+        """
         global suitable_listings, current_listing_index
+        
+        # Store reference to main driver
+        self.main_driver = driver
+        self.pause_main_scraping = False
         
         # Clear previous results
         suitable_listings.clear()
@@ -1857,6 +1955,11 @@ class VintedScraper:
         listing_counter = 0
 
         while True:
+            # Check if we should pause for button requests
+            while self.pause_main_scraping:
+                print("⏸️ Main scraping paused for button request...")
+                time.sleep(0.5)
+            
             try:
                 WebDriverWait(driver, 20).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
@@ -1870,6 +1973,11 @@ class VintedScraper:
                 break
 
             for idx, url in enumerate(urls, start=1):
+                # Check pause status before processing each listing
+                while self.pause_main_scraping:
+                    print("⏸️ Main scraping paused for button request...")
+                    time.sleep(0.5)
+                
                 listing_counter += 1
                 driver.execute_script("window.open();")
                 driver.switch_to.window(driver.window_handles[-1])
@@ -1917,6 +2025,11 @@ class VintedScraper:
                 finally:
                     driver.close()
                     driver.switch_to.window(main)
+
+            # Check pause status before moving to next page
+            while self.pause_main_scraping:
+                print("⏸️ Main scraping paused for button request...")
+                time.sleep(0.5)
 
             # next page?
             try:
@@ -2016,11 +2129,15 @@ class VintedScraper:
 
 if __name__ == "__main__":
     if programme_to_run == 0:
-
         scraper = FacebookScraper()
+        # Store globally for Flask route access
+        globals()['scraper_instance'] = scraper
     else:
         scraper = VintedScraper()
-
-    scraper.run()
-
+        # Store globally for Flask route access - CRITICAL for button functionality
+        globals()['vinted_scraper_instance'] = scraper
+        
+        # Replace the normal search with enhanced version in the run method
+        # Modify the run() method to use search_vinted_enhanced instead of search_vinted
     
+    scraper.run()

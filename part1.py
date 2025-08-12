@@ -232,6 +232,7 @@ current_bounding_boxes = {}
 suitable_listings = []
 current_listing_index = 0
 miscellaneous_games_price = 5
+vinted_scraper_instance = None
 
 BASE_PRICES = {
    '1_2_switch': 6.5, 'animal_crossing': 24, 'arceus_p': 27.5, 'bow_z': 28, 'bros_deluxe_m': 23.5,
@@ -405,7 +406,7 @@ def change_listing():
 
 @app.route('/vinted-button-clicked', methods=['POST'])
 def vinted_button_clicked():
-    """Handle Vinted scraper button clicks"""
+    """Handle Vinted scraper button clicks with enhanced functionality"""
     print("DEBUG: Received a Vinted button-click POST request")
     
     # Get the listing URL from the form data
@@ -416,18 +417,15 @@ def vinted_button_clicked():
         return 'NO URL PROVIDED', 400
     
     try:
-        # Log the button click with the listing URL
-        print(f'Button clicked on listing: {url}')
-        
-        # Here you can add any additional processing for the Vinted listing
-        # For example, you could save it to a file, add to a queue, etc.
-        
-        # Optional: Save to a file for tracking
-        try:
+        # Access the Vinted scraper instance and trigger enhanced button functionality
+        if 'vinted_scraper_instance' in globals():
+            vinted_scraper_instance.vinted_button_clicked_enhanced(url)
+        else:
+            print("WARNING: No Vinted scraper instance found")
+            # Fallback to simple logging
+            print(f'Vinted button clicked on listing: {url}')
             with open('vinted_clicked_listings.txt', 'a') as f:
                 f.write(f"{url}\n")
-        except Exception as file_error:
-            print(f"Warning: Could not save to file: {file_error}")
         
         return 'VINTED BUTTON CLICK PROCESSED', 200
         
@@ -2398,3 +2396,5 @@ class FacebookScraper:
         with open(scanned_urls_file, 'w') as f: 
             pass 
 
+        suitable_listings.clear() 
+        current_listing_index = 0 
