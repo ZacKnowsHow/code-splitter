@@ -4342,7 +4342,7 @@ class VintedScraper:
             text=True
         )
         
-        # Function to read and print cloudflared output asynchronously.
+        # Function to read and print cloudflared output asynchronously
         def read_output(proc):
             for line in proc.stdout:
                 print("[cloudflared]", line.strip())
@@ -4350,7 +4350,7 @@ class VintedScraper:
         # Start a thread to print cloudflared output so you can see the public URL and any errors
         threading.Thread(target=read_output, args=(process,), daemon=True).start()
         
-        # Wait a few seconds for the tunnel to establish (adjust if needed)
+        # Wait a few seconds for the tunnel to establish (adjust if needed).
         time.sleep(5)
         return process
 
