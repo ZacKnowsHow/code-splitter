@@ -93,6 +93,8 @@ SCRAPER_USER_DATA_DIR = r"C:\FacebookScraper_ScraperProfile"
 MESSAGING_USER_DATA_DIR = r"C:\FacebookScraper_MessagingProfile"
 #profile 2
 
+VINTED_BUYING_USER_DATA_DIR = r"C:\VintedPostButtonClick"
+
 app = Flask(__name__, template_folder='templates')
 
 limiter = Limiter(get_remote_address, app=app, default_limits=["10 per second", "100 per minute"])
@@ -2396,5 +2398,3 @@ class FacebookScraper:
         with open(scanned_urls_file, 'w') as f: 
             pass 
 
-        suitable_listings.clear() 
-        current_listing_index = 0 
