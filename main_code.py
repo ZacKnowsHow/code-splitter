@@ -93,6 +93,8 @@ SCRAPER_USER_DATA_DIR = r"C:\FacebookScraper_ScraperProfile"
 MESSAGING_USER_DATA_DIR = r"C:\FacebookScraper_MessagingProfile"
 #profile 2
 
+VINTED_BUYING_USER_DATA_DIR = r"C:\VintedPostButtonClick"
+
 app = Flask(__name__, template_folder='templates')
 
 limiter = Limiter(get_remote_address, app=app, default_limits=["10 per second", "100 per minute"])
@@ -3587,7 +3589,7 @@ class VintedScraper:
         second_driver = None
         try:
             print("🌐 Opening second driver...")
-            second_driver = self.setup_driver()  # Use same setup as main driver
+            second_driver = self.setup_buying_driver()  # Use same setup as main driver
             
             # 4. Navigate to the listing link
             print(f"📍 Navigating to: {url}")
@@ -3741,6 +3743,8 @@ class VintedScraper:
             fallback_opts.add_argument("--disable-dev-shm-usage")
             fallback_opts.add_argument("--disable-gpu")
             fallback_opts.add_argument("--remote-debugging-port=0")
+            fallback_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
+            fallback_opts.add_argument(f"--profile-directory=Profile 2")
             
             try:
                 fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
@@ -3749,6 +3753,38 @@ class VintedScraper:
             except Exception as fallback_error:
                 print(f"❌ Fallback also failed: {fallback_error}")
                 raise Exception(f"Could not start Chrome driver: {e}")
+            
+    def setup_buying_driver(self):
+        prefs = {
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.default_content_setting_values.popups": 0,
+            "download.prompt_for_download": False,
+        }
+
+        service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull  # Suppress driver logs
+            )
+        
+        fallback_opts = Options()
+        fallback_opts.add_experimental_option("prefs", prefs)
+        #fallback_opts.add_argument("--headless")
+        fallback_opts.add_argument("--no-sandbox")
+        fallback_opts.add_argument("--disable-dev-shm-usage")
+        fallback_opts.add_argument("--disable-gpu")
+        fallback_opts.add_argument("--remote-debugging-port=0")
+        fallback_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
+        fallback_opts.add_argument(f"--profile-directory=Profile 2")
+            
+        try:
+            fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
+            print("✅ Fallback Chrome driver started successfully")
+            return fallback_driver
+        except Exception as fallback_error:
+            print(f"❌ Fallback also failed: {fallback_error}")
+            raise Exception(f"Could not start Chrome driver")
+            
+            
 
     def extract_vinted_price(self, text):
         """
@@ -4407,7 +4443,7 @@ class VintedScraper:
         global suitable_listings, current_listing_index
         
         # Store reference to main driver
-        self.main_driver = driver
+        self.main_driver
         self.pause_main_scraping = False
         
         # Clear previous results
