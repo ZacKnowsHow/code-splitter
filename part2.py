@@ -1,4 +1,5 @@
 # Continuation from line 2401
+
         suitable_listings.clear() 
         current_listing_index = 0 
 
@@ -2038,14 +2039,7 @@ class VintedScraper:
 
     
     def search_vinted(self, driver, search_query):
-        """
-        Enhanced search method that respects pause requests
-        """
         global suitable_listings, current_listing_index
-        
-        # Store reference to main driver
-        self.main_driver
-        self.pause_main_scraping = False
         
         # Clear previous results
         suitable_listings.clear()
@@ -2066,6 +2060,7 @@ class VintedScraper:
             except Exception as e:
                 print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
 
+        # Build initial URL parameters
         params = {
             "search_text": search_query,
             "price_from": PRICE_FROM,
@@ -2073,37 +2068,42 @@ class VintedScraper:
             "currency": CURRENCY,
             "order": ORDER,
         }
-        driver.get(f"{BASE_URL}?{urlencode(params)}")
+        
+        # Get initial page URL
+        base_url_with_params = f"{BASE_URL}?{urlencode(params)}"
+        driver.get(base_url_with_params)
         main = driver.current_window_handle
 
         page = 1
         listing_counter = 0
+        listings_per_page = 96  # Vinted has 96 listings per page
 
         while True:
-            # Check if we should pause for button requests
-            while self.pause_main_scraping:
-                print("⏸️ Main scraping paused for button request...")
-                time.sleep(0.5)
-            
             try:
+                # Wait for the page to load
                 WebDriverWait(driver, 20).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                 )
+                print(f"📄 Processing page {page}")
             except TimeoutException:
+                print(f"⏰ Timeout waiting for page {page} to load")
                 break
 
+            # Find all listing elements on current page
             els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
             urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
+            
             if not urls:
+                print(f"🚫 No listings found on page {page}")
                 break
 
+            print(f"🔍 Found {len(urls)} listings on page {page}")
+
+            # Process each listing on current page
             for idx, url in enumerate(urls, start=1):
-                # Check pause status before processing each listing
-                while self.pause_main_scraping:
-                    print("⏸️ Main scraping paused for button request...")
-                    time.sleep(0.5)
-                
                 listing_counter += 1
+                
+                # Open listing in new tab
                 driver.execute_script("window.open();")
                 driver.switch_to.window(driver.window_handles[-1])
                 driver.get(url)
@@ -2151,19 +2151,55 @@ class VintedScraper:
                     driver.close()
                     driver.switch_to.window(main)
 
-            # Check pause status before moving to next page
-            while self.pause_main_scraping:
-                print("⏸️ Main scraping paused for button request...")
-                time.sleep(0.5)
-
-            # next page?
-            try:
-                nxt = driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
-                driver.execute_script("arguments[0].click();", nxt)
-                page += 1
-                time.sleep(2)
-            except NoSuchElementException:
+            # Check if we've processed 96 listings and need to go to next page
+            # Calculate if we should navigate to next page
+            current_page_listings = len(urls)
+            
+            # If we have processed listings and it's close to expected per page, try next page
+            if current_page_listings >= 90:  # Allow some flexibility (90+ instead of exactly 96)
+                try:
+                    # Navigate to next page by modifying URL
+                    page += 1
+                    
+                    # Build URL for next page
+                    next_page_params = params.copy()
+                    next_page_params["page"] = page
+                    next_page_url = f"{BASE_URL}?{urlencode(next_page_params)}"
+                    
+                    print(f"🔄 Navigating to page {page}: {next_page_url}")
+                    driver.get(next_page_url)
+                    
+                    # Wait a moment for the page to load
+                    time.sleep(3)
+                    
+                    # Check if new page loaded successfully by looking for listings
+                    try:
+                        WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                        )
+                        
+                        # Quick check to see if there are listings on this page
+                        new_page_els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
+                        if not new_page_els:
+                            print(f"🏁 No listings found on page {page}, ending pagination")
+                            break
+                        else:
+                            print(f"✅ Successfully loaded page {page} with {len(new_page_els)} listings")
+                            continue  # Continue to next iteration to process this page
+                            
+                    except TimeoutException:
+                        print(f"⏰ Page {page} failed to load, ending pagination")
+                        break
+                        
+                except Exception as e:
+                    print(f"❌ Error navigating to page {page}: {e}")
+                    break
+            else:
+                # If we have fewer listings than expected, we might be on the last page
+                print(f"🏁 Found {current_page_listings} listings (less than expected 96), likely last page")
                 break
+
+        print(f"🎯 Pagination complete. Processed {listing_counter} total listings across {page} pages")
 
     def start_cloudflare_tunnel(self, port=5000):
         """
@@ -2266,3 +2302,4 @@ if __name__ == "__main__":
         # Modify the run() method to use search_vinted_enhanced instead of search_vinted
     
     scraper.run()
+    

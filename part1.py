@@ -137,16 +137,18 @@ recent_listings = {
 }
 
 MAX_LISTINGS_TO_SCAN = 50
+MAX_LISTINGS_VINTED_TO_SCAN = 400
 FAILURE_REASON_LISTED = True
 REPEAT_LISTINGS = True
 WAIT_TIME_AFTER_REFRESH = 125
 LOCK_POSITION = True
-SHOW_ALL_LISTINGS = True
+SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = False
 SHOW_PARTIALLY_SUITABLE = False
 setup_website = False
 send_message = True
 current_listing_url = ""
-send_notification = True
+send_notification = False
 WAIT_TIME_FOR_WEBSITE_MESSAGE = 25
 request_processing_event = threading.Event()
 
@@ -274,7 +276,6 @@ vinted_description_forbidden_words = ['faulty', 'jailbreak', 'visit us', 'openin
 vinted_min_price = 14
 vinted_max_price = 500
 vinted_banned_prices = {59.00, 49.00, 17.00}
-VINTED_SHOW_ALL_LISTINGS = True
 
 # Vinted profit suitability ranges (same structure as Facebook but independent variables)
 def check_vinted_profit_suitability(listing_price, profit_percentage):
@@ -2397,4 +2398,3 @@ class FacebookScraper:
         # Clear the file at start
         with open(scanned_urls_file, 'w') as f: 
             pass 
-
