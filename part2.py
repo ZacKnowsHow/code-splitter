@@ -1,4 +1,25 @@
-# Continuation from line 2401
+        visible_listings_scanned = 0
+        global suitable_listings, current_listing_index, duplicate_counter, scanned_urls 
+        marketplace_url = f"https://www.facebook.com/marketplace/search?query={search_query}" 
+
+        listing_queue = []  # Maintain as list for ordered processing
+        no_new_listings_count = 0 
+        suitability_reason = "Not processed"
+        profit_suitability = False
+        first_scan = True 
+        scanned_urls = []  # Maintain as list for ordered processing
+        consecutive_duplicate_count = 0 
+
+        scanned_urls_file = "scanned_urls.txt" 
+        try: 
+            with open(scanned_urls_file, 'r') as f: 
+                scanned_urls = [line.strip() for line in f if line.strip()]  # Read non-empty lines
+        except FileNotFoundError: 
+            print("No previous scanned URLs file found. Starting fresh.") 
+
+        # Clear the file at start
+        with open(scanned_urls_file, 'w') as f: 
+            pass 
 
         suitable_listings.clear() 
         current_listing_index = 0 
@@ -1245,7 +1266,9 @@ class VintedScraper:
         
         # User data directory setup
         chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--profile-directory=Profile 2")
+        chrome_opts.add_argument(f"--profile-directory=Default")
+        #profile 2 = pc
+        # default = laptop
         
         # Core stability arguments
         #chrome_opts.add_argument("--headless")
@@ -1346,7 +1369,9 @@ class VintedScraper:
             fallback_opts.add_argument("--disable-gpu")
             fallback_opts.add_argument("--remote-debugging-port=0")
             fallback_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
-            fallback_opts.add_argument(f"--profile-directory=Profile 2")
+            fallback_opts.add_argument(f"--profile-directory=Default")
+            #profile 2 = pc
+            #default = laptop
             
             try:
                 fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
@@ -1376,7 +1401,9 @@ class VintedScraper:
         fallback_opts.add_argument("--disable-gpu")
         fallback_opts.add_argument("--remote-debugging-port=0")
         fallback_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
-        fallback_opts.add_argument(f"--profile-directory=Profile 2")
+        fallback_opts.add_argument(f"--profile-directory=Default")
+        #Profile 2 = pc
+        #Default = laptop
             
         try:
             fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
@@ -2038,17 +2065,102 @@ class VintedScraper:
         return downloaded_paths
 
     
-    def search_vinted(self, driver, search_query):
+    def extract_vinted_listing_id(self, url):
+        """
+        Extract listing ID from Vinted URL
+        Example: https://www.vinted.co.uk/items/6862154542-sonic-forces?referrer=catalog
+        Returns: "6862154542"
+        """
+        if not url:
+            return None
+        
+        # Match pattern: /items/[numbers]-
+        match = re.search(r'/items/(\d+)-', url)
+        if match:
+            return match.group(1)
+        
+        # Fallback: match any sequence of digits after /items/
+        match = re.search(r'/items/(\d+)', url)
+        if match:
+            return match.group(1)
+        
+        return None
+
+    def load_scanned_vinted_ids(self):
+        """Load previously scanned Vinted listing IDs from file"""
+        try:
+            if os.path.exists(VINTED_SCANNED_IDS_FILE):
+                with open(VINTED_SCANNED_IDS_FILE, 'r') as f:
+                    return set(line.strip() for line in f if line.strip())
+            return set()
+        except Exception as e:
+            print(f"Error loading scanned IDs: {e}")
+            return set()
+
+    def save_vinted_listing_id(self, listing_id):
+        """Save a Vinted listing ID to the scanned file"""
+        if not listing_id:
+            return
+        
+        try:
+            with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
+                f.write(f"{listing_id}\n")
+        except Exception as e:
+            print(f"Error saving listing ID {listing_id}: {e}")
+
+    def is_vinted_listing_already_scanned(self, url, scanned_ids):
+        """Check if a Vinted listing has already been scanned"""
+        listing_id = self.extract_vinted_listing_id(url)
+        if not listing_id:
+            return False
+        return listing_id in scanned_ids
+
+    def refresh_vinted_page_and_wait(self, driver, is_first_refresh=True):
+        """
+        Refresh the Vinted page and wait appropriate time
+        """
+        print("🔄 Refreshing Vinted page...")
+        
+        # Navigate back to first page
+        params = {
+            "search_text": SEARCH_QUERY,
+            "price_from": PRICE_FROM,
+            "price_to": PRICE_TO,
+            "currency": CURRENCY,
+            "order": ORDER,
+        }
+        driver.get(f"{BASE_URL}?{urlencode(params)}")
+        
+        # Wait for page to load
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+            )
+            print("✅ Page refreshed and loaded successfully")
+        except TimeoutException:
+            print("⚠️ Timeout waiting for page to reload")
+        
+        # Wait for new listings (except first refresh)
+        if not is_first_refresh:
+            print(f"⏳ Waiting {wait_after_max_reached_vinted} seconds for new listings...")
+            time.sleep(wait_after_max_reached_vinted)
+        
+        return True
+
+    def search_vinted_with_refresh(self, driver, search_query):
+        """
+        Enhanced search_vinted method with refresh and rescan functionality
+        """
         global suitable_listings, current_listing_index
         
         # Clear previous results
         suitable_listings.clear()
         current_listing_index = 0
         
-        # ensure root download folder exists
+        # Ensure root download folder exists
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
-        # --- Load YOLO Model Once ---
+        # Load YOLO Model Once
         print("🧠 Loading object detection model...")
         model = None
         if not os.path.exists(MODEL_WEIGHTS):
@@ -2060,7 +2172,7 @@ class VintedScraper:
             except Exception as e:
                 print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
 
-        # Build initial URL parameters
+        # Initial page setup
         params = {
             "search_text": search_query,
             "price_from": PRICE_FROM,
@@ -2068,138 +2180,165 @@ class VintedScraper:
             "currency": CURRENCY,
             "order": ORDER,
         }
-        
-        # Get initial page URL
-        base_url_with_params = f"{BASE_URL}?{urlencode(params)}"
-        driver.get(base_url_with_params)
+        driver.get(f"{BASE_URL}?{urlencode(params)}")
         main = driver.current_window_handle
 
+        # Load previously scanned listing IDs
+        scanned_ids = self.load_scanned_vinted_ids()
+        print(f"📚 Loaded {len(scanned_ids)} previously scanned listing IDs")
+
         page = 1
-        listing_counter = 0
-        listings_per_page = 96  # Vinted has 96 listings per page
+        overall_listing_counter = 0  # Total listings processed across all cycles
+        refresh_cycle = 1
+        is_first_refresh = True
 
+        # Main scanning loop with refresh functionality
         while True:
-            try:
-                # Wait for the page to load
-                WebDriverWait(driver, 20).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-                )
-                print(f"📄 Processing page {page}")
-            except TimeoutException:
-                print(f"⏰ Timeout waiting for page {page} to load")
-                break
-
-            # Find all listing elements on current page
-            els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
-            urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
+            print(f"\n{'='*60}")
+            print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
+            print(f"{'='*60}")
             
-            if not urls:
-                print(f"🚫 No listings found on page {page}")
-                break
-
-            print(f"🔍 Found {len(urls)} listings on page {page}")
-
-            # Process each listing on current page
-            for idx, url in enumerate(urls, start=1):
-                listing_counter += 1
-                
-                # Open listing in new tab
-                driver.execute_script("window.open();")
-                driver.switch_to.window(driver.window_handles[-1])
-                driver.get(url)
-
-                try:
-                    details = self.scrape_item_details(driver)
-                    second_price = self.extract_price(details["second_price"])
-                    postage = self.extract_price(details["postage"])
-                    total_price = second_price + postage
-
-                    print(f"[Page {page} · Item {idx}/{len(urls)}] #{listing_counter}")
-                    print(f"  Link:         {url}")
-                    print(f"  Title:        {details['title']}")
-                    print(f"  Price:        {details['price']}")
-                    print(f"  Second price: {details['second_price']} ({second_price:.2f})")
-                    print(f"  Postage:      {details['postage']} ({postage:.2f})")
-                    print(f"  Total price:  £{total_price:.2f}")
-                    print(f"  Uploaded:     {details['uploaded']}")
-
-                    # 1. Download images for the current listing
-                    listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {listing_counter}")
-                    image_paths = self.download_images_for_listing(driver, listing_dir)
-
-                    # 2. Perform object detection and get processed images
-                    detected_objects = {}
-                    processed_images = []
-                    if model and image_paths:
-                        detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
-                        
-                        # Print detected objects
-                        detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
-                        if detected_classes:
-                            for cls in sorted(detected_classes):
-                                print(f"  • {cls}: {detected_objects[cls]}")
-
-                    # 3. Process listing for pygame display
-                    self.process_vinted_listing(details, detected_objects, processed_images, listing_counter, url)
-
-                    print("-" * 40)
-
-                except Exception as e:
-                    print(f"  ERROR scraping listing: {e}")
-
-                finally:
-                    driver.close()
-                    driver.switch_to.window(main)
-
-            # Check if we've processed 96 listings and need to go to next page
-            # Calculate if we should navigate to next page
-            current_page_listings = len(urls)
+            cycle_listing_counter = 0  # Listings processed in this cycle
+            found_already_scanned = False
             
-            # If we have processed listings and it's close to expected per page, try next page
-            if current_page_listings >= 90:  # Allow some flexibility (90+ instead of exactly 96)
+            # Reset to first page for each cycle
+            page = 1
+            
+            while True:  # Page loop
                 try:
-                    # Navigate to next page by modifying URL
-                    page += 1
-                    
-                    # Build URL for next page
-                    next_page_params = params.copy()
-                    next_page_params["page"] = page
-                    next_page_url = f"{BASE_URL}?{urlencode(next_page_params)}"
-                    
-                    print(f"🔄 Navigating to page {page}: {next_page_url}")
-                    driver.get(next_page_url)
-                    
-                    # Wait a moment for the page to load
-                    time.sleep(3)
-                    
-                    # Check if new page loaded successfully by looking for listings
-                    try:
-                        WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-                        )
-                        
-                        # Quick check to see if there are listings on this page
-                        new_page_els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
-                        if not new_page_els:
-                            print(f"🏁 No listings found on page {page}, ending pagination")
-                            break
-                        else:
-                            print(f"✅ Successfully loaded page {page} with {len(new_page_els)} listings")
-                            continue  # Continue to next iteration to process this page
-                            
-                    except TimeoutException:
-                        print(f"⏰ Page {page} failed to load, ending pagination")
-                        break
-                        
-                except Exception as e:
-                    print(f"❌ Error navigating to page {page}: {e}")
+                    WebDriverWait(driver, 20).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                    )
+                except TimeoutException:
+                    print("⚠️ Timeout waiting for page to load - moving to next cycle")
                     break
-            else:
-                # If we have fewer listings than expected, we might be on the last page
-                print(f"🏁 Found {current_page_listings} listings (less than expected 96), likely last page")
-                break
 
-        print(f"🎯 Pagination complete. Processed {listing_counter} total listings across {page} pages")
+                # Get listing URLs from current page
+                els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
+                urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
+                
+                if not urls:
+                    print(f"📄 No listings found on page {page} - moving to next cycle")
+                    break
+
+                print(f"📄 Processing page {page} with {len(urls)} listings")
+
+                for idx, url in enumerate(urls, start=1):
+                    overall_listing_counter += 1
+                    cycle_listing_counter += 1
+                    
+                    print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
+                    
+                    # Extract listing ID and check if already scanned
+                    listing_id = self.extract_vinted_listing_id(url)
+                    
+                    if REFRESH_AND_RESCAN and listing_id:
+                        if listing_id in scanned_ids:
+                            print(f"🔁 DUPLICATE DETECTED: Listing ID {listing_id} already scanned")
+                            print(f"🔄 Initiating refresh and rescan process...")
+                            found_already_scanned = True
+                            break
+                    
+                    # Check if we've hit the maximum listings for this cycle
+                    if REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                        print(f"📊 Reached MAX_LISTINGS_VINTED_TO_SCAN ({MAX_LISTINGS_VINTED_TO_SCAN})")
+                        print(f"🔄 Initiating refresh cycle...")
+                        break
+
+                    # Process the listing (same as original logic)
+                    driver.execute_script("window.open();")
+                    driver.switch_to.window(driver.window_handles[-1])
+                    driver.get(url)
+                    #time.sleep(5)
+
+                    try:
+                        details = self.scrape_item_details(driver)
+                        second_price = self.extract_price(details["second_price"])
+                        postage = self.extract_price(details["postage"])
+                        total_price = second_price + postage
+
+                        print(f"  Link:         {url}")
+                        print(f"  Title:        {details['title']}")
+                        print(f"  Price:        {details['price']}")
+                        print(f"  Second price: {details['second_price']} ({second_price:.2f})")
+                        print(f"  Postage:      {details['postage']} ({postage:.2f})")
+                        print(f"  Total price:  £{total_price:.2f}")
+                        print(f"  Uploaded:     {details['uploaded']}")
+
+                        # Download images for the current listing
+                        listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
+                        image_paths = self.download_images_for_listing(driver, listing_dir)
+
+                        # Perform object detection and get processed images
+                        detected_objects = {}
+                        processed_images = []
+                        if model and image_paths:
+                            detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
+                            
+                            # Print detected objects
+                            detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
+                            if detected_classes:
+                                for cls in sorted(detected_classes):
+                                    print(f"  • {cls}: {detected_objects[cls]}")
+
+                        # Process listing for pygame display
+                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
+
+                        # Mark this listing as scanned
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+                            print(f"✅ Saved listing ID: {listing_id}")
+
+                        print("-" * 40)
+
+                    except Exception as e:
+                        print(f"  ❌ ERROR scraping listing: {e}")
+                        # Still mark as scanned even if there was an error
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+
+                    finally:
+                        driver.close()
+                        driver.switch_to.window(main)
+
+                # Check if we need to break out of page loop
+                if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
+                    break
+
+                # Try to go to next page
+                try:
+                    nxt = driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
+                    driver.execute_script("arguments[0].click();", nxt)
+                    page += 1
+                    time.sleep(2)
+                except NoSuchElementException:
+                    print("📄 No more pages available - moving to next cycle")
+                    break
+
+            # End of page loop - decide whether to continue or refresh
+            if not REFRESH_AND_RESCAN:
+                print("🏁 REFRESH_AND_RESCAN disabled - ending scan")
+                break
+            
+            if found_already_scanned:
+                print(f"🔁 Found already scanned listing - refreshing immediately")
+                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+            elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
+                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+            else:
+                print("📄 No more pages and no max reached - refreshing for new listings")
+                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+            
+            # Update cycle counters
+            refresh_cycle += 1
+            is_first_refresh = False
+            
+            print(f"✅ Completed refresh cycle {refresh_cycle - 1}")
+            print(f"📊 Total listings processed so far: {overall_listing_counter}")
+            print(f"📚 Total unique IDs tracked: {len(scanned_ids)}")
 
     def start_cloudflare_tunnel(self, port=5000):
         """
@@ -2207,7 +2346,10 @@ class VintedScraper:
         Adjust the cloudflared_path if your executable is in a different location.
         """
         # Path to the cloudflared executable
-        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #pc
+        #cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #laptop
+        cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
         
         # Start the tunnel with the desired command-line arguments
         process = subprocess.Popen(
@@ -2284,7 +2426,7 @@ class VintedScraper:
         self.clear_download_folder()
         driver = self.setup_driver()
         try:
-            self.search_vinted(driver, SEARCH_QUERY)
+            self.search_vinted_with_refresh(driver, SEARCH_QUERY)
         finally:
             driver.quit()
 
@@ -2302,4 +2444,3 @@ if __name__ == "__main__":
         # Modify the run() method to use search_vinted_enhanced instead of search_vinted
     
     scraper.run()
-    
