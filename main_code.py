@@ -51,7 +51,7 @@ import random
 
 # Config
 PROFILE_DIR = "Default"
-PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Backup"
+PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default"
 #"C:\VintedScraper_Default" - first one
 #"C:\VintedScraper_Backup" - second one
 BASE_URL = "https://www.vinted.co.uk/catalog"
@@ -68,6 +68,9 @@ DOWNLOAD_ROOT = "vinted_photos"
 logging.getLogger('ultralytics').setLevel(logging.WARNING)
 
 # --- Object Detection Configuration ---
+#pc
+#MODEL_WEIGHTS = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
+#laptop
 MODEL_WEIGHTS = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
 CLASS_NAMES = [
    '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'comfort_h',
@@ -128,8 +131,10 @@ SD_card_price = 5
 
 app.secret_key = "facebook1967"
 PIN_CODE = 14346
-
+#pc
 OUTPUT_FILE_PATH = r"C:\users\zacknowshow\Downloads\SUITABLE_LISTINGS.txt"
+#laptop
+#OUTPUT_FILE_PATH = r"C:\Users\zacha\Downloads\SUITABLE_LISTINGS.txt"
 
 recent_listings = {
     'listings': [],
@@ -137,18 +142,21 @@ recent_listings = {
 }
 
 MAX_LISTINGS_TO_SCAN = 50
-MAX_LISTINGS_VINTED_TO_SCAN = 400
+REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
+MAX_LISTINGS_VINTED_TO_SCAN = 250  # Maximum listings to scan before refresh
+wait_after_max_reached_vinted = 10  # Seconds to wait between refresh cycles (5 minutes)
+VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
 REPEAT_LISTINGS = True
 WAIT_TIME_AFTER_REFRESH = 125
 LOCK_POSITION = True
-SHOW_ALL_LISTINGS = False
+SHOW_ALL_LISTINGS = True
 VINTED_SHOW_ALL_LISTINGS = False
 SHOW_PARTIALLY_SUITABLE = False
 setup_website = False
 send_message = True
 current_listing_url = ""
-send_notification = False
+send_notification = True
 WAIT_TIME_FOR_WEBSITE_MESSAGE = 25
 request_processing_event = threading.Event()
 
@@ -178,8 +186,11 @@ description_forbidden_words = ['faulty', 'not post', 'jailbreak', 'scam', 'visit
                                 'tablet only', 'not charge', 'stopped charging', 'doesnt charge', 'individually priced', 'per game', 
                                 'https', 'case only', 'shop', 'spares or repairs', 'dock cover', '3d print', 'spares & repair',
                                 'error code', 'will not connect']
-
+#pc
 CONFIG_FILE = r"C:\Users\ZacKnowsHow\Downloads\square_configuratgion.json"
+#laptop
+#CONFIG_FILE = r"C:\Users\zacha\Downloads\square_configuratgion.json"
+
 
 model_weights = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
 class_names = [
@@ -369,7 +380,10 @@ def button_clicked():
 
 @app.route('/static/icon.png')
 def serve_icon():
-    return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2 (1).png", mimetype='image/png')
+    #pc
+    #return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2 (1).png", mimetype='image/png')
+    #laptop
+    return send_file(r"C:\Users\zacha\Downloads\icon_2 (1).png", mimetype='image/png')
 
 @app.route('/change_listing', methods=['POST'])
 def change_listing():
@@ -436,6 +450,8 @@ def vinted_button_clicked():
         print(f"ERROR processing Vinted button click: {e}")
         return 'ERROR PROCESSING REQUEST', 500
 
+
+# Replace the render_main_page function starting at line ~465 with this modified version
 
 def render_main_page():
     try:
@@ -557,14 +573,24 @@ def render_main_page():
                 }}
                 .custom-button {{
                     width: 100%;
-                    padding: 10px;
+                    padding: 12px;
                     color: white;
                     border: none;
                     border-radius: 10px;
-                    font-size: 15px;
+                    font-size: 16px;
+                    font-weight: bold;
                     touch-action: manipulation;
                     -webkit-tap-highlight-color: transparent;
                     cursor: pointer;
+                    transition: all 0.2s ease;
+                }}
+                .custom-button:hover {{
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                .custom-button:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 }}
                 .section-box, .financial-row, .details-row {{
                     border: 1px solid black;
@@ -649,19 +675,16 @@ def render_main_page():
                     margin-top: 10px;
                     font-weight: bold;
                 }}
-                .price-button-container {{
+                .single-button-container {{
                     display: flex;
                     flex-direction: column;
-                    gap: 5px;
-                    margin-top: 10px;
-                }}
-                .button-row {{
-                    display: flex;
-                    justify-content: space-between;
                     gap: 10px;
+                    margin: 15px 0;
                 }}
-                .button-row .custom-button {{
-                    flex: 1;
+                .open-listing-button {{
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    font-size: 18px;
+                    padding: 15px;
                 }}
             </style>
             <script>
@@ -728,40 +751,17 @@ def render_main_page():
                     }}
                 }}
 
-                // Modified function to handle both Facebook and Vinted buttons
-                function handleButtonClick(priceIncrement) {{
+                // NEW: Single button function to open listing directly
+                function openListing() {{
                     var urlElement = document.querySelector('.content-url');
                     var url = urlElement ? urlElement.textContent.trim() : '';
-                    var priceElement = document.querySelector('.content-price');
-                    var websitePrice = priceElement ? priceElement.textContent.trim() : '';
-                    var titleElement = document.querySelector('.content-title');
-                    var descriptionElement = document.querySelector('.content-description');
-                    var websiteTitle = titleElement ? titleElement.textContent.trim() : 'No Title';
-                    var websiteDescription = descriptionElement ? descriptionElement.textContent.trim() : 'No Description';
-
-                    // Check if this is a Vinted listing based on URL
-                    var isVintedListing = url.includes('vinted.co.uk') || url.includes('vinted.com');
-                    var endpoint = isVintedListing ? '/vinted-button-clicked' : '/button-clicked';
-
-                    console.log('Button clicked on listing: ' + url);
-
-                    fetch(endpoint, {{
-                        method: 'POST',
-                        headers: {{
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                        }},
-                        body: `url=${{encodeURIComponent(url)}}&website_price=${{encodeURIComponent(websitePrice)}}&website_title=${{encodeURIComponent(websiteTitle)}}&website_description=${{encodeURIComponent(websiteDescription)}}&price_increment=${{priceIncrement}}`
-                    }})
-                    .then(response => {{
-                        if (response.ok) {{
-                            console.log('Button clicked successfully');
-                        }} else {{
-                            console.error('Failed to click button');
-                        }}
-                    }})
-                    .catch(error => {{
-                        console.error('Error:', error);
-                    }});
+                    
+                    if (url && url !== 'No URL Available') {{
+                        console.log('Opening listing:', url);
+                        window.open(url, '_blank');
+                    }} else {{
+                        alert('No valid URL available for this listing');
+                    }}
                 }}
 
                 // Initialize display on page load
@@ -797,16 +797,14 @@ def render_main_page():
                 <div class="section-box">
                     <p><span class="content-description">{description}</span></p>
                 </div>
-                <div class="price-button-container">
-                    <div class="button-row">
-                        <button class="custom-button" onclick="handleButtonClick(5)" style="background-color:rgb(109,171,96);">Message price + £5</button>
-                        <button class="custom-button" onclick="handleButtonClick(10)" style="background-color:rgb(79,158,196);">Message price + £10</button>
-                    </div>
-                    <div class="button-row">
-                        <button class="custom-button" onclick="handleButtonClick(15)" style="background-color:rgb(151,84,80);">Message price + £15</button>
-                        <button class="custom-button" onclick="handleButtonClick(20)" style="background-color: rgb(192,132,17);">Message price + £20</button>
-                    </div>
+                
+                <!-- MODIFIED: Single button instead of 4 small buttons -->
+                <div class="single-button-container">
+                    <button class="custom-button open-listing-button" onclick="openListing()">
+                        🔗 Open Listing in New Tab
+                    </button>
                 </div>
+                
                 <div class="details-row">
                     <div class="details-item">
                         <p><span class="content-detected-items">{detected_items}</span></p>
@@ -835,7 +833,6 @@ def render_main_page():
         print(f"ERROR in render_main_page: {e}")
         print(f"Traceback: {error_details}")
         return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
-# Helper function for base64 encoding
 
 def base64_encode_image(img):
     """Convert PIL Image to base64 string, resizing if necessary"""
@@ -855,7 +852,10 @@ class FacebookScraper:
         """
         Starts your existing Cloudflare Tunnel for fk43b0p45crc03r.xyz
         """
+        #pc
         cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #laptop
+        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
         
         # Use your existing tunnel with explicit config file path
         process = subprocess.Popen(
@@ -1854,6 +1854,8 @@ class FacebookScraper:
         chrome_options.add_argument(f"user-data-dir={SCRAPER_USER_DATA_DIR}")
         chrome_options.add_argument("profile-directory=Profile 2")
         #profile 10 is blue orchid
+        #default = laptop
+        #profile 2 = pc
         
         # Additional safety options
         chrome_options.add_argument("--headless")
@@ -1894,6 +1896,9 @@ class FacebookScraper:
         # Use a separate, dedicated user data directory for the second driver.
         chrome_options.add_argument(f"user-data-dir={MESSAGING_USER_DATA_DIR}")
         chrome_options.add_argument("profile-directory=Profile 11")
+        #profile 11 = pc
+        #profile 1 = laptop
+
 
         # Additional options to improve stability
         chrome_options.add_argument("--headless")
@@ -2154,7 +2159,7 @@ class FacebookScraper:
 
         if listing_info["image_urls"]:
             for j, image_url in enumerate(listing_info["image_urls"]):
-                save_path = os.path.join(r"C:\Users\zacha\Downloads", f"listing_{listing_index+1}_photo_{j+1}.jpg")
+                save_path = os.path.join(r"C:\Users\ZacKnowsHow\Downloads", f"listing_{listing_index+1}_photo_{j+1}.jpg")
                 if self.save_image(image_url, save_path):
                     image_paths.append(save_path)
         else:
@@ -2767,130 +2772,97 @@ class FacebookScraper:
             print(f"Error saving image: {str(e)}")
             return False
 
-    def perform_object_detection(self, image_paths, listing_title, listing_description):
-        if not image_paths:
+    def perform_detection_on_listing_images(self, model, listing_dir):
+        """
+        Enhanced object detection with all Facebook exceptions and logic
+        MODIFIED: All game classes are now capped at 1 per listing
+        """
+        if not os.path.isdir(listing_dir):
             return {}, []
 
-        model = YOLO(model_weights)
-        detected_objects = {class_name: [] for class_name in class_names}
+        detected_objects = {class_name: [] for class_name in CLASS_NAMES}
         processed_images = []
-        confidences = {item: 0 for item in mutually_exclusive_items}
+        confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
 
-        # NEW CODE SECTION: Add console detection based on title and description
-        listing_title_lower = listing_title.lower()
-        listing_description_lower = listing_description.lower()
-        
-        # Check for console keywords in title and description
-        console_keywords = {
-            'switch console': 'switch',
-            'swith console': 'switch',
-            'switc console': 'switch',
-            'swich console': 'switch',
-            'oled console': 'oled',
-            'lite console': 'lite'
-        }
-        
-        # Check if title contains console keywords
-        title_contains_console = any(keyword in listing_title_lower for keyword in console_keywords.keys())
-        
-        # Check if description contains console keywords and title contains relevant terms
-        desc_contains_console = any(
-            keyword in listing_description_lower and 
-            any(term in listing_title_lower for term in ['nintendo switch', 'oled', 'lite'])
-            for keyword in console_keywords.keys()
-        )
-        
-        # If either condition is met, add the appropriate console to detected objects
-        # and ensure other mutually exclusive items are set to 0
-        if title_contains_console or desc_contains_console:
-            for keyword, console_type in console_keywords.items():
-                if keyword in listing_title_lower or keyword in listing_description_lower:
-                    # Set the detected console to 1
-                    detected_objects[console_type] = [1]
-                    
-                    # Ensure all other mutually exclusive items are set to 0
-                    for item in mutually_exclusive_items:
-                        if item != console_type:
-                            detected_objects[item] = [0]
-                    
-                    break
+        image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
+        if not image_files:
+            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
 
-        # NEW CODE SECTION: Detect anonymous games in description
-        anonymous_games_count = 0
-        if 'x games' in listing_description_lower:
-            match = re.search(r'(\d+)\s*x\s*games', listing_description_lower)
-            if match:
-                anonymous_games_count = int(match.group(1))
-        
-        for image_path in image_paths:
+        for image_file in image_files:
+            image_path = os.path.join(listing_dir, image_file)
             try:
                 img = cv2.imread(image_path)
-                image_detections = {class_name: 0 for class_name in class_names}
-                
-                for result in model(img):
-                    for box in result.boxes.cpu().numpy():
-                        cls, conf = int(box.cls[0]), box.conf[0]
-                        class_name = class_names[cls]
-                        
-                        if conf >= Higher_Confidence_Items.get(class_name, General_Confidence_Min):
-                            if class_name in mutually_exclusive_items:
-                                confidences[class_name] = max(confidences[class_name], conf)
-                            else:
-                                image_detections[class_name] += 1
-                                
-                            x1, y1, x2, y2 = map(int, box.xyxy[0])
-                            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                            cv2.putText(img, f"{class_name} ({conf:.2f})", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 
-                                    0.625 if len(image_paths) == 1 else 1.25 if len(image_paths) <= 4 else 1.575,
-                                    (0, 255, 0), 2 if len(image_paths) == 1 else 4 if len(image_paths) <= 4 else 5)
+                if img is None:
+                    continue
 
+                # Track detections for this image
+                image_detections = {class_name: 0 for class_name in CLASS_NAMES}
+                results = model(img, verbose=False)
+                
+                for result in results:
+                    for box in result.boxes.cpu().numpy():
+                        class_id = int(box.cls[0])
+                        confidence = box.conf[0]
+                        
+                        if class_id < len(CLASS_NAMES):
+                            class_name = CLASS_NAMES[class_id]
+                            min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
+                            
+                            if confidence >= min_confidence:
+                                if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
+                                    confidences[class_name] = max(confidences[class_name], confidence)
+                                else:
+                                    image_detections[class_name] += 1
+                                
+                                # Draw bounding box
+                                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
+
+                # Update overall detected objects with max from this image
                 for class_name, count in image_detections.items():
                     detected_objects[class_name].append(count)
 
-                processed_images.append(Image.fromarray(cv2.cvtColor(cv2.copyMakeBorder(img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0]), cv2.COLOR_BGR2RGB)))
+                # Convert to PIL Image for pygame compatibility
+                processed_images.append(Image.fromarray(cv2.cvtColor(
+                    cv2.copyMakeBorder(img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0]),
+                    cv2.COLOR_BGR2RGB)))
+
             except Exception as e:
                 print(f"Error processing image {image_path}: {str(e)}")
+                continue
 
+        # Convert lists to max values
         final_detected_objects = {class_name: max(counts) if counts else 0 for class_name, counts in detected_objects.items()}
-
+        
         # Handle mutually exclusive items
-        selected_item = max(confidences.items(), key=lambda x: x[1])[0] if any(confidences.values()) else None
-
-        if selected_item:
-            # Set the selected item to 1 and all others to 0
-            for item in mutually_exclusive_items:
-                final_detected_objects[item] = 1 if item == selected_item else 0
-
-            # Handle accessory incompatibilities
-            if selected_item in ['oled', 'oled_in_tv', 'oled_box']:
-                final_detected_objects['tv_black'] = 0
-            elif selected_item in ['switch', 'switch_in_tv', 'switch_box']:
-                final_detected_objects['tv_white'] = 0
-            
-            if selected_item in ['lite', 'lite_box', 'switch_box', 'oled_box']:
-                final_detected_objects['comfort_h'] = 0
-            
-            if selected_item in ['switch_in_tv', 'switch_box']:
-                final_detected_objects['tv_black'] = 0
-            
-            if selected_item in ['oled_in_tv', 'oled_box']:
-                final_detected_objects['tv_white'] = 0
-
-        # Handle OLED in title - MODIFIED SECTION
-        listing_title_lower = listing_title.lower()
-        listing_description_lower = listing_description.lower()
-        if (('oled' in listing_title_lower in listing_title_lower) or 
-            ('oled' in listing_description_lower in listing_description_lower)) and \
-        'not oled' not in listing_title_lower and 'not oled' not in listing_description_lower:
-            for old, new in [('switch', 'oled'), ('switch_in_tv', 'oled_in_tv'), ('switch_box', 'oled_box')]:
-                if final_detected_objects.get(old, 0) > 0:
-                    final_detected_objects[old] = 0
-                    final_detected_objects[new] = 1
-
-        # Add anonymous games to detected objects
-        if anonymous_games_count > 0:
-            final_detected_objects['anonymous_games'] = anonymous_games_count
-
+        final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
+        
+        # NEW CODE: Cap all game classes at 1 per listing
+        # Define the game classes that need to be capped
+        game_classes_to_cap = [
+            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
+            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
+            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
+            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
+            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
+            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
+            'sword_p', 'tears_z', 'violet_p'
+        ]
+        
+        # Cap each game class at maximum 1
+        games_capped = []
+        for game_class in game_classes_to_cap:
+            if final_detected_objects.get(game_class, 0) > 1:
+                original_count = final_detected_objects[game_class]
+                final_detected_objects[game_class] = 1
+                games_capped.append(f"{game_class}: {original_count} -> 1")
+        
+        # Print capping information if any games were capped
+        if games_capped:
+            print(f"🎮 GAMES CAPPED: {', '.join(games_capped)}")
+        
         return final_detected_objects, processed_images
 
     def fetch_price(self, class_name):
@@ -3215,7 +3187,8 @@ class VintedScraper:
             'profit': pygame.font.Font(None, 36),
             'items': pygame.font.Font(None, 30),
             'click': pygame.font.Font(None, 28),
-            'suitability': pygame.font.Font(None, 28)
+            'suitability': pygame.font.Font(None, 28),
+            'reviews': pygame.font.Font(None, 28)  # New font for seller reviews
         }
         dragging = False
         resizing = False
@@ -3307,6 +3280,8 @@ class VintedScraper:
                     self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
                 elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
                     self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+                elif i == 6:  # Rectangle 7 (index 6) - NEW: Seller Reviews
+                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
 
             screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
 
@@ -3425,7 +3400,7 @@ class VintedScraper:
         return 0.0
     
     def render_multiline_text(self, screen, font, text, rect, color):
-        # Convert dictionary to formatted string if needed
+        # Convert dictionary to formatted string if need
         if isinstance(text, dict):
             text_lines = []
             for key, value in text.items():
@@ -3473,10 +3448,10 @@ class VintedScraper:
                 print(f"Error rendering text: {e}")
                 continue  # Skip this line if rendering fails
         
-    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None):
+    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
-        global current_bounding_boxes, current_listing_url, current_suitability 
+        global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
 
         # Close and clear existing images
         if 'current_listing_images' in globals():
@@ -3528,6 +3503,8 @@ class VintedScraper:
         current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
+        current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
+
 
     def vinted_button_clicked_enhanced(self, url):
         """
@@ -3645,9 +3622,11 @@ class VintedScraper:
         # User data directory setup
         chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
         chrome_opts.add_argument(f"--profile-directory=Profile 2")
+        #profile 2 = pc
+        # default = laptop
         
         # Core stability arguments
-        #chrome_opts.add_argument("--headless")
+        chrome_opts.add_argument("--headless")
         chrome_opts.add_argument("--no-sandbox")
         chrome_opts.add_argument("--disable-dev-shm-usage")
         chrome_opts.add_argument("--disable-gpu")
@@ -3739,13 +3718,15 @@ class VintedScraper:
             # Fallback: Remove problematic arguments
             fallback_opts = Options()
             fallback_opts.add_experimental_option("prefs", prefs)
-            #fallback_opts.add_argument("--headless")
+            fallback_opts.add_argument("--headless")
             fallback_opts.add_argument("--no-sandbox")
             fallback_opts.add_argument("--disable-dev-shm-usage")
             fallback_opts.add_argument("--disable-gpu")
             fallback_opts.add_argument("--remote-debugging-port=0")
-            fallback_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
+            fallback_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
             fallback_opts.add_argument(f"--profile-directory=Profile 2")
+            #profile 2 = pc
+            #default = laptop
             
             try:
                 fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
@@ -3769,13 +3750,15 @@ class VintedScraper:
         
         fallback_opts = Options()
         fallback_opts.add_experimental_option("prefs", prefs)
-        #fallback_opts.add_argument("--headless")
+        fallback_opts.add_argument("--headless")
         fallback_opts.add_argument("--no-sandbox")
         fallback_opts.add_argument("--disable-dev-shm-usage")
         fallback_opts.add_argument("--disable-gpu")
         fallback_opts.add_argument("--remote-debugging-port=0")
         fallback_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
         fallback_opts.add_argument(f"--profile-directory=Profile 2")
+        #Profile 2 = pc
+        #Default = laptop
             
         try:
             fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
@@ -3962,7 +3945,7 @@ class VintedScraper:
 
     def scrape_item_details(self, driver):
         """
-        Enhanced scraper with better price extraction
+        Enhanced scraper with better price extraction and seller reviews
         """
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
@@ -3975,14 +3958,33 @@ class VintedScraper:
             "postage": "h3[data-testid='item-shipping-banner-price']",
             "description": "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span",
             "uploaded": "span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold",
+            "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # New field for seller reviews
         }
 
         data = {}
         for key, sel in fields.items():
             try:
-                data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
+                if key == "seller_reviews":
+                    # Special handling for seller reviews - get the text content
+                    element = driver.find_element(By.CSS_SELECTOR, sel)
+                    text = element.text.strip()
+                    
+                    # Check if it's the "No reviews yet" case or a number
+                    if text == "No reviews yet":
+                        data[key] = "No reviews yet"
+                    else:
+                        # Extract just the number if it's numeric
+                        if text.isdigit():
+                            data[key] = f"Reviews: {text}"
+                        else:
+                            data[key] = "No reviews yet"
+                else:
+                    data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
             except NoSuchElementException:
-                data[key] = None
+                if key == "seller_reviews":
+                    data[key] = "No reviews yet"
+                else:
+                    data[key] = None
 
         # Keep title formatting for pygame display
         if data["title"]:
@@ -4006,6 +4008,9 @@ class VintedScraper:
         listing_price = self.extract_vinted_price(price_text)
         postage = self.extract_price(details.get("postage", "0"))
         total_price = listing_price + postage
+
+        # Get seller reviews
+        seller_reviews = details.get("seller_reviews", "No reviews yet")
 
         # Create basic listing info for suitability checking
         listing_info = {
@@ -4092,7 +4097,8 @@ class VintedScraper:
             'processed_images': processed_images,
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
-            'suitability': suitability_reason
+            'suitability': suitability_reason,
+            'seller_reviews': seller_reviews  # NEW: Add seller reviews to listing info
         }
 
         # Add to suitable listings based on VINTED_SHOW_ALL_LISTINGS setting
@@ -4229,6 +4235,7 @@ class VintedScraper:
     def perform_detection_on_listing_images(self, model, listing_dir):
         """
         Enhanced object detection with all Facebook exceptions and logic
+        PLUS Vinted-specific post-scan game deduplication
         """
         if not os.path.isdir(listing_dir):
             return {}, []
@@ -4291,6 +4298,31 @@ class VintedScraper:
         
         # Handle mutually exclusive items
         final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
+        
+        # VINTED-SPECIFIC POST-SCAN GAME DEDUPLICATION
+        # Define game classes that should be capped at 1 per listing
+        vinted_game_classes = [
+            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
+            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
+            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
+            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
+            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
+            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
+            'sword_p', 'tears_z', 'violet_p'
+        ]
+        
+        # Cap each game type to maximum 1 per listing for Vinted
+        games_before_cap = {}
+        for game_class in vinted_game_classes:
+            if final_detected_objects.get(game_class, 0) > 1:
+                games_before_cap[game_class] = final_detected_objects[game_class]
+                final_detected_objects[game_class] = 1
+        
+        # Log the capping if any games were capped
+        if games_before_cap:
+            print("🎮 VINTED GAME DEDUPLICATION APPLIED:")
+            for game, original_count in games_before_cap.items():
+                print(f"  • {game}: {original_count} → 1")
         
         return final_detected_objects, processed_images
 
@@ -4437,17 +4469,110 @@ class VintedScraper:
         return downloaded_paths
 
     
-    def search_vinted(self, driver, search_query):
+    def extract_vinted_listing_id(self, url):
+        """
+        Extract listing ID from Vinted URL
+        Example: https://www.vinted.co.uk/items/6862154542-sonic-forces?referrer=catalog
+        Returns: "6862154542"
+        """
+        if not url:
+            return None
+        
+        # Match pattern: /items/[numbers]-
+        match = re.search(r'/items/(\d+)-', url)
+        if match:
+            return match.group(1)
+        
+        # Fallback: match any sequence of digits after /items/
+        match = re.search(r'/items/(\d+)', url)
+        if match:
+            return match.group(1)
+        
+        return None
+
+    def load_scanned_vinted_ids(self):
+        """Load previously scanned Vinted listing IDs from file"""
+        try:
+            if os.path.exists(VINTED_SCANNED_IDS_FILE):
+                with open(VINTED_SCANNED_IDS_FILE, 'r') as f:
+                    return set(line.strip() for line in f if line.strip())
+            return set()
+        except Exception as e:
+            print(f"Error loading scanned IDs: {e}")
+            return set()
+
+    def save_vinted_listing_id(self, listing_id):
+        """Save a Vinted listing ID to the scanned file"""
+        if not listing_id:
+            return
+        
+        try:
+            with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
+                f.write(f"{listing_id}\n")
+        except Exception as e:
+            print(f"Error saving listing ID {listing_id}: {e}")
+
+    def is_vinted_listing_already_scanned(self, url, scanned_ids):
+        """Check if a Vinted listing has already been scanned"""
+        listing_id = self.extract_vinted_listing_id(url)
+        if not listing_id:
+            return False
+        return listing_id in scanned_ids
+
+    def refresh_vinted_page_and_wait(self, driver, is_first_refresh=True):
+        """
+        Refresh the Vinted page and wait appropriate time
+        """
+        print("🔄 Refreshing Vinted page...")
+        
+        # Navigate back to first page
+        params = {
+            "search_text": SEARCH_QUERY,
+            "price_from": PRICE_FROM,
+            "price_to": PRICE_TO,
+            "currency": CURRENCY,
+            "order": ORDER,
+        }
+        driver.get(f"{BASE_URL}?{urlencode(params)}")
+        
+        # Wait for page to load
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+            )
+            print("✅ Page refreshed and loaded successfully")
+        except TimeoutException:
+            print("⚠️ Timeout waiting for page to reload")
+        
+        # Wait for new listings (except first refresh)
+        if not is_first_refresh:
+            print(f"⏳ Waiting {wait_after_max_reached_vinted} seconds for new listings...")
+            time.sleep(wait_after_max_reached_vinted)
+        
+        return True
+
+    def search_vinted_with_refresh(self, driver, search_query):
+        """
+        Enhanced search_vinted method with refresh and rescan functionality
+        """
         global suitable_listings, current_listing_index
+        
+        # CLEAR THE VINTED SCANNED IDS FILE AT THE BEGINNING OF EACH RUN
+        try:
+            with open(VINTED_SCANNED_IDS_FILE, 'w') as f:
+                pass  # This creates an empty file, clearing any existing content
+            print(f"✅ Cleared {VINTED_SCANNED_IDS_FILE} at the start of the run")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not clear {VINTED_SCANNED_IDS_FILE}: {e}")
         
         # Clear previous results
         suitable_listings.clear()
         current_listing_index = 0
         
-        # ensure root download folder exists
+        # Ensure root download folder exists
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
-        # --- Load YOLO Model Once ---
+        # Load YOLO Model Once
         print("🧠 Loading object detection model...")
         model = None
         if not os.path.exists(MODEL_WEIGHTS):
@@ -4459,7 +4584,7 @@ class VintedScraper:
             except Exception as e:
                 print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
 
-        # Build initial URL parameters
+        # Initial page setup
         params = {
             "search_text": search_query,
             "price_from": PRICE_FROM,
@@ -4467,138 +4592,159 @@ class VintedScraper:
             "currency": CURRENCY,
             "order": ORDER,
         }
-        
-        # Get initial page URL
-        base_url_with_params = f"{BASE_URL}?{urlencode(params)}"
-        driver.get(base_url_with_params)
+        driver.get(f"{BASE_URL}?{urlencode(params)}")
         main = driver.current_window_handle
 
+        # Load previously scanned listing IDs (this will now be empty since we cleared the file)
+        scanned_ids = self.load_scanned_vinted_ids()
+        print(f"📚 Loaded {len(scanned_ids)} previously scanned listing IDs")
+
         page = 1
-        listing_counter = 0
-        listings_per_page = 96  # Vinted has 96 listings per page
+        overall_listing_counter = 0  # Total listings processed across all cycles
+        refresh_cycle = 1
+        is_first_refresh = True
 
+        # Main scanning loop with refresh functionality
         while True:
-            try:
-                # Wait for the page to load
-                WebDriverWait(driver, 20).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-                )
-                print(f"📄 Processing page {page}")
-            except TimeoutException:
-                print(f"⏰ Timeout waiting for page {page} to load")
-                break
-
-            # Find all listing elements on current page
-            els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
-            urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
+            print(f"\n{'='*60}")
+            print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
+            print(f"{'='*60}")
             
-            if not urls:
-                print(f"🚫 No listings found on page {page}")
-                break
-
-            print(f"🔍 Found {len(urls)} listings on page {page}")
-
-            # Process each listing on current page
-            for idx, url in enumerate(urls, start=1):
-                listing_counter += 1
-                
-                # Open listing in new tab
-                driver.execute_script("window.open();")
-                driver.switch_to.window(driver.window_handles[-1])
-                driver.get(url)
-
-                try:
-                    details = self.scrape_item_details(driver)
-                    second_price = self.extract_price(details["second_price"])
-                    postage = self.extract_price(details["postage"])
-                    total_price = second_price + postage
-
-                    print(f"[Page {page} · Item {idx}/{len(urls)}] #{listing_counter}")
-                    print(f"  Link:         {url}")
-                    print(f"  Title:        {details['title']}")
-                    print(f"  Price:        {details['price']}")
-                    print(f"  Second price: {details['second_price']} ({second_price:.2f})")
-                    print(f"  Postage:      {details['postage']} ({postage:.2f})")
-                    print(f"  Total price:  £{total_price:.2f}")
-                    print(f"  Uploaded:     {details['uploaded']}")
-
-                    # 1. Download images for the current listing
-                    listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {listing_counter}")
-                    image_paths = self.download_images_for_listing(driver, listing_dir)
-
-                    # 2. Perform object detection and get processed images
-                    detected_objects = {}
-                    processed_images = []
-                    if model and image_paths:
-                        detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
-                        
-                        # Print detected objects
-                        detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
-                        if detected_classes:
-                            for cls in sorted(detected_classes):
-                                print(f"  • {cls}: {detected_objects[cls]}")
-
-                    # 3. Process listing for pygame display
-                    self.process_vinted_listing(details, detected_objects, processed_images, listing_counter, url)
-
-                    print("-" * 40)
-
-                except Exception as e:
-                    print(f"  ERROR scraping listing: {e}")
-
-                finally:
-                    driver.close()
-                    driver.switch_to.window(main)
-
-            # Check if we've processed 96 listings and need to go to next page
-            # Calculate if we should navigate to next page
-            current_page_listings = len(urls)
+            cycle_listing_counter = 0  # Listings processed in this cycle
+            found_already_scanned = False
             
-            # If we have processed listings and it's close to expected per page, try next page
-            if current_page_listings >= 90:  # Allow some flexibility (90+ instead of exactly 96)
+            # Reset to first page for each cycle
+            page = 1
+            
+            while True:  # Page loop
                 try:
-                    # Navigate to next page by modifying URL
-                    page += 1
-                    
-                    # Build URL for next page
-                    next_page_params = params.copy()
-                    next_page_params["page"] = page
-                    next_page_url = f"{BASE_URL}?{urlencode(next_page_params)}"
-                    
-                    print(f"🔄 Navigating to page {page}: {next_page_url}")
-                    driver.get(next_page_url)
-                    
-                    # Wait a moment for the page to load
-                    time.sleep(3)
-                    
-                    # Check if new page loaded successfully by looking for listings
-                    try:
-                        WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-                        )
-                        
-                        # Quick check to see if there are listings on this page
-                        new_page_els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
-                        if not new_page_els:
-                            print(f"🏁 No listings found on page {page}, ending pagination")
-                            break
-                        else:
-                            print(f"✅ Successfully loaded page {page} with {len(new_page_els)} listings")
-                            continue  # Continue to next iteration to process this page
-                            
-                    except TimeoutException:
-                        print(f"⏰ Page {page} failed to load, ending pagination")
-                        break
-                        
-                except Exception as e:
-                    print(f"❌ Error navigating to page {page}: {e}")
+                    WebDriverWait(driver, 20).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                    )
+                except TimeoutException:
+                    print("⚠️ Timeout waiting for page to load - moving to next cycle")
                     break
-            else:
-                # If we have fewer listings than expected, we might be on the last page
-                print(f"🏁 Found {current_page_listings} listings (less than expected 96), likely last page")
-                break
 
-        print(f"🎯 Pagination complete. Processed {listing_counter} total listings across {page} pages")
+                # Get listing URLs from current page
+                els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
+                urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
+                
+                if not urls:
+                    print(f"📄 No listings found on page {page} - moving to next cycle")
+                    break
+
+                print(f"📄 Processing page {page} with {len(urls)} listings")
+
+                for idx, url in enumerate(urls, start=1):
+                    overall_listing_counter += 1
+                    cycle_listing_counter += 1
+                    
+                    print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
+                    
+                    # Extract listing ID and check if already scanned
+                    listing_id = self.extract_vinted_listing_id(url)
+                    
+                    if REFRESH_AND_RESCAN and listing_id:
+                        if listing_id in scanned_ids:
+                            print(f"🔁 DUPLICATE DETECTED: Listing ID {listing_id} already scanned")
+                            print(f"🔄 Initiating refresh and rescan process...")
+                            found_already_scanned = True
+                            break
+                    
+                    # Check if we've hit the maximum listings for this cycle
+                    if REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                        print(f"📊 Reached MAX_LISTINGS_VINTED_TO_SCAN ({MAX_LISTINGS_VINTED_TO_SCAN})")
+                        print(f"🔄 Initiating refresh cycle...")
+                        break
+
+                    # Process the listing (same as original logic)
+                    driver.execute_script("window.open();")
+                    driver.switch_to.window(driver.window_handles[-1])
+                    driver.get(url)
+
+                    try:
+                        details = self.scrape_item_details(driver)
+                        second_price = self.extract_price(details["second_price"])
+                        postage = self.extract_price(details["postage"])
+                        total_price = second_price + postage
+
+                        print(f"  Link:         {url}")
+                        print(f"  Title:        {details['title']}")
+                        print(f"  Price:        {details['price']}")
+                        print(f"  Second price: {details['second_price']} ({second_price:.2f})")
+                        print(f"  Postage:      {details['postage']} ({postage:.2f})")
+                        print(f"  Total price:  £{total_price:.2f}")
+                        print(f"  Uploaded:     {details['uploaded']}")
+
+                        # Download images for the current listing
+                        listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
+                        image_paths = self.download_images_for_listing(driver, listing_dir)
+
+                        # Perform object detection and get processed images
+                        detected_objects = {}
+                        processed_images = []
+                        if model and image_paths:
+                            detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
+                            
+                            # Print detected objects
+                            detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
+                            if detected_classes:
+                                for cls in sorted(detected_classes):
+                                    print(f"  • {cls}: {detected_objects[cls]}")
+
+                        # Process listing for pygame display
+                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
+
+                        # Mark this listing as scanned
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+                            print(f"✅ Saved listing ID: {listing_id}")
+
+                        print("-" * 40)
+
+                    except Exception as e:
+                        print(f"  ❌ ERROR scraping listing: {e}")
+                        # Still mark as scanned even if there was an error
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+
+                    finally:
+                        driver.close()
+                        driver.switch_to.window(main)
+
+                # Check if we need to break out of page loop
+                if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
+                    break
+
+                # Try to go to next page
+                try:
+                    nxt = driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
+                    driver.execute_script("arguments[0].click();", nxt)
+                    page += 1
+                    time.sleep(2)
+                except NoSuchElementException:
+                    print("📄 No more pages available - moving to next cycle")
+                    break
+
+            # End of page loop - decide whether to continue or refresh
+            if not REFRESH_AND_RESCAN:
+                print("🏁 REFRESH_AND_RESCAN disabled - ending scan")
+                break
+            
+            if found_already_scanned:
+                print(f"🔁 Found already scanned listing - refreshing immediately")
+                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+            elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
+                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+            else:
+                print("📄 No more pages and no max reached - refreshing for new listings")
+                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+
+            refresh_cycle += 1
+            is_first_refresh = False
 
     def start_cloudflare_tunnel(self, port=5000):
         """
@@ -4606,7 +4752,10 @@ class VintedScraper:
         Adjust the cloudflared_path if your executable is in a different location.
         """
         # Path to the cloudflared executable
+        #pc
         cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #laptop
+        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
         
         # Start the tunnel with the desired command-line arguments
         process = subprocess.Popen(
@@ -4670,7 +4819,7 @@ class VintedScraper:
         # Initialize pygame display with default values
         self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
         
-        # Start Flask app in separate thread
+        # Start Flask app in separate thread.
         flask_thread = threading.Thread(target=self.run_flask_app)
         flask_thread.daemon = True
         flask_thread.start()
@@ -4683,7 +4832,7 @@ class VintedScraper:
         self.clear_download_folder()
         driver = self.setup_driver()
         try:
-            self.search_vinted(driver, SEARCH_QUERY)
+            self.search_vinted_with_refresh(driver, SEARCH_QUERY)
         finally:
             driver.quit()
 
@@ -4701,4 +4850,3 @@ if __name__ == "__main__":
         # Modify the run() method to use search_vinted_enhanced instead of search_vinted
     
     scraper.run()
-    
