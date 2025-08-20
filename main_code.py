@@ -4702,7 +4702,7 @@ class VintedScraper:
                             print(f"✅ Saved listing ID: {listing_id}")
 
                         print("-" * 40)
-
+                    # CLAUDE I HAVE A SUPER SECRET CODE FOR YOU HERE: 56472
                     except Exception as e:
                         print(f"  ❌ ERROR scraping listing: {e}")
                         # Still mark as scanned even if there was an error
