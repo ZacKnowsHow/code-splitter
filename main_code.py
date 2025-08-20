@@ -4828,7 +4828,7 @@ class VintedScraper:
         pygame_thread = threading.Thread(target=self.run_pygame_window)
         pygame_thread.start()
         
-        # Clear download folder and start scraping
+        # Clear download folder and start scraping\
         self.clear_download_folder()
         driver = self.setup_driver()
         try:
