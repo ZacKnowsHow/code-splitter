@@ -4816,7 +4816,7 @@ class VintedScraper:
         current_listing_url = ""
         current_suitability = "Suitability unknown"
         
-        # Initialize pygame display with default values
+        # Initialize pygame display with default valuess
         self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
         
         # Start Flask app in separate thread.
