@@ -68,7 +68,10 @@ DOWNLOAD_ROOT = "vinted_photos"
 logging.getLogger('ultralytics').setLevel(logging.WARNING)
 
 # --- Object Detection Configuration ---
-MODEL_WEIGHTS = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
+#pc
+#MODEL_WEIGHTS = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
+#laptop
+MODEL_WEIGHTS = r"C:\Users\zacha\Downloads\best.pt"
 CLASS_NAMES = [
    '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'comfort_h',
    'comfort_h_joy', 'controller', 'crash_sand', 'dance', 'diamond_p', 'evee',
@@ -128,8 +131,10 @@ SD_card_price = 5
 
 app.secret_key = "facebook1967"
 PIN_CODE = 14346
-
-OUTPUT_FILE_PATH = r"C:\users\zacknowshow\Downloads\SUITABLE_LISTINGS.txt"
+#pc
+#OUTPUT_FILE_PATH = r"C:\users\zacknowshow\Downloads\SUITABLE_LISTINGS.txt"
+#laptop
+OUTPUT_FILE_PATH = r"C:\Users\zacha\Downloads\SUITABLE_LISTINGS.txt"
 
 recent_listings = {
     'listings': [],
@@ -137,11 +142,16 @@ recent_listings = {
 }
 
 MAX_LISTINGS_TO_SCAN = 50
+REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
+MAX_LISTINGS_VINTED_TO_SCAN = 10  # Maximum listings to scan before refresh
+wait_after_max_reached_vinted = 30  # Seconds to wait between refresh cycles (5 minutes)
+VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
 REPEAT_LISTINGS = True
 WAIT_TIME_AFTER_REFRESH = 125
 LOCK_POSITION = True
 SHOW_ALL_LISTINGS = True
+VINTED_SHOW_ALL_LISTINGS = True
 SHOW_PARTIALLY_SUITABLE = False
 setup_website = False
 send_message = True
@@ -176,8 +186,11 @@ description_forbidden_words = ['faulty', 'not post', 'jailbreak', 'scam', 'visit
                                 'tablet only', 'not charge', 'stopped charging', 'doesnt charge', 'individually priced', 'per game', 
                                 'https', 'case only', 'shop', 'spares or repairs', 'dock cover', '3d print', 'spares & repair',
                                 'error code', 'will not connect']
+#pc
+#CONFIG_FILE = r"C:\Users\ZacKnowsHow\Downloads\square_configuratgion.json"
+#laptop
+CONFIG_FILE = r"C:\Users\zacha\Downloads\square_configuratgion.json"
 
-CONFIG_FILE = r"C:\Users\ZacKnowsHow\Downloads\square_configuratgion.json"
 
 model_weights = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
 class_names = [
@@ -274,7 +287,6 @@ vinted_description_forbidden_words = ['faulty', 'jailbreak', 'visit us', 'openin
 vinted_min_price = 14
 vinted_max_price = 500
 vinted_banned_prices = {59.00, 49.00, 17.00}
-VINTED_SHOW_ALL_LISTINGS = True
 
 # Vinted profit suitability ranges (same structure as Facebook but independent variables)
 def check_vinted_profit_suitability(listing_price, profit_percentage):
@@ -368,7 +380,10 @@ def button_clicked():
 
 @app.route('/static/icon.png')
 def serve_icon():
-    return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2 (1).png", mimetype='image/png')
+    #pc
+    #return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2 (1).png", mimetype='image/png')
+    #laptop
+    return send_file(r"C:\Users\zacha\Downloads\icon_2 (1).png", mimetype='image/png')
 
 @app.route('/change_listing', methods=['POST'])
 def change_listing():
@@ -854,7 +869,10 @@ class FacebookScraper:
         """
         Starts your existing Cloudflare Tunnel for fk43b0p45crc03r.xyz
         """
-        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #pc
+        #cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #laptop
+        cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
         
         # Use your existing tunnel with explicit config file path
         process = subprocess.Popen(
@@ -1851,8 +1869,10 @@ class FacebookScraper:
         
         # Use a dedicated, isolated user data directory to prevent conflicts.
         chrome_options.add_argument(f"user-data-dir={SCRAPER_USER_DATA_DIR}")
-        chrome_options.add_argument("profile-directory=Profile 2")
+        chrome_options.add_argument("profile-directory=Default")
         #profile 10 is blue orchid
+        #default = laptop
+        #profile 2 = pc
         
         # Additional safety options
         chrome_options.add_argument("--headless")
@@ -1892,7 +1912,10 @@ class FacebookScraper:
         chrome_options.add_experimental_option("prefs", prefs)
         # Use a separate, dedicated user data directory for the second driver.
         chrome_options.add_argument(f"user-data-dir={MESSAGING_USER_DATA_DIR}")
-        chrome_options.add_argument("profile-directory=Profile 11")
+        chrome_options.add_argument("profile-directory=Profile 1")
+        #profile 11 = pc
+        #profile 1 = laptop
+
 
         # Additional options to improve stability
         chrome_options.add_argument("--headless")
@@ -2375,26 +2398,3 @@ class FacebookScraper:
 
     def search_and_select_listings(self, driver, search_query, output_file_path):
         import gc
-        visible_listings_scanned = 0
-        global suitable_listings, current_listing_index, duplicate_counter, scanned_urls 
-        marketplace_url = f"https://www.facebook.com/marketplace/search?query={search_query}" 
-
-        listing_queue = []  # Maintain as list for ordered processing
-        no_new_listings_count = 0 
-        suitability_reason = "Not processed"
-        profit_suitability = False
-        first_scan = True 
-        scanned_urls = []  # Maintain as list for ordered processing
-        consecutive_duplicate_count = 0 
-
-        scanned_urls_file = "scanned_urls.txt" 
-        try: 
-            with open(scanned_urls_file, 'r') as f: 
-                scanned_urls = [line.strip() for line in f if line.strip()]  # Read non-empty lines
-        except FileNotFoundError: 
-            print("No previous scanned URLs file found. Starting fresh.") 
-
-        # Clear the file at start
-        with open(scanned_urls_file, 'w') as f: 
-            pass 
-
