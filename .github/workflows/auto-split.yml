@@ -44,6 +44,6 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add part1.py part2.py
+        git add 2part1.py 2part2.py
         git diff --staged --quiet || git commit -m "Auto-split code files"
         git push
