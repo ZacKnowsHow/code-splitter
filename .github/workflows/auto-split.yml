@@ -27,23 +27,23 @@ jobs:
             lines = f.readlines()
 
         split_line = 2400
-        part1_lines = lines[:split_line]
-        part2_lines = lines[split_line:]
+        2part1_lines = lines[:split_line]
+        2_lines = lines[split_line:]
 
-        with open('part1.py', 'w') as f:
-            f.writelines(part1_lines)
+        with open('2part1.py', 'w') as f:
+            f.writelines(2_lines)
 
-        with open('part2.py', 'w') as f:
+        with open('2.py', 'w') as f:
             f.write(f"# Continuation from line {split_line + 1}\n")
-            f.writelines(part2_lines)
+            f.writelines(2_lines)
 
-        print(f"Split complete: {len(part1_lines)} + {len(part2_lines)} lines")
+        print(f"Split complete: {len(part1_lines)} + {len(_lines)} lines")
         PY
 
     - name: Commit split files
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add 2part1.py 2part2.py
+        git add 2part1.py 2.py
         git diff --staged --quiet || git commit -m "Auto-split code files"
         git push
