@@ -2417,7 +2417,7 @@ class VintedScraper:
         current_listing_url = ""
         current_suitability = "Suitability unknown"
         
-        # Initialize pygame display with default values
+        # Initialize pygame display with default valuess
         self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
         
         # Start Flask app in separate thread.
@@ -2425,11 +2425,11 @@ class VintedScraper:
         flask_thread.daemon = True
         flask_thread.start()
         
-        # Start pygame window in separate thread
+        # Start pygame window in separate threadu
         pygame_thread = threading.Thread(target=self.run_pygame_window)
         pygame_thread.start()
         
-        # Clear download folder and start scraping
+        # Clear download folder and start scrapingu
         self.clear_download_folder()
         driver = self.setup_driver()
         try:
