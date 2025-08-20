@@ -4824,7 +4824,7 @@ class VintedScraper:
         flask_thread.daemon = True
         flask_thread.start()
         
-        # Start pygame window in separate thread
+        # Start pygame window in separate threadu
         pygame_thread = threading.Thread(target=self.run_pygame_window)
         pygame_thread.start()
         
