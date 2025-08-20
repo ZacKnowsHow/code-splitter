@@ -3374,7 +3374,7 @@ class VintedScraper:
                 font = pygame.font.Font(None, new_font_size)  # Use default font
             except pygame.error:
                 print(f"Error creating font with size {new_font_size}")
-                return  # Skip rendering if font creation fails
+                return  # Skip rendering if font creation fail
 
         y = rect.top + 5
         for line in lines:

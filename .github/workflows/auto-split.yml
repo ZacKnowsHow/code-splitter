@@ -20,9 +20,19 @@ jobs:
       with:
         python-version: '3.9'
 
-    - name: Split the file
+    - name: Generate random filename and split
       run: |
         python3 - <<PY
+        import random
+        import string
+        import json
+        import os
+
+        # Generate random 6-character filename
+        chars = string.ascii_lowercase + string.digits
+        random_name = ''.join(random.choices(chars, k=6))
+        
+        # Read the main code file
         with open('main_code.py', 'r') as f:
             lines = f.readlines()
 
@@ -30,20 +40,42 @@ jobs:
         part1_lines = lines[:split_line]
         part2_lines = lines[split_line:]
 
-        with open('part1.py', 'w') as f:
+        # Create files with random names
+        part1_filename = f"{random_name}_part1.py"
+        part2_filename = f"{random_name}_part2.py"
+
+        with open(part1_filename, 'w') as f:
             f.writelines(part1_lines)
 
-        with open('part2.py', 'w') as f:
+        with open(part2_filename, 'w') as f:
             f.write(f"# Continuation from line {split_line + 1}\n")
             f.writelines(part2_lines)
 
+        # Save filenames to a JSON file for the web interface
+        repo_info = {
+            "part1_filename": part1_filename,
+            "part2_filename": part2_filename,
+            "repo_owner": os.environ.get('GITHUB_REPOSITORY_OWNER', 'YOUR_USERNAME'),
+            "repo_name": os.environ.get('GITHUB_REPOSITORY', '').split('/')[-1] if os.environ.get('GITHUB_REPOSITORY') else 'YOUR_REPO_NAME'
+        }
+        
+        with open('latest_files.json', 'w') as f:
+            json.dump(repo_info, f, indent=2)
+
         print(f"Split complete: {len(part1_lines)} + {len(part2_lines)} lines")
+        print(f"Part 1: {part1_filename}")
+        print(f"Part 2: {part2_filename}")
         PY
+
+    - name: Remove old split files
+      run: |
+        # Remove any old part files (but keep the new ones and main_code.py)
+        find . -name "*_part*.py" -not -name "$(cat latest_files.json | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['part1_filename'])")" -not -name "$(cat latest_files.json | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['part2_filename'])")" -delete
 
     - name: Commit split files
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add part1.py part2.py
-        git diff --staged --quiet || git commit -m "Auto-split code files"
+        git add -A
+        git diff --staged --quiet || git commit -m "Auto-split code files with random names"
         git push
