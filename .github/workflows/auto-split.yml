@@ -1,7 +1,5 @@
-- name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'name: Auto Split Code File
+name: Auto Split Code File
+
 on:
   push:
     paths:
@@ -10,67 +8,42 @@ on:
 jobs:
   split-file:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v3
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        fetch-depth: 0
-    
-    - name: Debug information
-      run: |
-        echo "=== Repository Status ==="
-        pwd
-        ls -la
-        echo "=== Main code file info ==="
-        wc -l main_code.py
-        echo "=== Git status before split ==="
-        git status --porcelain
-        echo "=== Split files before processing ==="
-        ls -la twopart*.py || echo "Split files don't exist yet"
-    
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
     - name: Split the file
       run: |
-        python3 - <<'EOF'
+        python3 - <<PY
         with open('main_code.py', 'r') as f:
             lines = f.readlines()
-        
+
         split_line = 2400
         part1_lines = lines[:split_line]
         part2_lines = lines[split_line:]
-        
-        with open('twopart1.py', 'w') as f:
+
+        with open('part1.py', 'w') as f:
             f.writelines(part1_lines)
-        
-        with open('twopart2.py', 'w') as f:
+
+        with open('part2.py', 'w') as f:
             f.write(f"# Continuation from line {split_line + 1}\n")
             f.writelines(part2_lines)
-        
+
         print(f"Split complete: {len(part1_lines)} + {len(part2_lines)} lines")
-        EOF
-    
-    - name: Check for changes
-      id: check_changes
+        PY
+
+    - name: Commit split files
       run: |
-        # Always add files to staging
-        git add twopart1.py twopart2.py
-        
-        # Check if there are any changes to commit
-        if git diff --cached --quiet; then
-          echo "changes=false" >> $GITHUB_OUTPUT
-          echo "No changes to commit - files are identical"
-        else
-          echo "changes=true" >> $GITHUB_OUTPUT
-          echo "Changes detected in split files"
-          git diff --cached --name-only
-        fi
-    
-    - name: Commit and push split files
-      if: steps.check_changes.outputs.changes == 'true'
-      run: |
-        git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        git commit -m "Auto-split main_code.py into twopart1.py and twopart2.py [$(date '+%Y-%m-%d %H:%M:%S')]"
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add part1.py part2.py
+        git diff --staged --quiet || git commit -m "Auto-split code files"
         git push
