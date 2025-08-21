@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Code Links Generator</title>
+    <title>Facebook Marketplace/Vinted Scraper - Code Links</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 900px;
             margin: 50px auto;
             padding: 20px;
             background-color: #f5f5f5;
@@ -41,39 +41,81 @@
             font-weight: bold;
             margin-top: 10px;
         }
-        .links {
+        .preview {
             background-color: #f9f9f9;
             padding: 15px;
             border-radius: 4px;
             margin: 15px 0;
             word-break: break-all;
+            border: 1px solid #ddd;
         }
         .filename {
             font-family: monospace;
             background-color: #e9e9e9;
             padding: 2px 6px;
             border-radius: 3px;
+            font-size: 12px;
+        }
+        .line-info {
+            color: #666;
+            font-size: 14px;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .file-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .file-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+        }
+        .file-card h4 {
+            margin: 0 0 10px 0;
+            color: #495057;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Code Links Generator</h1>
+        <h1>🔍 Facebook Marketplace/Vinted Scraper</h1>
         <p>Click the button below to copy your formatted message with the latest code links:</p>
         
-        <button onclick="copyMessage()">📋 Copy Message to Clipboard</button>
+        <button onclick="copyMessage()">📋 Copy Scraper Message to Clipboard</button>
         
         <div id="status"></div>
         
-        <div id="preview" class="links" style="display:none;">
-            <h3>Preview:</h3>
+        <div id="preview" class="preview" style="display:none;">
+            <h3>📋 Message Preview:</h3>
             <div id="message-preview"></div>
         </div>
 
         <div id="file-info" style="display:none;">
-            <h3>Current Files:</h3>
-            <p>Part 1: <span id="part1-name" class="filename"></span></p>
-            <p>Part 2: <span id="part2-name" class="filename"></span></p>
+            <h3>📁 Current Code Files:</h3>
+            <div class="file-grid">
+                <div class="file-card">
+                    <h4>Part 1</h4>
+                    <div class="line-info">Lines 0 - 2200</div>
+                    <div class="filename" id="part1-name"></div>
+                </div>
+                <div class="file-card">
+                    <h4>Part 2</h4>
+                    <div class="line-info">Lines 2201 - 4400</div>
+                    <div class="filename" id="part2-name"></div>
+                </div>
+                <div class="file-card">
+                    <h4>Part 3</h4>
+                    <div class="line-info">Lines 4401 onwards</div>
+                    <div class="filename" id="part3-name"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -89,12 +131,13 @@
                 
                 const part1Link = `https://raw.githubusercontent.com/${data.repo_owner}/${data.repo_name}/main/${data.part1_filename}`;
                 const part2Link = `https://raw.githubusercontent.com/${data.repo_owner}/${data.repo_name}/main/${data.part2_filename}`;
+                const part3Link = `https://raw.githubusercontent.com/${data.repo_owner}/${data.repo_name}/main/${data.part3_filename}`;
                 
-                const message = `This is my code, here is part 1 ${part1Link} and here is part 2 ${part2Link}`;
+                const message = `I have a dual facebook marketplace/vinted web scraper. The following 3 files show you the code of my scraper, the first link shows the first 2200 lines, the following one shows lines 2201-4400 and the third one shows lines 4401+: line 0 - 2200: ${part1Link} line 2201-4400: ${part2Link} line 4401 onwards: ${part3Link}`;
                 
                 await navigator.clipboard.writeText(message);
                 
-                document.getElementById('status').innerHTML = '<div class="success">✅ Message copied to clipboard!</div>';
+                document.getElementById('status').innerHTML = '<div class="success">✅ Scraper message copied to clipboard!</div>';
                 
                 // Show preview
                 document.getElementById('message-preview').textContent = message;
@@ -103,6 +146,7 @@
                 // Show file info
                 document.getElementById('part1-name').textContent = data.part1_filename;
                 document.getElementById('part2-name').textContent = data.part2_filename;
+                document.getElementById('part3-name').textContent = data.part3_filename;
                 document.getElementById('file-info').style.display = 'block';
                 
             } catch (error) {
