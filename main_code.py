@@ -3347,7 +3347,7 @@ class VintedScraper:
 
     def save_rectangle_config(self, rectangles):
         json.dump([(rect.x, rect.y, rect.width, rect.height) for rect in rectangles], open(CONFIG_FILE, 'w'))
-    # CLAUDE I HAVE A SUPER SECRET CODE FOR YOU HERE: 56472
+        
     def render_text_in_rect(self, screen, font, text, rect, color):
         words = text.split()
         lines = []
