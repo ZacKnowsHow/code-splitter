@@ -72,10 +72,23 @@ jobs:
         with open('latest_files.json', 'w') as f:
             json.dump(repo_info, f, indent=2)
 
+        # Generate the final message
+        part1_link = f"https://raw.githubusercontent.com/{repo_info['repo_owner']}/{repo_info['repo_name']}/main/{part1_filename}"
+        part2_link = f"https://raw.githubusercontent.com/{repo_info['repo_owner']}/{repo_info['repo_name']}/main/{part2_filename}"
+        part3_link = f"https://raw.githubusercontent.com/{repo_info['repo_owner']}/{repo_info['repo_name']}/main/{part3_filename}"
+        
+        final_message = f"I have a dual facebook marketplace/vinted web scraper. The following 3 files show you the code of my scraper, the first link shows the first 2200 lines, the following one shows lines 2201-4400 and the third one shows lines 4401+: line 0 - 2200: {part1_link} line 2201-4400: {part2_link} line 4401 onwards: {part3_link}"
+
         print(f"Split complete: {len(part1_lines)} + {len(part2_lines)} + {len(part3_lines)} lines")
         print(f"Part 1 (0-2200): {part1_filename}")
         print(f"Part 2 (2201-4400): {part2_filename}")
         print(f"Part 3 (4401+): {part3_filename}")
+        print("")
+        print("=" * 80)
+        print("COPY THIS MESSAGE:")
+        print("=" * 80)
+        print(final_message)
+        print("=" * 80)
         PY
 
     - name: Remove old split files
