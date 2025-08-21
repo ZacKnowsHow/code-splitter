@@ -3344,7 +3344,7 @@ class VintedScraper:
 
     def load_rectangle_config(self):
         return json.load(open(CONFIG_FILE, 'r')) if os.path.exists(CONFIG_FILE) else None
-
+#
     def save_rectangle_config(self, rectangles):
         json.dump([(rect.x, rect.y, rect.width, rect.height) for rect in rectangles], open(CONFIG_FILE, 'w'))
         
