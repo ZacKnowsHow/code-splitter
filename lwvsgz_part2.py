@@ -1,4 +1,6 @@
 # Continuation from line 2201
+        
+        # Identify non-game classes
         non_game_classes = [cls for cls in detected_objects.keys() if cls not in game_classes and detected_objects.get(cls, 0) > 0]
         
         # Add a new suitability check for game count that actually prevents listing from being added
@@ -2197,5 +2199,3 @@ class VintedScraper:
                 # Only include images that look like product photos
                 if (
                     # Vinted product images typically have f800, f1200, etc.
-                    '/f800/' in src or 
-                    '/f1200/' in src or 

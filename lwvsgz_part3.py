@@ -1,4 +1,6 @@
 # Continuation from line 4401
+                    '/f800/' in src or 
+                    '/f1200/' in src or 
                     '/f600/' in src or
                     # Or contain vinted/cloudinary and are likely product images
                     (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
