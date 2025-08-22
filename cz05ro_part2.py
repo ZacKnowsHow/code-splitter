@@ -1709,6 +1709,7 @@ class VintedScraper:
                     detected_objects[new] = 1
         
         return detected_objects
+    
     def check_vinted_listing_suitability(self, listing_info):
         """
         Check if a Vinted listing meets all suitability criteria
@@ -1716,13 +1717,34 @@ class VintedScraper:
         title = listing_info.get("title", "").lower()
         description = listing_info.get("description", "").lower()
         price = listing_info.get("price", 0)
+        seller_reviews = listing_info.get("seller_reviews", "No reviews yet")
         
         try:
             price_float = float(price)
         except (ValueError, TypeError):
             return "Unsuitable: Unable to parse price"
         
+        # Extract number of reviews from seller_reviews
+        reviews_count = 0
+        if seller_reviews and seller_reviews != "No reviews yet":
+            # Try to extract number from "Reviews: X" format or just numeric string
+            if seller_reviews.startswith("Reviews: "):
+                try:
+                    reviews_count = int(seller_reviews.replace("Reviews: ", ""))
+                except ValueError:
+                    reviews_count = 0
+            elif seller_reviews.isdigit():
+                reviews_count = int(seller_reviews)
+            else:
+                # Try to extract any number from the string
+                import re
+                match = re.search(r'\d+', str(seller_reviews))
+                if match:
+                    reviews_count = int(match.group())
+        
         checks = [
+            (lambda: reviews_count < review_min,
+            f"Lack of reviews (has {reviews_count}, needs {review_min}+)"),
             (lambda: any(word in title for word in vinted_title_forbidden_words),
             "Title contains forbidden words"),
             (lambda: not any(word in title for word in vinted_title_must_contain),
@@ -1820,7 +1842,8 @@ class VintedScraper:
             "title": details.get("title", "").lower(),
             "description": details.get("description", "").lower(),
             "price": total_price,
-            "url": url
+            "url": url,
+            "seller_reviews": seller_reviews  # Add seller_reviews for the review check
         }
 
         # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
@@ -1906,6 +1929,14 @@ class VintedScraper:
 
         # Add to suitable listings based on VINTED_SHOW_ALL_LISTINGS setting
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
+            # **NEW: Bookmark listing if suitable and bookmark_listings is True**
+            if is_suitable and bookmark_listings:
+                print(f"🔖 Listing is suitable - starting bookmark process...")
+                # Run bookmark process in separate thread to avoid blocking main scraping
+                bookmark_thread = threading.Thread(target=self.bookmark_driver, args=(url,))
+                bookmark_thread.daemon = True
+                bookmark_thread.start()
+            
             # **NEW: Send Pushover notification (same logic as Facebook)**
             notification_title = f"New Vinted Listing: £{total_price:.2f}"
             notification_message = (
@@ -2168,34 +2199,3 @@ class VintedScraper:
         
         # Filter images more strictly to avoid profile pictures and small icons
         valid_imgs = []
-        for img in imgs:
-            src = img.get_attribute("src")
-            parent_classes = ""
-            
-            # Get parent element classes to check for profile picture indicators
-            try:
-                parent = img.find_element(By.XPATH, "..")
-                parent_classes = parent.get_attribute("class") or ""
-            except:
-                pass
-            
-            # Check if this is a valid product image
-            if src and src.startswith('http'):
-                # Exclude profile pictures and small icons based on URL patterns
-                if (
-                    # Skip small profile pictures (50x50, 75x75, etc.)
-                    '/50x50/' in src or 
-                    '/75x75/' in src or 
-                    '/100x100/' in src or
-                    # Skip if parent has circle class (usually profile pics)
-                    'circle' in parent_classes.lower() or
-                    # Skip SVG icons
-                    src.endswith('.svg') or
-                    # Skip very obviously small images by checking dimensions in URL
-                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
-                ):
-                    continue
-                
-                # Only include images that look like product photos
-                if (
-                    # Vinted product images typically have f800, f1200, etc.

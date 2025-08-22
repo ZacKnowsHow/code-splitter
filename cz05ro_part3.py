@@ -1,4 +1,35 @@
 # Continuation from line 4401
+        for img in imgs:
+            src = img.get_attribute("src")
+            parent_classes = ""
+            
+            # Get parent element classes to check for profile picture indicators
+            try:
+                parent = img.find_element(By.XPATH, "..")
+                parent_classes = parent.get_attribute("class") or ""
+            except:
+                pass
+            
+            # Check if this is a valid product image
+            if src and src.startswith('http'):
+                # Exclude profile pictures and small icons based on URL patterns
+                if (
+                    # Skip small profile pictures (50x50, 75x75, etc.)
+                    '/50x50/' in src or 
+                    '/75x75/' in src or 
+                    '/100x100/' in src or
+                    # Skip if parent has circle class (usually profile pics)
+                    'circle' in parent_classes.lower() or
+                    # Skip SVG icons
+                    src.endswith('.svg') or
+                    # Skip very obviously small images by checking dimensions in URL
+                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
+                ):
+                    continue
+                
+                # Only include images that look like product photos
+                if (
+                    # Vinted product images typically have f800, f1200, etc.
                     '/f800/' in src or 
                     '/f1200/' in src or 
                     '/f600/' in src or
@@ -392,6 +423,68 @@
             import traceback
             traceback.print_exc()
 
+    def bookmark_driver(self, url):
+        """
+        Opens a separate Chrome driver to bookmark a listing without interrupting main scraping
+        """
+        if not url:
+            print("⚠️ No URL provided for bookmarking")
+            return
+        
+        bookmark_driver = None
+        try:
+            print(f"🔖 Starting bookmark process for: {url}")
+            
+            # Use the same driver setup as the buying driver
+            prefs = {
+                "profile.default_content_setting_values.notifications": 2,
+                "profile.default_content_setting_values.popups": 0,
+                "download.prompt_for_download": False,
+            }
+
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull
+            )
+            
+            bookmark_opts = Options()
+            bookmark_opts.add_experimental_option("prefs", prefs)
+            #bookmark_opts.add_argument("--headless")
+            bookmark_opts.add_argument("--no-sandbox")
+            bookmark_opts.add_argument("--disable-dev-shm-usage")
+            bookmark_opts.add_argument("--disable-gpu")
+            bookmark_opts.add_argument("--remote-debugging-port=0")
+            bookmark_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
+            bookmark_opts.add_argument(f"--profile-directory=Profile 2")
+            #Profile 2 = pc
+            #Default = laptop
+            
+            bookmark_driver = webdriver.Chrome(service=service, options=bookmark_opts)
+            print("✅ Bookmark driver started successfully")
+            
+            # Navigate to the listing
+            bookmark_driver.get(url)
+            
+            # Wait for page to load
+            WebDriverWait(bookmark_driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            
+            # Wait 2 seconds to ensure page is fully loaded
+            time.sleep(2)
+            
+            print(f"🔖 Successfully navigated to listing for bookmarking: {url}")
+            
+        except Exception as e:
+            print(f"❌ Error during bookmarking process: {e}")
+        finally:
+            # Always close the bookmark driver
+            if bookmark_driver:
+                try:
+                    bookmark_driver.quit()
+                    print("🔒 Bookmark driver closed successfully")
+                except Exception as e:
+                    print(f"⚠️ Warning: Error closing bookmark driver: {e}")
     def run(self):
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
