@@ -153,7 +153,7 @@ REPEAT_LISTINGS = True
 WAIT_TIME_AFTER_REFRESH = 125
 LOCK_POSITION = True
 SHOW_ALL_LISTINGS = True
-VINTED_SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = True
 SHOW_PARTIALLY_SUITABLE = False
 setup_website = False
 send_message = True
@@ -3908,6 +3908,7 @@ class VintedScraper:
                     detected_objects[new] = 1
         
         return detected_objects
+    
     def check_vinted_listing_suitability(self, listing_info):
         """
         Check if a Vinted listing meets all suitability criteria
@@ -3915,13 +3916,34 @@ class VintedScraper:
         title = listing_info.get("title", "").lower()
         description = listing_info.get("description", "").lower()
         price = listing_info.get("price", 0)
+        seller_reviews = listing_info.get("seller_reviews", "No reviews yet")
         
         try:
             price_float = float(price)
         except (ValueError, TypeError):
             return "Unsuitable: Unable to parse price"
         
+        # Extract number of reviews from seller_reviews
+        reviews_count = 0
+        if seller_reviews and seller_reviews != "No reviews yet":
+            # Try to extract number from "Reviews: X" format or just numeric string
+            if seller_reviews.startswith("Reviews: "):
+                try:
+                    reviews_count = int(seller_reviews.replace("Reviews: ", ""))
+                except ValueError:
+                    reviews_count = 0
+            elif seller_reviews.isdigit():
+                reviews_count = int(seller_reviews)
+            else:
+                # Try to extract any number from the string
+                import re
+                match = re.search(r'\d+', str(seller_reviews))
+                if match:
+                    reviews_count = int(match.group())
+        
         checks = [
+            (lambda: reviews_count < review_min,
+            f"Lack of reviews (has {reviews_count}, needs {review_min}+)"),
             (lambda: any(word in title for word in vinted_title_forbidden_words),
             "Title contains forbidden words"),
             (lambda: not any(word in title for word in vinted_title_must_contain),
@@ -4019,7 +4041,8 @@ class VintedScraper:
             "title": details.get("title", "").lower(),
             "description": details.get("description", "").lower(),
             "price": total_price,
-            "url": url
+            "url": url,
+            "seller_reviews": seller_reviews  # Add seller_reviews for the review check
         }
 
         # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
@@ -4105,6 +4128,14 @@ class VintedScraper:
 
         # Add to suitable listings based on VINTED_SHOW_ALL_LISTINGS setting
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
+            # **NEW: Bookmark listing if suitable and bookmark_listings is True**
+            if is_suitable and bookmark_listings:
+                print(f"🔖 Listing is suitable - starting bookmark process...")
+                # Run bookmark process in separate thread to avoid blocking main scraping
+                bookmark_thread = threading.Thread(target=self.bookmark_driver, args=(url,))
+                bookmark_thread.daemon = True
+                bookmark_thread.start()
+            
             # **NEW: Send Pushover notification (same logic as Facebook)**
             notification_title = f"New Vinted Listing: £{total_price:.2f}"
             notification_message = (
@@ -4791,6 +4822,68 @@ class VintedScraper:
             import traceback
             traceback.print_exc()
 
+    def bookmark_driver(self, url):
+        """
+        Opens a separate Chrome driver to bookmark a listing without interrupting main scraping
+        """
+        if not url:
+            print("⚠️ No URL provided for bookmarking")
+            return
+        
+        bookmark_driver = None
+        try:
+            print(f"🔖 Starting bookmark process for: {url}")
+            
+            # Use the same driver setup as the buying driver
+            prefs = {
+                "profile.default_content_setting_values.notifications": 2,
+                "profile.default_content_setting_values.popups": 0,
+                "download.prompt_for_download": False,
+            }
+
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull
+            )
+            
+            bookmark_opts = Options()
+            bookmark_opts.add_experimental_option("prefs", prefs)
+            #bookmark_opts.add_argument("--headless")
+            bookmark_opts.add_argument("--no-sandbox")
+            bookmark_opts.add_argument("--disable-dev-shm-usage")
+            bookmark_opts.add_argument("--disable-gpu")
+            bookmark_opts.add_argument("--remote-debugging-port=0")
+            bookmark_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
+            bookmark_opts.add_argument(f"--profile-directory=Profile 2")
+            #Profile 2 = pc
+            #Default = laptop
+            
+            bookmark_driver = webdriver.Chrome(service=service, options=bookmark_opts)
+            print("✅ Bookmark driver started successfully")
+            
+            # Navigate to the listing
+            bookmark_driver.get(url)
+            
+            # Wait for page to load
+            WebDriverWait(bookmark_driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            
+            # Wait 2 seconds to ensure page is fully loaded
+            time.sleep(2)
+            
+            print(f"🔖 Successfully navigated to listing for bookmarking: {url}")
+            
+        except Exception as e:
+            print(f"❌ Error during bookmarking process: {e}")
+        finally:
+            # Always close the bookmark driver
+            if bookmark_driver:
+                try:
+                    bookmark_driver.quit()
+                    print("🔒 Bookmark driver closed successfully")
+                except Exception as e:
+                    print(f"⚠️ Warning: Error closing bookmark driver: {e}")
     def run(self):
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
