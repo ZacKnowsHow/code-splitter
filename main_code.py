@@ -153,7 +153,7 @@ REPEAT_LISTINGS = True
 WAIT_TIME_AFTER_REFRESH = 125
 LOCK_POSITION = True
 SHOW_ALL_LISTINGS = True
-VINTED_SHOW_ALL_LISTINGS = True
+VINTED_SHOW_ALL_LISTINGS = False
 SHOW_PARTIALLY_SUITABLE = False
 setup_website = False
 send_message = True
@@ -4041,8 +4041,7 @@ class VintedScraper:
             "title": details.get("title", "").lower(),
             "description": details.get("description", "").lower(),
             "price": total_price,
-            "url": url,
-            "seller_reviews": seller_reviews  # Add seller_reviews for the review check
+            "url": url
         }
 
         # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
@@ -4128,14 +4127,6 @@ class VintedScraper:
 
         # Add to suitable listings based on VINTED_SHOW_ALL_LISTINGS setting
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            # **NEW: Bookmark listing if suitable and bookmark_listings is True**
-            if is_suitable and bookmark_listings:
-                print(f"🔖 Listing is suitable - starting bookmark process...")
-                # Run bookmark process in separate thread to avoid blocking main scraping
-                bookmark_thread = threading.Thread(target=self.bookmark_driver, args=(url,))
-                bookmark_thread.daemon = True
-                bookmark_thread.start()
-            
             # **NEW: Send Pushover notification (same logic as Facebook)**
             notification_title = f"New Vinted Listing: £{total_price:.2f}"
             notification_message = (
@@ -4822,68 +4813,6 @@ class VintedScraper:
             import traceback
             traceback.print_exc()
 
-    def bookmark_driver(self, url):
-        """
-        Opens a separate Chrome driver to bookmark a listing without interrupting main scraping
-        """
-        if not url:
-            print("⚠️ No URL provided for bookmarking")
-            return
-        
-        bookmark_driver = None
-        try:
-            print(f"🔖 Starting bookmark process for: {url}")
-            
-            # Use the same driver setup as the buying driver
-            prefs = {
-                "profile.default_content_setting_values.notifications": 2,
-                "profile.default_content_setting_values.popups": 0,
-                "download.prompt_for_download": False,
-            }
-
-            service = Service(
-                ChromeDriverManager().install(),
-                log_path=os.devnull
-            )
-            
-            bookmark_opts = Options()
-            bookmark_opts.add_experimental_option("prefs", prefs)
-            #bookmark_opts.add_argument("--headless")
-            bookmark_opts.add_argument("--no-sandbox")
-            bookmark_opts.add_argument("--disable-dev-shm-usage")
-            bookmark_opts.add_argument("--disable-gpu")
-            bookmark_opts.add_argument("--remote-debugging-port=0")
-            bookmark_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
-            bookmark_opts.add_argument(f"--profile-directory=Profile 2")
-            #Profile 2 = pc
-            #Default = laptop
-            
-            bookmark_driver = webdriver.Chrome(service=service, options=bookmark_opts)
-            print("✅ Bookmark driver started successfully")
-            
-            # Navigate to the listing
-            bookmark_driver.get(url)
-            
-            # Wait for page to load
-            WebDriverWait(bookmark_driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            
-            # Wait 2 seconds to ensure page is fully loaded
-            time.sleep(2)
-            
-            print(f"🔖 Successfully navigated to listing for bookmarking: {url}")
-            
-        except Exception as e:
-            print(f"❌ Error during bookmarking process: {e}")
-        finally:
-            # Always close the bookmark driver
-            if bookmark_driver:
-                try:
-                    bookmark_driver.quit()
-                    print("🔒 Bookmark driver closed successfully")
-                except Exception as e:
-                    print(f"⚠️ Warning: Error closing bookmark driver: {e}")
     def run(self):
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
