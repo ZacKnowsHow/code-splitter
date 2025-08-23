@@ -1,4 +1,15 @@
 # Continuation from line 4401
+        # Handle mutually exclusive items
+        final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
+        
+        # VINTED-SPECIFIC POST-SCAN GAME DEDUPLICATION
+        # Define game classes that should be capped at 1 per listing
+        vinted_game_classes = [
+            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
+            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
+            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
+            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
+            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
             'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
             'sword_p', 'tears_z', 'violet_p'
         ]
@@ -18,7 +29,7 @@
         
         return final_detected_objects, processed_images
 
-        
+
     def download_images_for_listing(self, driver, listing_dir):
         # Wait for the page to fully load
         try:
@@ -167,9 +178,12 @@
         Example: https://www.vinted.co.uk/items/6862154542-sonic-forces?referrer=catalog
         Returns: "6862154542"
         """
+        debug_function_call("extract_vinted_listing_id")
+        import re  # FIXED: Import re at function level
+        
         if not url:
             return None
-        import re
+        
         # Match pattern: /items/[numbers]-
         match = re.search(r'/items/(\d+)-', url)
         if match:
@@ -481,6 +495,17 @@
             import traceback
             traceback.print_exc()
 
+
+    def debug_re_usage():
+        """Debug function to trace re module usage"""
+        print("DEBUG: Testing re module access in current scope")
+        try:
+            test_match = re.search(r'\d+', "123")
+            print(f"DEBUG: re.search works fine: {test_match}")
+            return True
+        except Exception as e:
+            print(f"DEBUG: re module error in debug_re_usage: {e}")
+            return False
     def run(self):
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
