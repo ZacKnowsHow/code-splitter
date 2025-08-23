@@ -84,6 +84,7 @@ CLASS_NAMES = [
    'switch_box', 'switch_in_tv', 'switch_screen', 'switch_sports', 'sword_p', 'tears_z',
    'tv_black', 'tv_white', 'violet_p'
 ]
+
 GENERAL_CONFIDENCE_MIN = 0.5
 HIGHER_CONFIDENCE_MIN = 0.55
 HIGHER_CONFIDENCE_ITEMS = { 'controller': HIGHER_CONFIDENCE_MIN, 'tv_white': HIGHER_CONFIDENCE_MIN, 'tv_black': HIGHER_CONFIDENCE_MIN }
@@ -289,6 +290,10 @@ vinted_description_forbidden_words = ['faulty', 'jailbreak', 'visit us', 'openin
 vinted_min_price = 14
 vinted_max_price = 500
 vinted_banned_prices = {59.00, 49.00, 17.00}
+
+def debug_function_call(func_name, line_number=None):
+    """Debug function to track where errors occur"""
+    print(f"DEBUG: Entering function {func_name}" + (f" at line {line_number}" if line_number else ""))
 
 # Vinted profit suitability ranges (same structure as Facebook but independent variables)
 def check_vinted_profit_suitability(listing_price, profit_percentage):
@@ -3774,11 +3779,12 @@ class VintedScraper:
             
 
     def extract_vinted_price(self, text):
-        import re
-        
         """
         Enhanced price extraction for Vinted that handles various price formats
         """
+        debug_function_call("extract_vinted_price")
+        import re  # FIXED: Import re at function level
+        
         if not text:
             return 0.0
         
@@ -3835,11 +3841,12 @@ class VintedScraper:
         return detected_console
 
     def detect_anonymous_games_vinted(self, listing_title, listing_description):
-        import re
-
         """
         Detect anonymous games count from title and description (ported from Facebook)
         """
+        debug_function_call("detect_anonymous_games_vinted")
+        import re  # FIXED: Import re at function level
+
         def extract_games_number(text):
             # Prioritize specific game type matches first
             matches = (
@@ -3919,6 +3926,9 @@ class VintedScraper:
         Check if a Vinted listing meets all suitability criteria
         FIXED: Properly extract review count from seller_reviews field
         """
+        debug_function_call("check_vinted_listing_suitability")
+        import re  # FIXED: Import re at function level
+        
         title = listing_info.get("title", "").lower()
         description = listing_info.get("description", "").lower()
         price = listing_info.get("price", 0)
@@ -3950,7 +3960,6 @@ class VintedScraper:
                 reviews_count = int(reviews_text)
             else:
                 # Try to extract any number from the string
-                import re
                 match = re.search(r'\d+', reviews_text)
                 if match:
                     reviews_count = int(match.group())
@@ -3987,11 +3996,13 @@ class VintedScraper:
         return "Listing is suitable"
 
     def scrape_item_details(self, driver):
-        import re
         """
         Enhanced scraper with better price extraction and seller reviews
         FIXED: Better extraction and handling of seller reviews
         """
+        debug_function_call("scrape_item_details")
+        import re  # FIXED: Import re at function level
+        
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
         )
@@ -4044,8 +4055,6 @@ class VintedScraper:
                             data[key] = reviews_text  # Keep as string for consistency
                             print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
                         else:
-                            import re
-
                             # Try to extract number from text like "123 reviews" or "(123)"
                             match = re.search(r'(\d+)', reviews_text)
                             if match:
@@ -4246,6 +4255,9 @@ class VintedScraper:
         """
         Enhanced revenue calculation with all Facebook logic
         """
+        debug_function_call("calculate_vinted_revenue")
+        import re  # FIXED: Import re at function level
+        
         # List of game-related classes
         game_classes = [
             '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
@@ -4294,7 +4306,6 @@ class VintedScraper:
         # Calculate revenue from detected objects
         for item, count in detected_objects.items():
             if isinstance(count, str):
-                import re
                 count_match = re.match(r'(\d+)', count)
                 count = int(count_match.group(1)) if count_match else 0
 
@@ -4417,7 +4428,7 @@ class VintedScraper:
         
         return final_detected_objects, processed_images
 
-        
+
     def download_images_for_listing(self, driver, listing_dir):
         # Wait for the page to fully load
         try:
@@ -4566,9 +4577,12 @@ class VintedScraper:
         Example: https://www.vinted.co.uk/items/6862154542-sonic-forces?referrer=catalog
         Returns: "6862154542"
         """
+        debug_function_call("extract_vinted_listing_id")
+        import re  # FIXED: Import re at function level
+        
         if not url:
             return None
-        import re
+        
         # Match pattern: /items/[numbers]-
         match = re.search(r'/items/(\d+)-', url)
         if match:
@@ -4880,6 +4894,17 @@ class VintedScraper:
             import traceback
             traceback.print_exc()
 
+
+    def debug_re_usage():
+        """Debug function to trace re module usage"""
+        print("DEBUG: Testing re module access in current scope")
+        try:
+            test_match = re.search(r'\d+', "123")
+            print(f"DEBUG: re.search works fine: {test_match}")
+            return True
+        except Exception as e:
+            print(f"DEBUG: re module error in debug_re_usage: {e}")
+            return False
     def run(self):
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
