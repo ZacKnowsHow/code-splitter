@@ -1,4 +1,9 @@
 # Continuation from line 2201
+    'sword_p', 'tears_z', 'violet_p'
+    ]
+        
+        # Count detected games
+        game_count = sum(detected_objects.get(game, 0) for game in game_classes)
         
         # Identify non-game classes
         non_game_classes = [cls for cls in detected_objects.keys() if cls not in game_classes and detected_objects.get(cls, 0) > 0]
@@ -1575,11 +1580,12 @@ class VintedScraper:
             
 
     def extract_vinted_price(self, text):
-        import re
-        
         """
         Enhanced price extraction for Vinted that handles various price formats
         """
+        debug_function_call("extract_vinted_price")
+        import re  # FIXED: Import re at function level
+        
         if not text:
             return 0.0
         
@@ -1636,11 +1642,12 @@ class VintedScraper:
         return detected_console
 
     def detect_anonymous_games_vinted(self, listing_title, listing_description):
-        import re
-
         """
         Detect anonymous games count from title and description (ported from Facebook)
         """
+        debug_function_call("detect_anonymous_games_vinted")
+        import re  # FIXED: Import re at function level
+
         def extract_games_number(text):
             # Prioritize specific game type matches first
             matches = (
@@ -1720,6 +1727,9 @@ class VintedScraper:
         Check if a Vinted listing meets all suitability criteria
         FIXED: Properly extract review count from seller_reviews field
         """
+        debug_function_call("check_vinted_listing_suitability")
+        import re  # FIXED: Import re at function level
+        
         title = listing_info.get("title", "").lower()
         description = listing_info.get("description", "").lower()
         price = listing_info.get("price", 0)
@@ -1751,7 +1761,6 @@ class VintedScraper:
                 reviews_count = int(reviews_text)
             else:
                 # Try to extract any number from the string
-                import re
                 match = re.search(r'\d+', reviews_text)
                 if match:
                     reviews_count = int(match.group())
@@ -1788,11 +1797,13 @@ class VintedScraper:
         return "Listing is suitable"
 
     def scrape_item_details(self, driver):
-        import re
         """
         Enhanced scraper with better price extraction and seller reviews
         FIXED: Better extraction and handling of seller reviews
         """
+        debug_function_call("scrape_item_details")
+        import re  # FIXED: Import re at function level
+        
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
         )
@@ -1845,8 +1856,6 @@ class VintedScraper:
                             data[key] = reviews_text  # Keep as string for consistency
                             print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
                         else:
-                            import re
-
                             # Try to extract number from text like "123 reviews" or "(123)"
                             match = re.search(r'(\d+)', reviews_text)
                             if match:
@@ -2047,6 +2056,9 @@ class VintedScraper:
         """
         Enhanced revenue calculation with all Facebook logic
         """
+        debug_function_call("calculate_vinted_revenue")
+        import re  # FIXED: Import re at function level
+        
         # List of game-related classes
         game_classes = [
             '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
@@ -2095,7 +2107,6 @@ class VintedScraper:
         # Calculate revenue from detected objects
         for item, count in detected_objects.items():
             if isinstance(count, str):
-                import re
                 count_match = re.match(r'(\d+)', count)
                 count = int(count_match.group(1)) if count_match else 0
 
@@ -2188,14 +2199,3 @@ class VintedScraper:
         # Convert lists to max values
         final_detected_objects = {class_name: max(counts) if counts else 0 for class_name, counts in detected_objects.items()}
         
-        # Handle mutually exclusive items
-        final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
-        
-        # VINTED-SPECIFIC POST-SCAN GAME DEDUPLICATION
-        # Define game classes that should be capped at 1 per listing
-        vinted_game_classes = [
-            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
-            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
-            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
-            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
-            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',

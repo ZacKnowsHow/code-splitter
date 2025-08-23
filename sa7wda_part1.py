@@ -84,6 +84,7 @@ CLASS_NAMES = [
    'switch_box', 'switch_in_tv', 'switch_screen', 'switch_sports', 'sword_p', 'tears_z',
    'tv_black', 'tv_white', 'violet_p'
 ]
+
 GENERAL_CONFIDENCE_MIN = 0.5
 HIGHER_CONFIDENCE_MIN = 0.55
 HIGHER_CONFIDENCE_ITEMS = { 'controller': HIGHER_CONFIDENCE_MIN, 'tv_white': HIGHER_CONFIDENCE_MIN, 'tv_black': HIGHER_CONFIDENCE_MIN }
@@ -289,6 +290,10 @@ vinted_description_forbidden_words = ['faulty', 'jailbreak', 'visit us', 'openin
 vinted_min_price = 14
 vinted_max_price = 500
 vinted_banned_prices = {59.00, 49.00, 17.00}
+
+def debug_function_call(func_name, line_number=None):
+    """Debug function to track where errors occur"""
+    print(f"DEBUG: Entering function {func_name}" + (f" at line {line_number}" if line_number else ""))
 
 # Vinted profit suitability ranges (same structure as Facebook but independent variables)
 def check_vinted_profit_suitability(listing_price, profit_percentage):
@@ -2193,8 +2198,3 @@ class FacebookScraper:
     'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
     'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
     'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
-    'sword_p', 'tears_z', 'violet_p'
-    ]
-        
-        # Count detected games
-        game_count = sum(detected_objects.get(game, 0) for game in game_classes)
