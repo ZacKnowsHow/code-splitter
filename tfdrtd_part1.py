@@ -252,7 +252,7 @@ current_listing_index = 0
 miscellaneous_games_price = 5
 vinted_scraper_instance = None
 test_bookmark_function = True
-click_pay_button_final_check = True
+click_pay_button_final_check = False
 test_bookmark_link = "https://www.vinted.co.uk/items/6926101310-sports-cool-gym-towel?referrer=catalog"
 
 BASE_PRICES = {

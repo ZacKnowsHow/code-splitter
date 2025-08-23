@@ -948,6 +948,9 @@ class VintedScraper:
         })
         return all_prices
     def __init__(self):
+        self.persistent_bookmark_driver = None
+        self.bookmark_driver_ready = False
+
         # Initialize pygame-related variables similar to FacebookScraper
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images
@@ -2196,6 +2199,3 @@ class VintedScraper:
                                 # Draw bounding box
                                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                                 cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
-
