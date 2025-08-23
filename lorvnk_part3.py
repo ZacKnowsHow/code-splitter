@@ -1,4 +1,71 @@
 # Continuation from line 4401
+            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
+            'sword_p', 'tears_z', 'violet_p'
+        ]
+        
+        # Cap each game type to maximum 1 per listing for Vinted
+        games_before_cap = {}
+        for game_class in vinted_game_classes:
+            if final_detected_objects.get(game_class, 0) > 1:
+                games_before_cap[game_class] = final_detected_objects[game_class]
+                final_detected_objects[game_class] = 1
+        
+        # Log the capping if any games were capped
+        if games_before_cap:
+            print("🎮 VINTED GAME DEDUPLICATION APPLIED:")
+            for game, original_count in games_before_cap.items():
+                print(f"  • {game}: {original_count} → 1")
+        
+        return final_detected_objects, processed_images
+
+        
+    def download_images_for_listing(self, driver, listing_dir):
+        # Wait for the page to fully load
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.TAG_NAME, "img"))
+            )
+            # Additional wait for dynamic content
+        except TimeoutException:
+            print("  ▶ Timeout waiting for images to load")
+            return []
+        
+        # Try multiple selectors in order of preference - focusing on product images only
+        img_selectors = [
+            # Target product images specifically (avoid profile pictures)
+            "img.web_ui__Image__content[data-testid^='item-photo-']",
+            "img[data-testid^='item-photo-']",
+            # Target images within containers that suggest product photos
+            "div.web_ui__Image__cover img.web_ui__Image__content",
+            "div.web_ui__Image__scaled img.web_ui__Image__content",
+            "div.web_ui__Image__rounded img.web_ui__Image__content",
+            # Broader selectors but still avoiding profile images
+            "div.feed-grid img",
+            "div[class*='photo'] img",
+        ]
+        
+        imgs = []
+        for selector in img_selectors:
+            imgs = driver.find_elements(By.CSS_SELECTOR, selector)
+            if imgs:
+                print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
+                break
+        
+        if not imgs:
+            print("  ▶ No images found with any selector")
+            return []
+        
+        # Filter images more strictly to avoid profile pictures and small icons
+        valid_imgs = []
+        for img in imgs:
+            src = img.get_attribute("src")
+            parent_classes = ""
+            
+            # Get parent element classes to check for profile picture indicators
+            try:
+                parent = img.find_element(By.XPATH, "..")
+                parent_classes = parent.get_attribute("class") or ""
+            except:
                 pass
             
             # Check if this is a valid product image
@@ -102,7 +169,7 @@
         """
         if not url:
             return None
-        
+        import re
         # Match pattern: /items/[numbers]-
         match = re.search(r'/items/(\d+)-', url)
         if match:
