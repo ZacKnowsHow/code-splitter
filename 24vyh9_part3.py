@@ -623,12 +623,31 @@
                             
                             try:
                                 # SINGLE FAST CHECK - only look for the specific Pay button
-                                WebDriverWait(bookmark_driver, 8).until(
-                                    EC.presence_of_element_located((By.CSS_SELECTOR, 
+                                pay_button = WebDriverWait(bookmark_driver, 8).until(
+                                    EC.element_to_be_clickable((By.CSS_SELECTOR, 
                                         'button[data-testid="single-checkout-order-summary-purchase-button"]'
                                     ))
                                 )
                                 print("🔖 PAYMENT PAGE LOADED!")
+                                
+                                # CHECK IF WE SHOULD CLICK THE PAY BUTTON
+                                if click_pay_button_final_check:
+                                    print("🔖 FINAL CHECK MODE: Clicking Pay button...")
+                                    
+                                    try:
+                                        # SINGLE CLICK ATTEMPT - no retries, no fallbacks
+                                        pay_button.click()
+                                        
+                                        # PRECISELY 0.25 seconds after the click - NO MATTER WHAT
+                                        time.sleep(0.25)
+                                        
+                                        # CTRL+W to close tab instantly
+                                        bookmark_driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.CONTROL + 'w')
+                                        
+                                        print("🔖 FINAL CHECK SUCCESS: Pay button clicked and tab closed after 0.25s")
+                                        
+                                    except Exception as final_error:
+                                        print(f"🔖 FINAL CHECK FAILURE: Error during pay button click or tab close - {final_error}")
                                 
                             except TimeoutException:
                                 print("🔖 PAYMENT PAGE: Timeout - Pay button not found")
@@ -651,8 +670,9 @@
                 # Timeout is fine - we just want to trigger the visit
                 print(f"🔖 NAVIGATION: Timeout (acceptable)")
             
-            # Brief final wait (reduced since we now wait for payment page)
-            time.sleep(1)
+            # Brief final wait (only if NOT in final check mode, since tab will be closed)
+            if not click_pay_button_final_check:
+                time.sleep(1)
             
             print("🔖 SUCCESS: Bookmark completed!")
             return True
