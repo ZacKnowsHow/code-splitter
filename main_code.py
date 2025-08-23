@@ -4092,8 +4092,7 @@ class VintedScraper:
 
     def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
         """
-        Enhanced processing with comprehensive filtering and analysis - FIXED for navigation
-        FIXED: Properly pass seller_reviews to suitability checking
+        Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -4107,12 +4106,12 @@ class VintedScraper:
         seller_reviews = details.get("seller_reviews", "No reviews yet")
         print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
 
-        # FIXED: Create basic listing info for suitability checking - include seller_reviews!
+        # Create basic listing info for suitability checking
         listing_info = {
             "title": details.get("title", "").lower(),
             "description": details.get("description", "").lower(),
             "price": total_price,
-            "seller_reviews": seller_reviews,  # CRITICAL: This was potentially missing!
+            "seller_reviews": seller_reviews,
             "url": url
         }
 
@@ -4184,6 +4183,19 @@ class VintedScraper:
 
         print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
 
+        # 🔖 ULTRA-FAST BOOKMARK FUNCTIONALITY - INSTANT EXECUTION!
+        should_bookmark = False
+        
+        if bookmark_listings and is_suitable:
+            should_bookmark = True
+        elif VINTED_SHOW_ALL_LISTINGS:
+            should_bookmark = True
+            
+        if should_bookmark:
+            # INSTANT bookmark execution - no threading delays, direct call for maximum speed
+            print(f"🔖 INSTANT BOOKMARK: {url}")
+            self.bookmark_driver(url)  # Direct call, no threading overhead
+
         # Create final listing info
         final_listing_info = {
             'title': details.get("title", "No title"),
@@ -4197,12 +4209,12 @@ class VintedScraper:
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
             'suitability': suitability_reason,
-            'seller_reviews': seller_reviews  # NEW: Add seller reviews to listing info
+            'seller_reviews': seller_reviews
         }
 
         # Add to suitable listings based on VINTED_SHOW_ALL_LISTINGS setting
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            # **NEW: Send Pushover notification (same logic as Facebook)**
+            # Send Pushover notification (same logic as Facebook)
             notification_title = f"New Vinted Listing: £{total_price:.2f}"
             notification_message = (
                 f"Title: {details.get('title', 'No title')}\n"
@@ -4222,7 +4234,7 @@ class VintedScraper:
 
             suitable_listings.append(final_listing_info)
 
-            # **CRITICAL FIX: Add to recent_listings for website navigation**
+            # Add to recent_listings for website navigation
             recent_listings['listings'].append(final_listing_info)
             # Always set to the last (most recent) listing for website display
             recent_listings['current_index'] = len(recent_listings['listings']) - 1
@@ -4236,6 +4248,7 @@ class VintedScraper:
                 print(f"➕ Added unsuitable listing (SHOW_ALL mode): £{total_price:.2f}")
         else:
             print(f"❌ Listing not added: {suitability_reason}")
+
 
     def check_vinted_profit_suitability(self, listing_price, profit_percentage):
         if 10 <= listing_price < 16:
@@ -4895,16 +4908,81 @@ class VintedScraper:
             traceback.print_exc()
 
 
-    def debug_re_usage():
-        """Debug function to trace re module usage"""
-        print("DEBUG: Testing re module access in current scope")
+    def bookmark_driver(self, listing_url):
+        """
+        ULTRA-FAST bookmark driver optimized for speed - opens instantly, navigates immediately, minimal wait, instant close
+        """
+        bookmark_driver = None
         try:
-            test_match = re.search(r'\d+', "123")
-            print(f"DEBUG: re.search works fine: {test_match}")
+            # MINIMAL Chrome options for maximum speed
+            chrome_opts = Options()
+            
+            # Only essential prefs
+            prefs = {"profile.default_content_setting_values.notifications": 2}
+            chrome_opts.add_experimental_option("prefs", prefs)
+            
+            # User data directory
+            chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+            chrome_opts.add_argument(f"--profile-directory=Default")
+            
+            # SPEED OPTIMIZATIONS - disable everything possible
+            # chrome_opts.add_argument("--headless")  # COMMENTED OUT FOR TESTING
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--disable-extensions")
+            #chrome_opts.add_argument("--disable-plugins")
+            #chrome_opts.add_argument("--disable-images")  # Don't load images for speed
+            #chrome_opts.add_argument("--disable-javascript")  # Disable JS for max speed
+            #chrome_opts.add_argument("--disable-css")
+            #chrome_opts.add_argument("--disable-web-security")
+            #chrome_opts.add_argument("--disable-features=TranslateUI,VizDisplayCompositor")
+            #chrome_opts.add_argument("--disable-background-networking")
+            #chrome_opts.add_argument("--disable-sync")
+           # chrome_opts.add_argument("--disable-default-apps")
+           # chrome_opts.add_argument("--disable-background-timer-throttling")
+           # chrome_opts.add_argument("--aggressive-cache-discard")
+           # chrome_opts.add_argument("--memory-pressure-off")
+            
+            # Minimal window
+           # chrome_opts.add_argument("--window-size=800,600")
+            
+            # No logging
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_argument("--silent")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging'])
+            
+            # Create service with no logging
+            service = Service(ChromeDriverManager().install(), log_path=os.devnull)
+            
+            # INSTANT driver creation
+            bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # ULTRA-FAST timeouts
+            bookmark_driver.implicitly_wait(0.5)
+            bookmark_driver.set_page_load_timeout(3)
+            bookmark_driver.set_script_timeout(1)
+            
+            # IMMEDIATE navigation - no delays
+            bookmark_driver.get(listing_url)
+            
+            # MINIMAL wait - just 0.5 seconds as requested
+            time.sleep(0.5)
+            
             return True
+            
         except Exception as e:
-            print(f"DEBUG: re module error in debug_re_usage: {e}")
+            print(f"🔖 FAST ERROR: {e}")
             return False
+            
+        finally:
+            # INSTANT cleanup
+            if bookmark_driver:
+                try:
+                    bookmark_driver.quit()
+                except:
+                    pass  # Ignore cleanup errors for speed
+
     def run(self):
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
