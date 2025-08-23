@@ -1,4 +1,7 @@
 # Continuation from line 2201
+    'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
+    'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
+    'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
     'sword_p', 'tears_z', 'violet_p'
     ]
         
@@ -2196,6 +2199,3 @@ class VintedScraper:
                                 cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
 
-                # Update overall detected objects with max from this image
-                for class_name, count in image_detections.items():
-                    detected_objects[class_name].append(count)
