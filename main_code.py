@@ -153,7 +153,7 @@ REPEAT_LISTINGS = True
 WAIT_TIME_AFTER_REFRESH = 125
 LOCK_POSITION = True
 SHOW_ALL_LISTINGS = True
-VINTED_SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = True
 SHOW_PARTIALLY_SUITABLE = False
 setup_website = False
 send_message = True
@@ -3390,6 +3390,7 @@ class VintedScraper:
                 continue  # Skip this line if rendering fails
 
     def extract_price(self, text):
+        import re
         """
         Extracts a float from a string like '£4.50' or '4.50 GBP'
         Returns 0.0 if nothing is found or text is None
@@ -3623,12 +3624,12 @@ class VintedScraper:
         
         # User data directory setup
         chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--profile-directory=Profile 2")
+        chrome_opts.add_argument(f"--profile-directory=Default")
         #profile 2 = pc
         # default = laptop
         
         # Core stability arguments
-        chrome_opts.add_argument("--headless")
+        #chrome_opts.add_argument("--headless")
         chrome_opts.add_argument("--no-sandbox")
         chrome_opts.add_argument("--disable-dev-shm-usage")
         chrome_opts.add_argument("--disable-gpu")
@@ -3726,7 +3727,7 @@ class VintedScraper:
             fallback_opts.add_argument("--disable-gpu")
             fallback_opts.add_argument("--remote-debugging-port=0")
             fallback_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
-            fallback_opts.add_argument(f"--profile-directory=Profile 2")
+            fallback_opts.add_argument(f"--profile-directory=Default")
             #profile 2 = pc
             #default = laptop
             
@@ -3752,7 +3753,7 @@ class VintedScraper:
         
         fallback_opts = Options()
         fallback_opts.add_experimental_option("prefs", prefs)
-        fallback_opts.add_argument("--headless")
+        #fallback_opts.add_argument("--headless")
         fallback_opts.add_argument("--no-sandbox")
         fallback_opts.add_argument("--disable-dev-shm-usage")
         fallback_opts.add_argument("--disable-gpu")
@@ -3773,6 +3774,8 @@ class VintedScraper:
             
 
     def extract_vinted_price(self, text):
+        import re
+        
         """
         Enhanced price extraction for Vinted that handles various price formats
         """
@@ -3832,6 +3835,8 @@ class VintedScraper:
         return detected_console
 
     def detect_anonymous_games_vinted(self, listing_title, listing_description):
+        import re
+
         """
         Detect anonymous games count from title and description (ported from Facebook)
         """
@@ -3912,6 +3917,7 @@ class VintedScraper:
     def check_vinted_listing_suitability(self, listing_info):
         """
         Check if a Vinted listing meets all suitability criteria
+        FIXED: Properly extract review count from seller_reviews field
         """
         title = listing_info.get("title", "").lower()
         description = listing_info.get("description", "").lower()
@@ -3923,23 +3929,36 @@ class VintedScraper:
         except (ValueError, TypeError):
             return "Unsuitable: Unable to parse price"
         
-        # Extract number of reviews from seller_reviews
+        # FIXED: Extract number of reviews from seller_reviews - this was the bug!
         reviews_count = 0
         if seller_reviews and seller_reviews != "No reviews yet":
-            # Try to extract number from "Reviews: X" format or just numeric string
-            if seller_reviews.startswith("Reviews: "):
+            # Handle multiple formats that might come from scrape_item_details
+            reviews_text = str(seller_reviews).strip()
+            
+            # Debug print to see what we're getting
+            print(f"DEBUG: Raw seller_reviews value: '{reviews_text}'")
+            
+            # Try multiple extraction methods
+            if reviews_text.startswith("Reviews: "):
+                # Format: "Reviews: 123"
                 try:
-                    reviews_count = int(seller_reviews.replace("Reviews: ", ""))
+                    reviews_count = int(reviews_text.replace("Reviews: ", ""))
                 except ValueError:
                     reviews_count = 0
-            elif seller_reviews.isdigit():
-                reviews_count = int(seller_reviews)
+            elif reviews_text.isdigit():
+                # Format: "123" (just the number)
+                reviews_count = int(reviews_text)
             else:
                 # Try to extract any number from the string
                 import re
-                match = re.search(r'\d+', str(seller_reviews))
+                match = re.search(r'\d+', reviews_text)
                 if match:
                     reviews_count = int(match.group())
+                else:
+                    reviews_count = 0
+        
+        # Debug print to see final extracted count
+        print(f"DEBUG: Extracted reviews_count: {reviews_count} (review_min: {review_min})")
         
         checks = [
             (lambda: reviews_count < review_min,
@@ -3968,8 +3987,10 @@ class VintedScraper:
         return "Listing is suitable"
 
     def scrape_item_details(self, driver):
+        import re
         """
         Enhanced scraper with better price extraction and seller reviews
+        FIXED: Better extraction and handling of seller reviews
         """
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
@@ -3982,31 +4003,65 @@ class VintedScraper:
             "postage": "h3[data-testid='item-shipping-banner-price']",
             "description": "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span",
             "uploaded": "span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold",
-            "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # New field for seller reviews
+            "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Main selector for seller reviews
         }
 
         data = {}
         for key, sel in fields.items():
             try:
                 if key == "seller_reviews":
-                    # Special handling for seller reviews - get the text content
-                    element = driver.find_element(By.CSS_SELECTOR, sel)
-                    text = element.text.strip()
+                    # FIXED: Better handling for seller reviews with multiple selectors
+                    review_selectors = [
+                        "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Primary selector
+                        "span[class*='caption'][class*='left']",  # Broader selector
+                        "div[class*='reviews'] span",  # Alternative selector
+                        "*[class*='review']",  # Very broad selector as fallback
+                    ]
                     
-                    # Check if it's the "No reviews yet" case or a number
-                    if text == "No reviews yet":
-                        data[key] = "No reviews yet"
-                    else:
-                        # Extract just the number if it's numeric
-                        if text.isdigit():
-                            data[key] = f"Reviews: {text}"
-                        else:
+                    reviews_text = None
+                    for review_sel in review_selectors:
+                        try:
+                            elements = driver.find_elements(By.CSS_SELECTOR, review_sel)
+                            for element in elements:
+                                text = element.text.strip()
+                                # Look for text that contains digits (likely review count)
+                                if text and (text.isdigit() or "review" in text.lower() or re.search(r'\d+', text)):
+                                    reviews_text = text
+                                    print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
+                                    break
+                            if reviews_text:
+                                break
+                        except Exception as e:
+                            print(f"DEBUG: Selector '{review_sel}' failed: {e}")
+                            continue
+                    
+                    # Process the found reviews text
+                    if reviews_text:
+                        if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
                             data[key] = "No reviews yet"
+                        elif reviews_text.isdigit():
+                            # Just a number like "123"
+                            data[key] = reviews_text  # Keep as string for consistency
+                            print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
+                        else:
+                            import re
+
+                            # Try to extract number from text like "123 reviews" or "(123)"
+                            match = re.search(r'(\d+)', reviews_text)
+                            if match:
+                                data[key] = match.group(1)  # Just the number as string
+                                print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
+                            else:
+                                data[key] = "No reviews yet"
+                    else:
+                        data[key] = "No reviews yet"
+                        print("DEBUG: No seller reviews found with any selector")
                 else:
                     data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
             except NoSuchElementException:
                 if key == "seller_reviews":
                     data[key] = "No reviews yet"
+                    print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
                 else:
                     data[key] = None
 
@@ -4014,6 +4069,9 @@ class VintedScraper:
         if data["title"]:
             data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
 
+        # DEBUG: Print final scraped data for seller_reviews
+        print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
+        
         return data
 
     def clear_download_folder(self):
@@ -4021,9 +4079,12 @@ class VintedScraper:
             shutil.rmtree(DOWNLOAD_ROOT)
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
+# FIXED: Updated process_vinted_listing function - key section that handles suitability checking
+
     def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
         """
         Enhanced processing with comprehensive filtering and analysis - FIXED for navigation
+        FIXED: Properly pass seller_reviews to suitability checking
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -4035,17 +4096,20 @@ class VintedScraper:
 
         # Get seller reviews
         seller_reviews = details.get("seller_reviews", "No reviews yet")
+        print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
 
-        # Create basic listing info for suitability checking
+        # FIXED: Create basic listing info for suitability checking - include seller_reviews!
         listing_info = {
             "title": details.get("title", "").lower(),
             "description": details.get("description", "").lower(),
             "price": total_price,
+            "seller_reviews": seller_reviews,  # CRITICAL: This was potentially missing!
             "url": url
         }
 
         # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
         suitability_result = self.check_vinted_listing_suitability(listing_info)
+        print(f"DEBUG: Suitability result: '{suitability_result}'")
 
         # Apply console keyword detection to detected objects
         detected_console = self.detect_console_keywords_vinted(
@@ -4108,6 +4172,8 @@ class VintedScraper:
         else:
             suitability_reason = f"Suitable: Profit £{expected_profit:.2f} ({profit_percentage:.2f}%)"
             is_suitable = True
+
+        print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
 
         # Create final listing info
         final_listing_info = {
@@ -4228,6 +4294,7 @@ class VintedScraper:
         # Calculate revenue from detected objects
         for item, count in detected_objects.items():
             if isinstance(count, str):
+                import re
                 count_match = re.match(r'(\d+)', count)
                 count = int(count_match.group(1)) if count_match else 0
 
@@ -4501,7 +4568,7 @@ class VintedScraper:
         """
         if not url:
             return None
-        
+        import re
         # Match pattern: /items/[numbers]-
         match = re.search(r'/items/(\d+)-', url)
         if match:
