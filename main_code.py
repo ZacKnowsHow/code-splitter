@@ -3634,7 +3634,7 @@ class VintedScraper:
         # default = laptop
         
         # Core stability arguments
-        #chrome_opts.add_argument("--headless")
+        chrome_opts.add_argument("--headless")
         chrome_opts.add_argument("--no-sandbox")
         chrome_opts.add_argument("--disable-dev-shm-usage")
         chrome_opts.add_argument("--disable-gpu")
@@ -4910,65 +4910,116 @@ class VintedScraper:
 
     def bookmark_driver(self, listing_url):
         """
-        ULTRA-FAST bookmark driver optimized for speed - opens instantly, navigates immediately, minimal wait, instant close
+        ULTRA-FAST bookmark driver - fire and forget approach
         """
         bookmark_driver = None
         try:
-            # MINIMAL Chrome options for maximum speed
+            print(f"🔖 STARTING BOOKMARK: {listing_url}")
+            
+            # SPEED OPTIMIZATION 1: Pre-cached service
+            if not hasattr(self, '_cached_chromedriver_path'):
+                self._cached_chromedriver_path = ChromeDriverManager().install()
+            
+            # SPEED OPTIMIZATION 2: Minimal Chrome options
             chrome_opts = Options()
-            
-            # Only essential prefs
-            prefs = {"profile.default_content_setting_values.notifications": 2}
-            chrome_opts.add_experimental_option("prefs", prefs)
-            
-            # User data directory
-            chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
-            chrome_opts.add_argument(f"--profile-directory=Default")
-            
-            # SPEED OPTIMIZATIONS - disable everything possible
-            # chrome_opts.add_argument("--headless")  # COMMENTED OUT FOR TESTING
+            bookmark_user_data_dir = f"{PERMANENT_USER_DATA_DIR}_Bookmark"
+            chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
+            chrome_opts.add_argument("--profile-directory=Profile 4")
             chrome_opts.add_argument("--no-sandbox")
             chrome_opts.add_argument("--disable-dev-shm-usage")
             chrome_opts.add_argument("--disable-gpu")
             chrome_opts.add_argument("--disable-extensions")
-            #chrome_opts.add_argument("--disable-plugins")
-            #chrome_opts.add_argument("--disable-images")  # Don't load images for speed
-            #chrome_opts.add_argument("--disable-javascript")  # Disable JS for max speed
-            #chrome_opts.add_argument("--disable-css")
-            #chrome_opts.add_argument("--disable-web-security")
-            #chrome_opts.add_argument("--disable-features=TranslateUI,VizDisplayCompositor")
-            #chrome_opts.add_argument("--disable-background-networking")
-            #chrome_opts.add_argument("--disable-sync")
-           # chrome_opts.add_argument("--disable-default-apps")
-           # chrome_opts.add_argument("--disable-background-timer-throttling")
-           # chrome_opts.add_argument("--aggressive-cache-discard")
-           # chrome_opts.add_argument("--memory-pressure-off")
+            chrome_opts.add_argument("--disable-plugins")
             
-            # Minimal window
-           # chrome_opts.add_argument("--window-size=800,600")
+            # CRITICAL: Remove the problematic arguments that cause renderer issues
+            # chrome_opts.add_argument("--disable-images")  # REMOVED
+            # chrome_opts.add_argument("--disable-javascript")  # REMOVED  
+            # chrome_opts.add_argument("--disable-css")  # REMOVED
             
-            # No logging
+            chrome_opts.add_argument("--disable-web-security")
+            chrome_opts.add_argument("--disable-features=TranslateUI")
+            chrome_opts.add_argument("--disable-background-networking")
+            chrome_opts.add_argument("--no-first-run")
+            chrome_opts.add_argument("--window-size=800,600")
             chrome_opts.add_argument("--log-level=3")
             chrome_opts.add_argument("--silent")
-            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging'])
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
             
-            # Create service with no logging
-            service = Service(ChromeDriverManager().install(), log_path=os.devnull)
+            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
+            print("🔖 SERVICE: Using cached ChromeDriver")
             
-            # INSTANT driver creation
+            print("🔖 DRIVER: Creating...")
             bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            print("🔖 DRIVER: Created!")
             
-            # ULTRA-FAST timeouts
-            bookmark_driver.implicitly_wait(0.5)
-            bookmark_driver.set_page_load_timeout(3)
-            bookmark_driver.set_script_timeout(1)
+            # BALANCED timeouts - fast but not too aggressive
+            bookmark_driver.implicitly_wait(1)
+            bookmark_driver.set_page_load_timeout(8)  # Reasonable timeout
+            bookmark_driver.set_script_timeout(3)
             
-            # IMMEDIATE navigation - no delays
-            bookmark_driver.get(listing_url)
+            # FIRE AND FORGET navigation
+            print(f"🔖 NAVIGATING...")
+            try:
+                bookmark_driver.get(listing_url)
+                print("🔖 NAVIGATION: Complete")
+                
+                # ULTRA-FAST BUY BUTTON CLICKING
+                print("🔖 SEARCHING: Looking for Buy now button...")
+                
+                # Multiple selectors for maximum speed and reliability
+                buy_selectors = [
+                    "button[data-testid='item-buy-button']",  # Most specific
+                    "button.web_ui__Button__primary[data-testid='item-buy-button']",  # Backup
+                    "button:contains('Buy now')",  # Text-based fallback
+                    ".web_ui__Button__primary .web_ui__Button__label:contains('Buy now')",  # Label-based
+                ]
+                
+                buy_button_found = False
+                for selector in buy_selectors:
+                    try:
+                        # Very short wait - just 0.5 seconds per selector
+                        buy_button = WebDriverWait(bookmark_driver, 0.5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                        
+                        print(f"🔖 FOUND: Buy button with selector: {selector}")
+                        
+                        # INSTANT CLICK - try multiple click methods for speed
+                        try:
+                            buy_button.click()
+                            print("🔖 CLICKED: Standard click successful")
+                            time.sleep(15)
+                        except:
+                            try:
+                                bookmark_driver.execute_script("arguments[0].click();", buy_button)
+                                print("🔖 CLICKED: JavaScript click successful")
+                            except:
+                                try:
+                                    ActionChains(bookmark_driver).move_to_element(buy_button).click().perform()
+                                    print("🔖 CLICKED: ActionChains click successful")
+                                except:
+                                    print("🔖 CLICK: All click methods failed")
+                        
+                        buy_button_found = True
+                        break
+                        
+                    except TimeoutException:
+                        continue  # Try next selector
+                    except Exception as e:
+                        print(f"🔖 SELECTOR ERROR: {selector} - {e}")
+                        continue
+                
+                if not buy_button_found:
+                    print("🔖 BUY BUTTON: Not found (may not be available)")
+                
+            except Exception as nav_error:
+                # Timeout is fine - we just want to trigger the visit
+                print(f"🔖 NAVIGATION: Timeout (acceptable)")
             
-            # MINIMAL wait - just 0.5 seconds as requested
-            time.sleep(0.5)
+            # Brief wait to ensure click is processed
+            time.sleep(2)  # Increased slightly to ensure click is processed
             
+            print("🔖 SUCCESS: Bookmark completed!")
             return True
             
         except Exception as e:
@@ -4976,12 +5027,112 @@ class VintedScraper:
             return False
             
         finally:
-            # INSTANT cleanup
             if bookmark_driver:
                 try:
                     bookmark_driver.quit()
                 except:
-                    pass  # Ignore cleanup errors for speed
+                    pass
+
+    def check_chrome_processes(self):
+        """
+        Debug function to check for running Chrome processes
+        """
+        import psutil
+        chrome_processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                if 'chrome' in proc.info['name'].lower():
+                    chrome_processes.append({
+                        'pid': proc.info['pid'],
+                        'name': proc.info['name'],
+                        'cmdline': ' '.join(proc.info['cmdline'][:3]) if proc.info['cmdline'] else ''
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        print(f"🔖 CHROME PROCESSES: Found {len(chrome_processes)} running Chrome processes")
+        for proc in chrome_processes[:5]:  # Show first 5
+            print(f"  • PID: {proc['pid']}, Name: {proc['name']}")
+        
+        return len(chrome_processes)
+
+    def setup_driver_enhanced_debug(self):
+        """
+        Enhanced setup_driver with comprehensive debugging
+        """
+        print("🚀 ENHANCED DRIVER SETUP: Starting...")
+        
+        # Check for existing Chrome processes
+        self.check_chrome_processes()
+        
+        chrome_opts = Options()
+        
+        # Basic preferences
+        prefs = {
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.default_content_setting_values.popups": 0,
+            "download.prompt_for_download": False,
+        }
+        chrome_opts.add_experimental_option("prefs", prefs)
+        
+        # User data directory setup
+        print(f"🚀 USER DATA DIR: {PERMANENT_USER_DATA_DIR}")
+        chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+        chrome_opts.add_argument(f"--profile-directory=Default")
+        
+        # Check if user data directory exists and is accessible
+        try:
+            if not os.path.exists(PERMANENT_USER_DATA_DIR):
+                os.makedirs(PERMANENT_USER_DATA_DIR, exist_ok=True)
+                print(f"🚀 CREATED: User data directory")
+            else:
+                print(f"🚀 EXISTS: User data directory found")
+        except Exception as dir_error:
+            print(f"🚀 DIR ERROR: {dir_error}")
+        
+        # Core stability arguments (minimal set)
+        chrome_opts.add_argument("--no-sandbox")
+        chrome_opts.add_argument("--disable-dev-shm-usage")
+        chrome_opts.add_argument("--disable-gpu")
+        chrome_opts.add_argument("--disable-software-rasterizer")
+        
+        # Remove potentially problematic arguments
+        # chrome_opts.add_argument("--headless")  # Try without headless first
+        
+        # Keep some logging for debugging
+        chrome_opts.add_argument("--log-level=1")  # More detailed logging
+        chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        
+        try:
+            service = Service(
+                ChromeDriverManager().install()
+            )
+            
+            print("🚀 CREATING: Chrome driver...")
+            driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set timeouts
+            driver.implicitly_wait(10)
+            driver.set_page_load_timeout(30)
+            driver.set_script_timeout(30)
+            
+            print("✅ SUCCESS: Chrome driver initialized successfully")
+            return driver
+            
+        except Exception as e:
+            print(f"❌ CRITICAL ERROR: Chrome driver failed: {e}")
+            print(f"❌ ERROR TYPE: {type(e).__name__}")
+            
+            import traceback
+            print(f"❌ TRACEBACK:\n{traceback.format_exc()}")
+            
+            # Show system info for debugging
+            print("🔧 SYSTEM INFO:")
+            print(f"  • Python: {sys.version}")
+            print(f"  • OS: {os.name}")
+            print(f"  • Chrome processes: {self.check_chrome_processes()}")
+            
+            return None
 
     def run(self):
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
