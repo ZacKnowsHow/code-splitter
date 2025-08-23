@@ -252,7 +252,7 @@ current_listing_index = 0
 miscellaneous_games_price = 5
 vinted_scraper_instance = None
 test_bookmark_function = True
-click_pay_button_final_check = True
+click_pay_button_final_check = False
 test_bookmark_link = "https://www.vinted.co.uk/items/6926101310-sports-cool-gym-towel?referrer=catalog"
 
 BASE_PRICES = {
@@ -3147,6 +3147,9 @@ class VintedScraper:
         })
         return all_prices
     def __init__(self):
+        self.persistent_bookmark_driver = None
+        self.bookmark_driver_ready = False
+
         # Initialize pygame-related variables similar to FacebookScraper
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images
