@@ -1893,8 +1893,7 @@ class VintedScraper:
 
     def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
         """
-        Enhanced processing with comprehensive filtering and analysis - FIXED for navigation
-        FIXED: Properly pass seller_reviews to suitability checking
+        Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -1908,12 +1907,12 @@ class VintedScraper:
         seller_reviews = details.get("seller_reviews", "No reviews yet")
         print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
 
-        # FIXED: Create basic listing info for suitability checking - include seller_reviews!
+        # Create basic listing info for suitability checking
         listing_info = {
             "title": details.get("title", "").lower(),
             "description": details.get("description", "").lower(),
             "price": total_price,
-            "seller_reviews": seller_reviews,  # CRITICAL: This was potentially missing!
+            "seller_reviews": seller_reviews,
             "url": url
         }
 
@@ -1985,6 +1984,19 @@ class VintedScraper:
 
         print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
 
+        # 🔖 ULTRA-FAST BOOKMARK FUNCTIONALITY - INSTANT EXECUTION!
+        should_bookmark = False
+        
+        if bookmark_listings and is_suitable:
+            should_bookmark = True
+        elif VINTED_SHOW_ALL_LISTINGS:
+            should_bookmark = True
+            
+        if should_bookmark:
+            # INSTANT bookmark execution - no threading delays, direct call for maximum speed
+            print(f"🔖 INSTANT BOOKMARK: {url}")
+            self.bookmark_driver(url)  # Direct call, no threading overhead
+
         # Create final listing info
         final_listing_info = {
             'title': details.get("title", "No title"),
@@ -1998,12 +2010,12 @@ class VintedScraper:
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
             'suitability': suitability_reason,
-            'seller_reviews': seller_reviews  # NEW: Add seller reviews to listing info
+            'seller_reviews': seller_reviews
         }
 
         # Add to suitable listings based on VINTED_SHOW_ALL_LISTINGS setting
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            # **NEW: Send Pushover notification (same logic as Facebook)**
+            # Send Pushover notification (same logic as Facebook)
             notification_title = f"New Vinted Listing: £{total_price:.2f}"
             notification_message = (
                 f"Title: {details.get('title', 'No title')}\n"
@@ -2023,7 +2035,7 @@ class VintedScraper:
 
             suitable_listings.append(final_listing_info)
 
-            # **CRITICAL FIX: Add to recent_listings for website navigation**
+            # Add to recent_listings for website navigation
             recent_listings['listings'].append(final_listing_info)
             # Always set to the last (most recent) listing for website display
             recent_listings['current_index'] = len(recent_listings['listings']) - 1
@@ -2037,6 +2049,7 @@ class VintedScraper:
                 print(f"➕ Added unsuitable listing (SHOW_ALL mode): £{total_price:.2f}")
         else:
             print(f"❌ Listing not added: {suitability_reason}")
+
 
     def check_vinted_profit_suitability(self, listing_price, profit_percentage):
         if 10 <= listing_price < 16:
@@ -2186,16 +2199,3 @@ class VintedScraper:
                 # Update overall detected objects with max from this image
                 for class_name, count in image_detections.items():
                     detected_objects[class_name].append(count)
-
-                # Convert to PIL Image for pygame compatibility
-                processed_images.append(Image.fromarray(cv2.cvtColor(
-                    cv2.copyMakeBorder(img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0]),
-                    cv2.COLOR_BGR2RGB)))
-
-            except Exception as e:
-                print(f"Error processing image {image_path}: {str(e)}")
-                continue
-
-        # Convert lists to max values
-        final_detected_objects = {class_name: max(counts) if counts else 0 for class_name, counts in detected_objects.items()}
-        
