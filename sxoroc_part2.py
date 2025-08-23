@@ -1842,8 +1842,7 @@ class VintedScraper:
             "title": details.get("title", "").lower(),
             "description": details.get("description", "").lower(),
             "price": total_price,
-            "url": url,
-            "seller_reviews": seller_reviews  # Add seller_reviews for the review check
+            "url": url
         }
 
         # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
@@ -1929,14 +1928,6 @@ class VintedScraper:
 
         # Add to suitable listings based on VINTED_SHOW_ALL_LISTINGS setting
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            # **NEW: Bookmark listing if suitable and bookmark_listings is True**
-            if is_suitable and bookmark_listings:
-                print(f"🔖 Listing is suitable - starting bookmark process...")
-                # Run bookmark process in separate thread to avoid blocking main scraping
-                bookmark_thread = threading.Thread(target=self.bookmark_driver, args=(url,))
-                bookmark_thread.daemon = True
-                bookmark_thread.start()
-            
             # **NEW: Send Pushover notification (same logic as Facebook)**
             notification_title = f"New Vinted Listing: £{total_price:.2f}"
             notification_message = (
@@ -2199,3 +2190,12 @@ class VintedScraper:
         
         # Filter images more strictly to avoid profile pictures and small icons
         valid_imgs = []
+        for img in imgs:
+            src = img.get_attribute("src")
+            parent_classes = ""
+            
+            # Get parent element classes to check for profile picture indicators
+            try:
+                parent = img.find_element(By.XPATH, "..")
+                parent_classes = parent.get_attribute("class") or ""
+            except:
