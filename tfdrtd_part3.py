@@ -1,4 +1,7 @@
 # Continuation from line 4401
+                                cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
+
                 # Update overall detected objects with max from this image
                 for class_name, count in image_detections.items():
                     detected_objects[class_name].append(count)
