@@ -251,6 +251,9 @@ suitable_listings = []
 current_listing_index = 0
 miscellaneous_games_price = 5
 vinted_scraper_instance = None
+test_bookmark_function = True
+click_pay_button_final_check = False
+test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 
 BASE_PRICES = {
    '1_2_switch': 6.5, 'animal_crossing': 24, 'arceus_p': 27.5, 'bow_z': 28, 'bros_deluxe_m': 23.5,
@@ -4911,10 +4914,20 @@ class VintedScraper:
     def bookmark_driver(self, listing_url):
         """
         ULTRA-FAST bookmark driver - fire and forget approach
+        MODIFIED: Now supports test mode with test_bookmark_link
         """
+        # TEST MODE: If test_bookmark_function is True, use test_bookmark_link instead
+        if test_bookmark_function:
+            actual_url = test_bookmark_link
+            print(f"🔖 TEST MODE: Using test URL instead of actual listing URL")
+            print(f"🔖 TEST URL: {actual_url}")
+        else:
+            actual_url = listing_url
+            print(f"🔖 NORMAL MODE: Using actual listing URL")
+        
         bookmark_driver = None
         try:
-            print(f"🔖 STARTING BOOKMARK: {listing_url}")
+            print(f"🔖 STARTING BOOKMARK: {actual_url}")
             
             # SPEED OPTIMIZATION 1: Pre-cached service
             if not hasattr(self, '_cached_chromedriver_path'):
@@ -4957,10 +4970,10 @@ class VintedScraper:
             bookmark_driver.set_page_load_timeout(8)  # Reasonable timeout
             bookmark_driver.set_script_timeout(3)
             
-            # FIRE AND FORGET navigation
+            # FIRE AND FORGET navigation - using actual_url (which is either the test URL or original URL)
             print(f"🔖 NAVIGATING...")
             try:
-                bookmark_driver.get(listing_url)
+                bookmark_driver.get(actual_url)  # This is the key change - uses actual_url
                 print("🔖 NAVIGATION: Complete")
                 
                 # ULTRA-FAST BUY BUTTON CLICKING
@@ -4985,20 +4998,41 @@ class VintedScraper:
                         print(f"🔖 FOUND: Buy button with selector: {selector}")
                         
                         # INSTANT CLICK - try multiple click methods for speed
+                        click_successful = False
                         try:
                             buy_button.click()
                             print("🔖 CLICKED: Standard click successful")
-                            time.sleep(15)
+                            click_successful = True
                         except:
                             try:
                                 bookmark_driver.execute_script("arguments[0].click();", buy_button)
                                 print("🔖 CLICKED: JavaScript click successful")
+                                click_successful = True
                             except:
                                 try:
                                     ActionChains(bookmark_driver).move_to_element(buy_button).click().perform()
                                     print("🔖 CLICKED: ActionChains click successful")
+                                    click_successful = True
                                 except:
                                     print("🔖 CLICK: All click methods failed")
+                        
+                        # If click was successful, wait for payment page to load - ULTRA FAST
+                        if click_successful:
+                            print("🔖 WAITING: For payment page to load...")
+                            
+                            try:
+                                # SINGLE FAST CHECK - only look for the specific Pay button
+                                WebDriverWait(bookmark_driver, 8).until(
+                                    EC.presence_of_element_located((By.CSS_SELECTOR, 
+                                        'button[data-testid="single-checkout-order-summary-purchase-button"]'
+                                    ))
+                                )
+                                print("🔖 PAYMENT PAGE LOADED!")
+                                
+                            except TimeoutException:
+                                print("🔖 PAYMENT PAGE: Timeout - Pay button not found")
+                            except Exception as e:
+                                print(f"🔖 PAYMENT PAGE ERROR: {e}")
                         
                         buy_button_found = True
                         break
@@ -5016,8 +5050,8 @@ class VintedScraper:
                 # Timeout is fine - we just want to trigger the visit
                 print(f"🔖 NAVIGATION: Timeout (acceptable)")
             
-            # Brief wait to ensure click is processed
-            time.sleep(2)  # Increased slightly to ensure click is processed
+            # Brief final wait (reduced since we now wait for payment page)
+            time.sleep(1)
             
             print("🔖 SUCCESS: Bookmark completed!")
             return True
