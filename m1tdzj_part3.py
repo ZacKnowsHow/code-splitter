@@ -1,4 +1,17 @@
 # Continuation from line 4401
+
+                # Convert to PIL Image for pygame compatibility
+                processed_images.append(Image.fromarray(cv2.cvtColor(
+                    cv2.copyMakeBorder(img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0]),
+                    cv2.COLOR_BGR2RGB)))
+
+            except Exception as e:
+                print(f"Error processing image {image_path}: {str(e)}")
+                continue
+
+        # Convert lists to max values
+        final_detected_objects = {class_name: max(counts) if counts else 0 for class_name, counts in detected_objects.items()}
+        
         # Handle mutually exclusive items
         final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
         
@@ -496,16 +509,81 @@
             traceback.print_exc()
 
 
-    def debug_re_usage():
-        """Debug function to trace re module usage"""
-        print("DEBUG: Testing re module access in current scope")
+    def bookmark_driver(self, listing_url):
+        """
+        ULTRA-FAST bookmark driver optimized for speed - opens instantly, navigates immediately, minimal wait, instant close
+        """
+        bookmark_driver = None
         try:
-            test_match = re.search(r'\d+', "123")
-            print(f"DEBUG: re.search works fine: {test_match}")
+            # MINIMAL Chrome options for maximum speed
+            chrome_opts = Options()
+            
+            # Only essential prefs
+            prefs = {"profile.default_content_setting_values.notifications": 2}
+            chrome_opts.add_experimental_option("prefs", prefs)
+            
+            # User data directory
+            chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+            chrome_opts.add_argument(f"--profile-directory=Default")
+            
+            # SPEED OPTIMIZATIONS - disable everything possible
+            # chrome_opts.add_argument("--headless")  # COMMENTED OUT FOR TESTING
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--disable-extensions")
+            #chrome_opts.add_argument("--disable-plugins")
+            #chrome_opts.add_argument("--disable-images")  # Don't load images for speed
+            #chrome_opts.add_argument("--disable-javascript")  # Disable JS for max speed
+            #chrome_opts.add_argument("--disable-css")
+            #chrome_opts.add_argument("--disable-web-security")
+            #chrome_opts.add_argument("--disable-features=TranslateUI,VizDisplayCompositor")
+            #chrome_opts.add_argument("--disable-background-networking")
+            #chrome_opts.add_argument("--disable-sync")
+           # chrome_opts.add_argument("--disable-default-apps")
+           # chrome_opts.add_argument("--disable-background-timer-throttling")
+           # chrome_opts.add_argument("--aggressive-cache-discard")
+           # chrome_opts.add_argument("--memory-pressure-off")
+            
+            # Minimal window
+           # chrome_opts.add_argument("--window-size=800,600")
+            
+            # No logging
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_argument("--silent")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging'])
+            
+            # Create service with no logging
+            service = Service(ChromeDriverManager().install(), log_path=os.devnull)
+            
+            # INSTANT driver creation
+            bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # ULTRA-FAST timeouts
+            bookmark_driver.implicitly_wait(0.5)
+            bookmark_driver.set_page_load_timeout(3)
+            bookmark_driver.set_script_timeout(1)
+            
+            # IMMEDIATE navigation - no delays
+            bookmark_driver.get(listing_url)
+            
+            # MINIMAL wait - just 0.5 seconds as requested
+            time.sleep(0.5)
+            
             return True
+            
         except Exception as e:
-            print(f"DEBUG: re module error in debug_re_usage: {e}")
+            print(f"🔖 FAST ERROR: {e}")
             return False
+            
+        finally:
+            # INSTANT cleanup
+            if bookmark_driver:
+                try:
+                    bookmark_driver.quit()
+                except:
+                    pass  # Ignore cleanup errors for speed
+
     def run(self):
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
