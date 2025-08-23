@@ -1435,7 +1435,7 @@ class VintedScraper:
         # default = laptop
         
         # Core stability arguments
-        #chrome_opts.add_argument("--headless")
+        chrome_opts.add_argument("--headless")
         chrome_opts.add_argument("--no-sandbox")
         chrome_opts.add_argument("--disable-dev-shm-usage")
         chrome_opts.add_argument("--disable-gpu")
