@@ -1,6 +1,4 @@
 # Continuation from line 4401
-                                cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
 
                 # Update overall detected objects with max from this image
                 for class_name, count in image_detections.items():
@@ -517,8 +515,8 @@
 
     def bookmark_driver(self, listing_url):
         """
-        ULTRA-FAST bookmark driver - fire and forget approach
-        MODIFIED: Now supports test mode with test_bookmark_link
+        ULTRA-FAST bookmark driver - uses single persistent driver with tabs
+        MODIFIED: Now keeps one driver open and opens new tabs for each listing
         """
         # TEST MODE: If test_bookmark_function is True, use test_bookmark_link instead
         if test_bookmark_function:
@@ -529,55 +527,71 @@
             actual_url = listing_url
             print(f"🔖 NORMAL MODE: Using actual listing URL")
         
-        bookmark_driver = None
         try:
             print(f"🔖 STARTING BOOKMARK: {actual_url}")
             
-            # SPEED OPTIMIZATION 1: Pre-cached service
-            if not hasattr(self, '_cached_chromedriver_path'):
-                self._cached_chromedriver_path = ChromeDriverManager().install()
+            # Initialize persistent driver if it doesn't exist
+            if not hasattr(self, 'persistent_bookmark_driver') or self.persistent_bookmark_driver is None:
+                print("🔖 INITIALIZING: Creating persistent bookmark driver...")
+                
+                # SPEED OPTIMIZATION 1: Pre-cached service
+                if not hasattr(self, '_cached_chromedriver_path'):
+                    self._cached_chromedriver_path = ChromeDriverManager().install()
+                
+                # SPEED OPTIMIZATION 2: Minimal Chrome options
+                chrome_opts = Options()
+                bookmark_user_data_dir = f"{PERMANENT_USER_DATA_DIR}_Bookmark"
+                chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
+                chrome_opts.add_argument("--profile-directory=Profile 4")
+                chrome_opts.add_argument("--no-sandbox")
+                chrome_opts.add_argument("--disable-dev-shm-usage")
+                chrome_opts.add_argument("--disable-gpu")
+                chrome_opts.add_argument("--disable-extensions")
+                chrome_opts.add_argument("--disable-plugins")
+                chrome_opts.add_argument("--disable-web-security")
+                chrome_opts.add_argument("--disable-features=TranslateUI")
+                chrome_opts.add_argument("--disable-background-networking")
+                chrome_opts.add_argument("--no-first-run")
+                chrome_opts.add_argument("--window-size=800,600")
+                chrome_opts.add_argument("--log-level=3")
+                chrome_opts.add_argument("--silent")
+                chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+                
+                service = Service(self._cached_chromedriver_path, log_path=os.devnull)
+                print("🔖 SERVICE: Using cached ChromeDriver")
+                
+                print("🔖 DRIVER: Creating persistent driver...")
+                self.persistent_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
+                print("🔖 DRIVER: Persistent driver created!")
+                
+                # BALANCED timeouts - fast but not too aggressive
+                self.persistent_bookmark_driver.implicitly_wait(1)
+                self.persistent_bookmark_driver.set_page_load_timeout(8)
+                self.persistent_bookmark_driver.set_script_timeout(3)
             
-            # SPEED OPTIMIZATION 2: Minimal Chrome options
-            chrome_opts = Options()
-            bookmark_user_data_dir = f"{PERMANENT_USER_DATA_DIR}_Bookmark"
-            chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
-            chrome_opts.add_argument("--profile-directory=Profile 4")
-            chrome_opts.add_argument("--no-sandbox")
-            chrome_opts.add_argument("--disable-dev-shm-usage")
-            chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument("--disable-extensions")
-            chrome_opts.add_argument("--disable-plugins")
+            # Check if driver is still alive
+            try:
+                self.persistent_bookmark_driver.current_url  # Test if driver is alive
+                print("🔖 DRIVER: Using existing persistent driver")
+            except:
+                print("🔖 DRIVER: Existing driver is dead, creating new one...")
+                # Driver is dead, create a new one
+                self.persistent_bookmark_driver = None
+                return self.bookmark_driver(listing_url)  # Recursive call to recreate
             
-            # CRITICAL: Remove the problematic arguments that cause renderer issues
-            # chrome_opts.add_argument("--disable-images")  # REMOVED
-            # chrome_opts.add_argument("--disable-javascript")  # REMOVED  
-            # chrome_opts.add_argument("--disable-css")  # REMOVED
+            # Open new tab for this listing
+            print("🔖 TAB: Opening new tab...")
+            self.persistent_bookmark_driver.execute_script("window.open('');")
             
-            chrome_opts.add_argument("--disable-web-security")
-            chrome_opts.add_argument("--disable-features=TranslateUI")
-            chrome_opts.add_argument("--disable-background-networking")
-            chrome_opts.add_argument("--no-first-run")
-            chrome_opts.add_argument("--window-size=800,600")
-            chrome_opts.add_argument("--log-level=3")
-            chrome_opts.add_argument("--silent")
-            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+            # Switch to the new tab
+            new_tab = self.persistent_bookmark_driver.window_handles[-1]
+            self.persistent_bookmark_driver.switch_to.window(new_tab)
+            print(f"🔖 TAB: Switched to new tab (total tabs: {len(self.persistent_bookmark_driver.window_handles)})")
             
-            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
-            print("🔖 SERVICE: Using cached ChromeDriver")
-            
-            print("🔖 DRIVER: Creating...")
-            bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
-            print("🔖 DRIVER: Created!")
-            
-            # BALANCED timeouts - fast but not too aggressive
-            bookmark_driver.implicitly_wait(1)
-            bookmark_driver.set_page_load_timeout(8)  # Reasonable timeout
-            bookmark_driver.set_script_timeout(3)
-            
-            # FIRE AND FORGET navigation - using actual_url (which is either the test URL or original URL)
+            # Navigate to the listing URL
             print(f"🔖 NAVIGATING...")
             try:
-                bookmark_driver.get(actual_url)  # This is the key change - uses actual_url
+                self.persistent_bookmark_driver.get(actual_url)
                 print("🔖 NAVIGATION: Complete")
                 
                 # ULTRA-FAST BUY BUTTON CLICKING
@@ -595,7 +609,7 @@
                 for selector in buy_selectors:
                     try:
                         # Very short wait - just 0.5 seconds per selector
-                        buy_button = WebDriverWait(bookmark_driver, 0.5).until(
+                        buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
                             EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                         )
                         
@@ -609,12 +623,12 @@
                             click_successful = True
                         except:
                             try:
-                                bookmark_driver.execute_script("arguments[0].click();", buy_button)
+                                self.persistent_bookmark_driver.execute_script("arguments[0].click();", buy_button)
                                 print("🔖 CLICKED: JavaScript click successful")
                                 click_successful = True
                             except:
                                 try:
-                                    ActionChains(bookmark_driver).move_to_element(buy_button).click().perform()
+                                    ActionChains(self.persistent_bookmark_driver).move_to_element(buy_button).click().perform()
                                     print("🔖 CLICKED: ActionChains click successful")
                                     click_successful = True
                                 except:
@@ -626,7 +640,7 @@
                             
                             try:
                                 # SINGLE FAST CHECK - only look for the specific Pay button
-                                pay_button = WebDriverWait(bookmark_driver, 8).until(
+                                pay_button = WebDriverWait(self.persistent_bookmark_driver, 8).until(
                                     EC.element_to_be_clickable((By.CSS_SELECTOR, 
                                         'button[data-testid="single-checkout-order-summary-purchase-button"]'
                                     ))
@@ -645,7 +659,7 @@
                                         time.sleep(0.25)
                                         
                                         # CTRL+W to close tab instantly
-                                        bookmark_driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.CONTROL + 'w')
+                                        self.persistent_bookmark_driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.CONTROL + 'w')
                                         
                                         print("🔖 FINAL CHECK SUCCESS: Pay button clicked and tab closed after 0.25s")
                                         
@@ -673,7 +687,16 @@
                 # Timeout is fine - we just want to trigger the visit
                 print(f"🔖 NAVIGATION: Timeout (acceptable)")
             
-            # Brief final wait (only if NOT in final check mode, since tab will be closed)
+            # Close the current tab (but keep the driver alive)
+            print("🔖 TAB: Closing current tab...")
+            self.persistent_bookmark_driver.close()
+            
+            # Switch back to the first tab to keep the driver ready
+            if len(self.persistent_bookmark_driver.window_handles) > 0:
+                self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
+                print(f"🔖 TAB: Switched back to main tab (remaining tabs: {len(self.persistent_bookmark_driver.window_handles)})")
+            
+            # Brief final wait (only if NOT in final check mode)
             if not click_pay_button_final_check:
                 time.sleep(1)
             
@@ -683,13 +706,19 @@
         except Exception as e:
             print(f"🔖 FAST ERROR: {e}")
             return False
-            
-        finally:
-            if bookmark_driver:
-                try:
-                    bookmark_driver.quit()
-                except:
-                    pass
+
+    def cleanup_persistent_bookmark_driver(self):
+        """
+        Call this method to clean up the persistent bookmark driver when done
+        """
+        if hasattr(self, 'persistent_bookmark_driver') and self.persistent_bookmark_driver is not None:
+            try:
+                self.persistent_bookmark_driver.quit()
+                print("🔖 CLEANUP: Persistent bookmark driver closed")
+            except:
+                pass
+            finally:
+                self.persistent_bookmark_driver = None
 
     def check_chrome_processes(self):
         """
