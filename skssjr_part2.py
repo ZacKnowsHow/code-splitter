@@ -1803,7 +1803,7 @@ class VintedScraper:
     def scrape_item_details(self, driver):
         """
         Enhanced scraper with better price extraction and seller reviews
-        FIXED: Better extraction and handling of seller reviews
+        UPDATED: Now includes username collection
         """
         debug_function_call("scrape_item_details")
         import re  # FIXED: Import re at function level
@@ -1820,6 +1820,7 @@ class VintedScraper:
             "description": "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span",
             "uploaded": "span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold",
             "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Main selector for seller reviews
+            "username": "span[data-testid='profile-username']",  # NEW: Username field
         }
 
         data = {}
@@ -1870,12 +1871,55 @@ class VintedScraper:
                     else:
                         data[key] = "No reviews yet"
                         print("DEBUG: No seller reviews found with any selector")
+                        
+                elif key == "username":
+                    # NEW: Handle username extraction with careful error handling
+                    try:
+                        username_element = driver.find_element(By.CSS_SELECTOR, sel)
+                        username_text = username_element.text.strip()
+                        if username_text:
+                            data[key] = username_text
+                            print(f"DEBUG: Found username: '{username_text}'")
+                        else:
+                            data[key] = "Username not found"
+                            print("DEBUG: Username element found but no text")
+                    except NoSuchElementException:
+                        # Try alternative selectors for username
+                        alternative_username_selectors = [
+                            "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__amplified.web_ui__Text__bold[data-testid='profile-username']",
+                            "span[data-testid='profile-username']",
+                            "*[data-testid='profile-username']",
+                            "span.web_ui__Text__amplified.web_ui__Text__bold",  # Broader fallback
+                        ]
+                        
+                        username_found = False
+                        for alt_sel in alternative_username_selectors:
+                            try:
+                                alt_username_element = driver.find_element(By.CSS_SELECTOR, alt_sel)
+                                alt_username_text = alt_username_element.text.strip()
+                                if alt_username_text:
+                                    data[key] = alt_username_text
+                                    print(f"DEBUG: Found username with alternative selector '{alt_sel}': '{alt_username_text}'")
+                                    username_found = True
+                                    break
+                            except NoSuchElementException:
+                                continue
+                        
+                        if not username_found:
+                            data[key] = "Username not found"
+                            print("DEBUG: Username not found with any selector")
+                            
                 else:
+                    # Handle all other fields normally
                     data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
+                    
             except NoSuchElementException:
                 if key == "seller_reviews":
                     data[key] = "No reviews yet"
                     print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
+                elif key == "username":
+                    data[key] = "Username not found"
+                    print("DEBUG: NoSuchElementException - set username to 'Username not found'")
                 else:
                     data[key] = None
 
@@ -1883,8 +1927,9 @@ class VintedScraper:
         if data["title"]:
             data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
 
-        # DEBUG: Print final scraped data for seller_reviews
+        # DEBUG: Print final scraped data for seller_reviews and username
         print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
+        print(f"DEBUG: Final scraped username: '{data.get('username')}'")
         
         return data
 
@@ -2154,48 +2199,3 @@ class VintedScraper:
 
     def perform_detection_on_listing_images(self, model, listing_dir):
         """
-        Enhanced object detection with all Facebook exceptions and logic
-        PLUS Vinted-specific post-scan game deduplication
-        """
-        if not os.path.isdir(listing_dir):
-            return {}, []
-
-        detected_objects = {class_name: [] for class_name in CLASS_NAMES}
-        processed_images = []
-        confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
-
-        image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
-        if not image_files:
-            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
-
-        for image_file in image_files:
-            image_path = os.path.join(listing_dir, image_file)
-            try:
-                img = cv2.imread(image_path)
-                if img is None:
-                    continue
-
-                # Track detections for this image
-                image_detections = {class_name: 0 for class_name in CLASS_NAMES}
-                results = model(img, verbose=False)
-                
-                for result in results:
-                    for box in result.boxes.cpu().numpy():
-                        class_id = int(box.cls[0])
-                        confidence = box.conf[0]
-                        
-                        if class_id < len(CLASS_NAMES):
-                            class_name = CLASS_NAMES[class_id]
-                            min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
-                            
-                            if confidence >= min_confidence:
-                                if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
-                                    confidences[class_name] = max(confidences[class_name], confidence)
-                                else:
-                                    image_detections[class_name] += 1
-                                
-                                # Draw bounding box
-                                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)

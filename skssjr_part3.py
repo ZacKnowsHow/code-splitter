@@ -1,4 +1,49 @@
 # Continuation from line 4401
+        Enhanced object detection with all Facebook exceptions and logic
+        PLUS Vinted-specific post-scan game deduplication
+        """
+        if not os.path.isdir(listing_dir):
+            return {}, []
+
+        detected_objects = {class_name: [] for class_name in CLASS_NAMES}
+        processed_images = []
+        confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
+
+        image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
+        if not image_files:
+            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
+
+        for image_file in image_files:
+            image_path = os.path.join(listing_dir, image_file)
+            try:
+                img = cv2.imread(image_path)
+                if img is None:
+                    continue
+
+                # Track detections for this image
+                image_detections = {class_name: 0 for class_name in CLASS_NAMES}
+                results = model(img, verbose=False)
+                
+                for result in results:
+                    for box in result.boxes.cpu().numpy():
+                        class_id = int(box.cls[0])
+                        confidence = box.conf[0]
+                        
+                        if class_id < len(CLASS_NAMES):
+                            class_name = CLASS_NAMES[class_id]
+                            min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
+                            
+                            if confidence >= min_confidence:
+                                if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
+                                    confidences[class_name] = max(confidences[class_name], confidence)
+                                else:
+                                    image_detections[class_name] += 1
+                                
+                                # Draw bounding box
+                                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
 
                 # Update overall detected objects with max from this image
                 for class_name, count in image_detections.items():
@@ -277,6 +322,7 @@
     def search_vinted_with_refresh(self, driver, search_query):
         """
         Enhanced search_vinted method with refresh and rescan functionality
+        UPDATED: Now prints username alongside other listing details
         """
         global suitable_listings, current_listing_index
         
@@ -393,6 +439,7 @@
 
                         print(f"  Link:         {url}")
                         print(f"  Title:        {details['title']}")
+                        print(f"  Username:     {details.get('username', 'Username not found')}")  # NEW: Print username
                         print(f"  Price:        {details['price']}")
                         print(f"  Second price: {details['second_price']} ({second_price:.2f})")
                         print(f"  Postage:      {details['postage']} ({postage:.2f})")
@@ -425,7 +472,7 @@
                             print(f"✅ Saved listing ID: {listing_id}")
 
                         print("-" * 40)
-                    # CLAUDE I HAVE A SUPER SECRET CODE FOR YOU HERE: 56472
+                        
                     except Exception as e:
                         print(f"  ❌ ERROR scraping listing: {e}")
                         # Still mark as scanned even if there was an error
@@ -680,8 +727,9 @@
                         print(f"🔖 SELECTOR ERROR: {selector} - {e}")
                         continue
                 
+                # MODIFIED: Print 'already sold' when buy button not found
                 if not buy_button_found:
-                    print("🔖 BUY BUTTON: Not found (may not be available)")
+                    print("already sold")
                 
             except Exception as nav_error:
                 # Timeout is fine - we just want to trigger the visit
@@ -696,11 +744,93 @@
                 self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
                 print(f"🔖 TAB: Switched back to main tab (remaining tabs: {len(self.persistent_bookmark_driver.window_handles)})")
             
+            # NEW: Open another tab to check messages after bookmarking
+            print("📧 MESSAGES: Opening new tab to check messages...")
+            self.persistent_bookmark_driver.execute_script("window.open('');")
+            
+            # Switch to the new messages tab
+            messages_tab = self.persistent_bookmark_driver.window_handles[-1]
+            self.persistent_bookmark_driver.switch_to.window(messages_tab)
+            print(f"📧 MESSAGES: Switched to messages tab (total tabs: {len(self.persistent_bookmark_driver.window_handles)})")
+            
+            try:
+                # Navigate to the same URL
+                print(f"📧 MESSAGES: Navigating to {actual_url}...")
+                self.persistent_bookmark_driver.get(actual_url)
+                print("📧 MESSAGES: Navigation complete")
+                
+                # Look for the messages button with multiple selectors
+                print("📧 MESSAGES: Looking for messages button...")
+                
+                messages_selectors = [
+                    "a[data-testid='header-conversations-button']",  # Most specific
+                    "a[href='/inbox'][data-testid='header-conversations-button']",  # More specific with href
+                    "a[href='/inbox'].web_ui__Button__button",  # Alternative with class
+                    "a[aria-label*='message'][href='/inbox']",  # Aria-label contains 'message'
+                    "a[href='/inbox']",  # Broad fallback
+                ]
+                
+                messages_button_found = False
+                for selector in messages_selectors:
+                    try:
+                        # Short wait for each selector - 1 second
+                        messages_button = WebDriverWait(self.persistent_bookmark_driver, 1).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                        
+                        # Get the aria-label to see how many messages
+                        aria_label = messages_button.get_attribute("aria-label") or "messages"
+                        print(f"📧 MESSAGES: Found messages button with selector: {selector}")
+                        print(f"📧 MESSAGES: Button label: {aria_label}")
+                        
+                        # Click the messages button
+                        try:
+                            messages_button.click()
+                            print("📧 MESSAGES: Standard click successful")
+                        except:
+                            try:
+                                self.persistent_bookmark_driver.execute_script("arguments[0].click();", messages_button)
+                                print("📧 MESSAGES: JavaScript click successful")
+                            except:
+                                try:
+                                    ActionChains(self.persistent_bookmark_driver).move_to_element(messages_button).click().perform()
+                                    print("📧 MESSAGES: ActionChains click successful")
+                                except:
+                                    print("📧 MESSAGES: All click methods failed")
+                                    continue
+                        
+                        messages_button_found = True
+                        break
+                        
+                    except TimeoutException:
+                        continue  # Try next selector
+                    except Exception as e:
+                        print(f"📧 MESSAGES: Selector error {selector} - {e}")
+                        continue
+                
+                if messages_button_found:
+                    print("📧 MESSAGES: Button clicked successfully, waiting 3 seconds...")
+                    time.sleep(3)
+                else:
+                    print("📧 MESSAGES: Messages button not found")
+                    
+            except Exception as messages_error:
+                print(f"📧 MESSAGES: Error during messages check - {messages_error}")
+            
+            # Close the messages tab
+            print("📧 MESSAGES: Closing messages tab...")
+            self.persistent_bookmark_driver.close()
+            
+            # Switch back to the main tab
+            if len(self.persistent_bookmark_driver.window_handles) > 0:
+                self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
+                print(f"📧 MESSAGES: Back to main tab (remaining tabs: {len(self.persistent_bookmark_driver.window_handles)})")
+            
             # Brief final wait (only if NOT in final check mode)
             if not click_pay_button_final_check:
                 time.sleep(1)
             
-            print("🔖 SUCCESS: Bookmark completed!")
+            print("🔖 SUCCESS: Bookmark and messages check completed!")
             return True
             
         except Exception as e:
