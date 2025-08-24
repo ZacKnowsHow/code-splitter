@@ -51,7 +51,7 @@ import random
 
 test_bookmark_function = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/6910013790-high-light-vest"
+test_bookmark_link = "https://www.vinted.co.uk/items/6934442506-mens-shirt-medium?referrer=catalog"
 #https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog
 # Config
 PROFILE_DIR = "Default"
@@ -5240,7 +5240,7 @@ class VintedScraper:
                         
                         try:
                             #REMOVE THIS LATER!!!
-                            username = 'yvonnematthew'
+                            username = 'sunflowers453'
                             # Wait for the username element to appear
                             username_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
                                 EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
@@ -5266,14 +5266,34 @@ class VintedScraper:
                             # Wait 3 seconds after clicking
 
                             try:
-                                print('wating 5s for shit to load')
-                                purchase_element = self.persistent_bookmark_driver.find_element(By.CSS_SELECTOR, 'h2.web_ui__Text__text.web_ui__Text__title.web_ui__Text__left.web_ui__Text__muted')
-                                if purchase_element.text.strip() == "Purchase successful":
+                                print('waiting 5s for shit to load')
+                                # Try multiple selectors in order of preference
+                                selectors = [
+                                    'div[data-testid="conversation-message--status-message--title"] h2:contains("Purchase successful")',
+                                    'div.web_ui__Cell__title[data-testid="conversation-message--status-message--title"] h2',
+                                    'h2.web_ui__Text__text.web_ui__Text__title.web_ui__Text__left.web_ui__Text__muted',
+                                    'div[data-testid="conversation-message--status-message--title"]'
+                                ]
+                                
+                                purchase_element = None
+                                for selector in selectors:
+                                    try:
+                                        purchase_element = self.persistent_bookmark_driver.find_element(By.CSS_SELECTOR, selector)
+                                        print(f"Found element with selector: {selector}")
+                                        print(f"Element text: '{purchase_element.text.strip()}'")
+                                        break
+                                    except:
+                                        continue
+                                
+                                if purchase_element and "Purchase successful" in purchase_element.text.strip():
                                     print("Purchase successful found - stopping scraper")
                                     import sys
                                     sys.exit(0)
-                            except:
-                                print('passing')
+                                else:
+                                    print("Purchase successful not found or element not located")
+                                    
+                            except Exception as e:
+                                print(f'Exception: {e}')
                                 pass
                             
                         except TimeoutException:
