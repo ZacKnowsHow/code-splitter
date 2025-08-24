@@ -51,7 +51,8 @@ import random
 
 test_bookmark_function = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/6878909092-nintendo-switch-game"
+test_bookmark_link = "https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog"
+#https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog
 # Config
 PROFILE_DIR = "Default"
 PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default"
@@ -4142,8 +4143,17 @@ class VintedScraper:
     def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
         """
         Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
+        FIXED: Now passes username to bookmark_driver
         """
         global suitable_listings, current_listing_index, recent_listings
+
+        # Extract username from details - THIS WAS MISSING!
+        username = details.get("username", None)
+        if username and username != "Username not found":
+            print(f"🔖 USERNAME EXTRACTED: {username}")
+        else:
+            username = None
+            print("🔖 USERNAME: Not available for this listing")
 
         # Extract and validate price from the main price field
         price_text = details.get("price", "0")
@@ -4241,9 +4251,9 @@ class VintedScraper:
             should_bookmark = True
             
         if should_bookmark:
-            # INSTANT bookmark execution - no threading delays, direct call for maximum speed
+            # INSTANT bookmark execution - now with username parameter
             print(f"🔖 INSTANT BOOKMARK: {url}")
-            self.bookmark_driver(url)  # Direct call, no threading overhead
+            self.bookmark_driver(url, username)  # PASS THE USERNAME!
 
         # Create final listing info
         final_listing_info = {
@@ -4959,10 +4969,12 @@ class VintedScraper:
             traceback.print_exc()
 
 
-    def bookmark_driver(self, listing_url):
+
+    def bookmark_driver(self, listing_url, username=None):  # ADD username parameter
         """
         ULTRA-FAST bookmark driver - uses single persistent driver with tabs
         MODIFIED: Now looks for username and bookmarks/buys accordingly
+        FIXED: Now accepts username as parameter from process_vinted_listing
         """
         # TEST MODE: If test_bookmark_function is True, use test_bookmark_link instead
         if test_bookmark_function:
@@ -4973,27 +4985,10 @@ class VintedScraper:
             actual_url = listing_url
             print(f"🔖 NORMAL MODE: Using actual listing URL")
         
-        # EXTRACT USERNAME FROM URL FOR LOOKUP
-        username = None
-        try:
-            # Get username from the listing URL by accessing the page quickly
-            if hasattr(self, 'main_driver') and self.main_driver:
-                # Use the main scraping driver to get username if possible
-                current_url = self.main_driver.current_url
-                if actual_url in current_url:
-                    # We're already on this page, try to get username
-                    try:
-                        username_element = self.main_driver.find_element(By.CSS_SELECTOR, "span[data-testid='profile-username']")
-                        username = username_element.text.strip()
-                    except:
-                        username = None
-        except:
-            username = None
-
+        # USERNAME IS NOW PASSED AS PARAMETER - NO NEED TO EXTRACT FROM DRIVER
         if not username:
-            # Fallback: Extract from page metadata or make a quick request
             print("⚠️ Could not extract username, proceeding without username lookup")
-            
+        
         print(f"🔖 Looking at listing {actual_url} posted by {username if username else 'unknown user'}")
         
         try:
@@ -5046,7 +5041,7 @@ class VintedScraper:
                 print("🔖 DRIVER: Existing driver is dead, creating new one...")
                 # Driver is dead, create a new one
                 self.persistent_bookmark_driver = None
-                return self.bookmark_driver(listing_url)  # Recursive call to recreate
+                return self.bookmark_driver(listing_url, username)  # Recursive call to recreate with username
             
             # Open new tab for this listing
             print("🔖 TAB: Opening new tab...")
@@ -5244,6 +5239,8 @@ class VintedScraper:
                         username_selector = f'h2.web_uiTexttext.web_uiTexttitle.web_uiTextleft:contains("{username}")'
                         
                         try:
+                            #REMOVE THIS LATER!!!
+                            username = 'leah_lane'
                             # Wait for the username element to appear
                             username_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
                                 EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
