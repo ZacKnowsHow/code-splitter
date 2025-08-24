@@ -1,4 +1,14 @@
 # Continuation from line 4401
+        display_objects = {k: v for k, v in detected_objects.items() if v > 0}
+
+        # Add miscellaneous games to display if present
+        if misc_games_count > 0:
+            display_objects['misc_games'] = misc_games_count
+
+        return total_revenue, expected_profit, profit_percentage, display_objects
+
+    def perform_detection_on_listing_images(self, model, listing_dir):
+        """
         Enhanced object detection with all Facebook exceptions and logic
         PLUS Vinted-specific post-scan game deduplication
         """
@@ -560,10 +570,12 @@
             traceback.print_exc()
 
 
-    def bookmark_driver(self, listing_url):
+
+    def bookmark_driver(self, listing_url, username=None):  # ADD username parameter
         """
         ULTRA-FAST bookmark driver - uses single persistent driver with tabs
         MODIFIED: Now looks for username and bookmarks/buys accordingly
+        FIXED: Now accepts username as parameter from process_vinted_listing
         """
         # TEST MODE: If test_bookmark_function is True, use test_bookmark_link instead
         if test_bookmark_function:
@@ -574,27 +586,10 @@
             actual_url = listing_url
             print(f"🔖 NORMAL MODE: Using actual listing URL")
         
-        # EXTRACT USERNAME FROM URL FOR LOOKUP
-        username = None
-        try:
-            # Get username from the listing URL by accessing the page quickly
-            if hasattr(self, 'main_driver') and self.main_driver:
-                # Use the main scraping driver to get username if possible
-                current_url = self.main_driver.current_url
-                if actual_url in current_url:
-                    # We're already on this page, try to get username
-                    try:
-                        username_element = self.main_driver.find_element(By.CSS_SELECTOR, "span[data-testid='profile-username']")
-                        username = username_element.text.strip()
-                    except:
-                        username = None
-        except:
-            username = None
-
+        # USERNAME IS NOW PASSED AS PARAMETER - NO NEED TO EXTRACT FROM DRIVER
         if not username:
-            # Fallback: Extract from page metadata or make a quick request
             print("⚠️ Could not extract username, proceeding without username lookup")
-            
+        
         print(f"🔖 Looking at listing {actual_url} posted by {username if username else 'unknown user'}")
         
         try:
@@ -647,7 +642,7 @@
                 print("🔖 DRIVER: Existing driver is dead, creating new one...")
                 # Driver is dead, create a new one
                 self.persistent_bookmark_driver = None
-                return self.bookmark_driver(listing_url)  # Recursive call to recreate
+                return self.bookmark_driver(listing_url, username)  # Recursive call to recreate with username
             
             # Open new tab for this listing
             print("🔖 TAB: Opening new tab...")
@@ -845,6 +840,8 @@
                         username_selector = f'h2.web_uiTexttext.web_uiTexttitle.web_uiTextleft:contains("{username}")'
                         
                         try:
+                            #REMOVE THIS LATER!!!
+                            username = 'leah_lane'
                             # Wait for the username element to appear
                             username_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
                                 EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))

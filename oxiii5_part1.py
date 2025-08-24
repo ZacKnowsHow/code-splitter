@@ -51,7 +51,8 @@ import random
 
 test_bookmark_function = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/6878909092-nintendo-switch-game"
+test_bookmark_link = "https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog"
+#https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog
 # Config
 PROFILE_DIR = "Default"
 PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default"
@@ -2197,4 +2198,3 @@ class FacebookScraper:
         game_classes = [
     '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
     'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
-    'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
