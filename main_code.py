@@ -5063,89 +5063,86 @@ class VintedScraper:
                 
                 # Multiple selectors for maximum speed and reliability
                 buy_selectors = [
-                    "button[data-testid='item-buy-button']",  # Most specific
-                    "button.web_ui__Button__primary[data-testid='item-buy-button']",  # Backup
-                    "button:contains('Buy now')",  # Text-based fallback
-                    ".web_ui__Button__primary .web_ui__Button__label:contains('Buy now')",  # Label-based
+                    "button[data-testid='item-buy-button']",  # Most specific - this should work!
+                    "button.web_ui__Button__primary[data-testid='item-buy-button']",  # More specific backup
+                    "button.web_ui__Button__button.web_ui__Button__primary",  # Class-based selector
+                    # Remove these invalid CSS selectors:
+                    # "button:contains('Buy now')",  # ❌ INVALID - :contains() is not CSS
+                    # ".web_ui__Button__primary .web_ui__Button__label:contains('Buy now')",  # ❌ INVALID
+                ]
+                
+                # Alternative approach using XPath for text-based selection
+                xpath_selectors = [
+                    "//button[@data-testid='item-buy-button']",  # Most reliable
+                    "//button[contains(@class, 'web_ui__Button__primary') and .//span[text()='Buy now']]",  # XPath with text
+                    "//button[contains(@class, 'web_ui__Button__button')]//span[text()='Buy now']/ancestor::button",  # Find by text
                 ]
                 
                 buy_button_found = False
+                
+                # First try CSS selectors
                 for selector in buy_selectors:
                     try:
-                        # Very short wait - just 0.5 seconds per selector
                         buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
                             EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                         )
                         
-                        print(f"🔖 FOUND: Buy button with selector: {selector}")
+                        print(f"🔖 FOUND: Buy button with CSS selector: {selector}")
                         
-                        # INSTANT CLICK - try multiple click methods for speed
-                        click_successful = False
+                        # Click logic here...
                         try:
                             buy_button.click()
                             print("🔖 CLICKED: Standard click successful")
-                            click_successful = True
+                            buy_button_found = True
+                            break
                         except:
                             try:
                                 self.persistent_bookmark_driver.execute_script("arguments[0].click();", buy_button)
                                 print("🔖 CLICKED: JavaScript click successful")
-                                click_successful = True
+                                buy_button_found = True
+                                break
                             except:
-                                try:
-                                    ActionChains(self.persistent_bookmark_driver).move_to_element(buy_button).click().perform()
-                                    print("🔖 CLICKED: ActionChains click successful")
-                                    click_successful = True
-                                except:
-                                    print("🔖 CLICK: All click methods failed")
-                        
-                        # If click was successful, wait for payment page to load - ULTRA FAST
-                        if click_successful:
-                            print("🔖 WAITING: For payment page to load...")
-                            
-                            try:
-                                # SINGLE FAST CHECK - only look for the specific Pay button
-                                pay_button = WebDriverWait(self.persistent_bookmark_driver, 8).until(
-                                    EC.element_to_be_clickable((By.CSS_SELECTOR, 
-                                        'button[data-testid="single-checkout-order-summary-purchase-button"]'
-                                    ))
-                                )
-                                print("🔖 PAYMENT PAGE LOADED!")
+                                print("🔖 CLICK: CSS selector found button but click failed")
                                 
-                                # CHECK IF WE SHOULD CLICK THE PAY BUTTON
-                                if click_pay_button_final_check:
-                                    print("🔖 FINAL CHECK MODE: Clicking Pay button...")
-                                    
-                                    try:
-                                        # SINGLE CLICK ATTEMPT - no retries, no fallbacks
-                                        pay_button.click()
-                                        
-                                        # PRECISELY 0.25 seconds after the click - NO MATTER WHAT
-                                        time.sleep(0.25)
-                                        
-                                        # CTRL+W to close tab instantly
-                                        self.persistent_bookmark_driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.CONTROL + 'w')
-                                        
-                                        print("🔖 FINAL CHECK SUCCESS: Pay button clicked and tab closed after 0.25s")
-                                        
-                                    except Exception as final_error:
-                                        print(f"🔖 FINAL CHECK FAILURE: Error during pay button click or tab close - {final_error}")
-                                
-                            except TimeoutException:
-                                print("🔖 PAYMENT PAGE: Timeout - Pay button not found")
-                            except Exception as e:
-                                print(f"🔖 PAYMENT PAGE ERROR: {e}")
-                        
-                        buy_button_found = True
-                        break
-                        
                     except TimeoutException:
-                        continue  # Try next selector
+                        continue
                     except Exception as e:
-                        print(f"🔖 SELECTOR ERROR: {selector} - {e}")
+                        print(f"🔖 CSS SELECTOR ERROR: {selector} - {e}")
                         continue
                 
-                # MODIFIED: Print 'already sold' when buy button not found
+                # If CSS selectors failed, try XPath selectors
                 if not buy_button_found:
+                    print("🔖 FALLBACK: Trying XPath selectors...")
+                    for xpath in xpath_selectors:
+                        try:
+                            buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
+                                EC.element_to_be_clickable((By.XPATH, xpath))
+                            )
+                            
+                            print(f"🔖 FOUND: Buy button with XPath: {xpath}")
+                            
+                            try:
+                                buy_button.click()
+                                print("🔖 CLICKED: XPath click successful")
+                                buy_button_found = True
+                                break
+                            except:
+                                try:
+                                    self.persistent_bookmark_driver.execute_script("arguments[0].click();", buy_button)
+                                    print("🔖 CLICKED: XPath JavaScript click successful")
+                                    buy_button_found = True
+                                    break
+                                except:
+                                    print("🔖 CLICK: XPath found button but click failed")
+                                    
+                        except TimeoutException:
+                            continue
+                        except Exception as e:
+                            print(f"🔖 XPATH ERROR: {xpath} - {e}")
+                            continue
+                
+                if not buy_button_found:
+                    print("🔖 NOT FOUND: Buy button not found with any selector")
                     print("already sold")
                 
             except Exception as nav_error:
