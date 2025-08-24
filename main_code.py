@@ -51,7 +51,7 @@ import random
 
 test_bookmark_function = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog"
+test_bookmark_link = "https://www.vinted.co.uk/items/6910013790-high-light-vest"
 #https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog
 # Config
 PROFILE_DIR = "Default"
@@ -5016,7 +5016,7 @@ class VintedScraper:
                 chrome_opts.add_argument("--disable-features=TranslateUI")
                 chrome_opts.add_argument("--disable-background-networking")
                 chrome_opts.add_argument("--no-first-run")
-                chrome_opts.add_argument("--window-size=800,600")
+                chrome_opts.add_argument("--window-size=1920,1080")
                 chrome_opts.add_argument("--log-level=3")
                 chrome_opts.add_argument("--silent")
                 chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
@@ -5240,7 +5240,7 @@ class VintedScraper:
                         
                         try:
                             #REMOVE THIS LATER!!!
-                            username = 'leah_lane'
+                            username = 'yvonnematthew'
                             # Wait for the username element to appear
                             username_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
                                 EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
@@ -5264,8 +5264,17 @@ class VintedScraper:
                                         print(f"📧 CLICK FAILED: Could not click username '{username}'")
                             
                             # Wait 3 seconds after clicking
-                            print("📧 WAITING: 3 seconds after clicking username...")
-                            time.sleep(3)
+
+                            try:
+                                print('wating 5s for shit to load')
+                                purchase_element = self.persistent_bookmark_driver.find_element(By.CSS_SELECTOR, 'h2.web_ui__Text__text.web_ui__Text__title.web_ui__Text__left.web_ui__Text__muted')
+                                if purchase_element.text.strip() == "Purchase successful":
+                                    print("Purchase successful found - stopping scraper")
+                                    import sys
+                                    sys.exit(0)
+                            except:
+                                print('passing')
+                                pass
                             
                         except TimeoutException:
                             print(f"📧 NOT FOUND: Username '{username}' not found on messages page")
