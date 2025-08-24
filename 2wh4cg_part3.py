@@ -563,7 +563,7 @@
     def bookmark_driver(self, listing_url):
         """
         ULTRA-FAST bookmark driver - uses single persistent driver with tabs
-        MODIFIED: Now keeps one driver open and opens new tabs for each listing
+        MODIFIED: Now looks for username and bookmarks/buys accordingly
         """
         # TEST MODE: If test_bookmark_function is True, use test_bookmark_link instead
         if test_bookmark_function:
@@ -573,6 +573,29 @@
         else:
             actual_url = listing_url
             print(f"🔖 NORMAL MODE: Using actual listing URL")
+        
+        # EXTRACT USERNAME FROM URL FOR LOOKUP
+        username = None
+        try:
+            # Get username from the listing URL by accessing the page quickly
+            if hasattr(self, 'main_driver') and self.main_driver:
+                # Use the main scraping driver to get username if possible
+                current_url = self.main_driver.current_url
+                if actual_url in current_url:
+                    # We're already on this page, try to get username
+                    try:
+                        username_element = self.main_driver.find_element(By.CSS_SELECTOR, "span[data-testid='profile-username']")
+                        username = username_element.text.strip()
+                    except:
+                        username = None
+        except:
+            username = None
+
+        if not username:
+            # Fallback: Extract from page metadata or make a quick request
+            print("⚠️ Could not extract username, proceeding without username lookup")
+            
+        print(f"🔖 Looking at listing {actual_url} posted by {username if username else 'unknown user'}")
         
         try:
             print(f"🔖 STARTING BOOKMARK: {actual_url}")
@@ -744,7 +767,7 @@
                 self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
                 print(f"🔖 TAB: Switched back to main tab (remaining tabs: {len(self.persistent_bookmark_driver.window_handles)})")
             
-            # NEW: Open another tab to check messages after bookmarking
+            # NEW: MODIFIED MESSAGE CHECKING FUNCTIONALITY
             print("📧 MESSAGES: Opening new tab to check messages...")
             self.persistent_bookmark_driver.execute_script("window.open('');")
             
@@ -754,7 +777,7 @@
             print(f"📧 MESSAGES: Switched to messages tab (total tabs: {len(self.persistent_bookmark_driver.window_handles)})")
             
             try:
-                # Navigate to the same URL
+                # Navigate to the same URL first
                 print(f"📧 MESSAGES: Navigating to {actual_url}...")
                 self.persistent_bookmark_driver.get(actual_url)
                 print("📧 MESSAGES: Navigation complete")
@@ -809,8 +832,56 @@
                         continue
                 
                 if messages_button_found:
-                    print("📧 MESSAGES: Button clicked successfully, waiting 3 seconds...")
-                    time.sleep(3)
+                    print("📧 MESSAGES: Button clicked successfully")
+                    
+                    # NEW: SEARCH FOR THE USERNAME ON THE MESSAGES PAGE
+                    if username:
+                        print(f"📧 SEARCHING: Looking for username '{username}' on messages page...")
+                        
+                        # Wait for messages page to load
+                        time.sleep(2)
+                        
+                        # Look for the username using the specific pattern provided
+                        username_selector = f'h2.web_uiTexttext.web_uiTexttitle.web_uiTextleft:contains("{username}")'
+                        
+                        try:
+                            # Wait for the username element to appear
+                            username_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
+                                EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
+                            )
+                            
+                            print(f"📧 FOUND: Username '{username}' on messages page!")
+                            
+                            # Click on the username
+                            try:
+                                username_element.click()
+                                print(f"📧 CLICKED: Username '{username}' clicked successfully")
+                            except:
+                                try:
+                                    self.persistent_bookmark_driver.execute_script("arguments[0].click();", username_element)
+                                    print(f"📧 CLICKED: Username '{username}' clicked with JavaScript")
+                                except:
+                                    try:
+                                        ActionChains(self.persistent_bookmark_driver).move_to_element(username_element).click().perform()
+                                        print(f"📧 CLICKED: Username '{username}' clicked with ActionChains")
+                                    except:
+                                        print(f"📧 CLICK FAILED: Could not click username '{username}'")
+                            
+                            # Wait 3 seconds after clicking
+                            print("📧 WAITING: 3 seconds after clicking username...")
+                            time.sleep(3)
+                            
+                        except TimeoutException:
+                            print(f"📧 NOT FOUND: Username '{username}' not found on messages page")
+                            print(f"unable to find username {username} for listing {actual_url}, likely failed to bookmark or buy.")
+                        except Exception as search_error:
+                            print(f"📧 SEARCH ERROR: Error searching for username '{username}': {search_error}")
+                            print(f"unable to find username {username} for listing {actual_url}, likely failed to bookmark or buy.")
+                            
+                    else:
+                        print("📧 NO USERNAME: No username available for search, waiting 3 seconds...")
+                        time.sleep(3)
+                        
                 else:
                     print("📧 MESSAGES: Messages button not found")
                     
@@ -825,10 +896,6 @@
             if len(self.persistent_bookmark_driver.window_handles) > 0:
                 self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
                 print(f"📧 MESSAGES: Back to main tab (remaining tabs: {len(self.persistent_bookmark_driver.window_handles)})")
-            
-            # Brief final wait (only if NOT in final check mode)
-            if not click_pay_button_final_check:
-                time.sleep(1)
             
             print("🔖 SUCCESS: Bookmark and messages check completed!")
             return True
