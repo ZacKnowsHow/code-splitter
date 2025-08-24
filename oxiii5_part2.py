@@ -1,4 +1,5 @@
 # Continuation from line 2201
+    'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
     'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
     'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
     'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
@@ -1943,8 +1944,17 @@ class VintedScraper:
     def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
         """
         Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
+        FIXED: Now passes username to bookmark_driver
         """
         global suitable_listings, current_listing_index, recent_listings
+
+        # Extract username from details - THIS WAS MISSING!
+        username = details.get("username", None)
+        if username and username != "Username not found":
+            print(f"🔖 USERNAME EXTRACTED: {username}")
+        else:
+            username = None
+            print("🔖 USERNAME: Not available for this listing")
 
         # Extract and validate price from the main price field
         price_text = details.get("price", "0")
@@ -2042,9 +2052,9 @@ class VintedScraper:
             should_bookmark = True
             
         if should_bookmark:
-            # INSTANT bookmark execution - no threading delays, direct call for maximum speed
+            # INSTANT bookmark execution - now with username parameter
             print(f"🔖 INSTANT BOOKMARK: {url}")
-            self.bookmark_driver(url)  # Direct call, no threading overhead
+            self.bookmark_driver(url, username)  # PASS THE USERNAME!
 
         # Create final listing info
         final_listing_info = {
@@ -2189,13 +2199,3 @@ class VintedScraper:
         print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
 
         # CRITICAL FIX: Filter out zero-count items for display (matching Facebook behavior)
-        display_objects = {k: v for k, v in detected_objects.items() if v > 0}
-
-        # Add miscellaneous games to display if present
-        if misc_games_count > 0:
-            display_objects['misc_games'] = misc_games_count
-
-        return total_revenue, expected_profit, profit_percentage, display_objects
-
-    def perform_detection_on_listing_images(self, model, listing_dir):
-        """
