@@ -51,7 +51,7 @@ import random
 
 test_bookmark_function = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/6910013790-high-light-vest"
+test_bookmark_link = "https://www.vinted.co.uk/items/6934442506-mens-shirt-medium?referrer=catalog"
 #https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog
 # Config
 PROFILE_DIR = "Default"
