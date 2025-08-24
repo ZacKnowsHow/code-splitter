@@ -252,8 +252,8 @@ current_listing_index = 0
 miscellaneous_games_price = 5
 vinted_scraper_instance = None
 test_bookmark_function = True
-click_pay_button_final_check = False
-test_bookmark_link = "https://www.vinted.co.uk/items/6926101310-sports-cool-gym-towel?referrer=catalog"
+click_pay_button_final_check = True
+test_bookmark_link = "https://www.vinted.co.uk/items/6927893502-my-chemical-romance-tshirt?referrer=catalog"
 
 BASE_PRICES = {
    '1_2_switch': 6.5, 'animal_crossing': 24, 'arceus_p': 27.5, 'bow_z': 28, 'bros_deluxe_m': 23.5,
