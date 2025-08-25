@@ -1433,7 +1433,7 @@ class VintedScraper:
         }
         options = Options()
         options.add_experimental_option("prefs", prefs)
-        #options.add_argument("--headless")
+        options.add_argument("--headless")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
