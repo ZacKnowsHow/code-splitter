@@ -52,8 +52,8 @@ import random
 test_bookmark_function = True
 bookmark_listings = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
-#https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog
+test_bookmark_link = "https://www.vinted.co.uk/items/6940643329-next-4-piece-bundle-tops-denim-pinafores?referrer=catalog"
+#sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 # Config
 PROFILE_DIR = "Default"
 PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default2"
