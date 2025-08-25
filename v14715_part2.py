@@ -1998,7 +1998,7 @@ class VintedScraper:
         
         if bookmark_listings and is_suitable:
             should_bookmark = True
-        elif VINTED_SHOW_ALL_LISTINGS:
+        elif bookmark_listings and VINTED_SHOW_ALL_LISTINGS:
             should_bookmark = True
             
         if should_bookmark:

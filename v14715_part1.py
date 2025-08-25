@@ -54,7 +54,7 @@ bookmark_listings = True
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
-#bookmarked: https://www.vinted.co.uk/items/6938777693-aftermarket-wii-nunchuck?homepage_session_id=97514a97-7dc8-444e-9190-3ec19f2d4678
+
 # Config
 PROFILE_DIR = "Default"
 PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default2"
