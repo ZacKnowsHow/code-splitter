@@ -52,7 +52,7 @@ import random
 test_bookmark_function = True
 bookmark_listings = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/6934442506-mens-shirt-medium?referrer=catalog"
+test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
 #https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog
 # Config
 PROFILE_DIR = "Default"
@@ -5094,6 +5094,7 @@ class VintedScraper:
                 # MODIFIED: Print 'already sold' when buy button not found
                 if not buy_button_found:
                     print("already sold")
+                    #PUT THAT IT WASN'T BOOKMARKED STUFF HERE!!!
                 
             except Exception as nav_error:
                 # Timeout is fine - we just want to trigger the visit
@@ -5187,7 +5188,7 @@ class VintedScraper:
                         
                         try:
                             #REMOVE THIS LATER!!!
-                            username = 'leah_lane'
+                            username = 'leh_lane'
                             # Wait for the username element to appear
                             username_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
                                 EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
@@ -5211,15 +5212,16 @@ class VintedScraper:
                                         print(f"📧 CLICK FAILED: Could not click username '{username}'")
                             
                             # Wait 3 seconds after clicking
-                            print("📧 WAITING: 3 seconds after clicking username...")
+                            print("USERNAME FOUND, POSSIBLE ACCIDENTAL PURCHASE, ABORT")
                             time.sleep(3)
-                            
+                            sys.exit(0)
                         except TimeoutException:
                             print(f"📧 NOT FOUND: Username '{username}' not found on messages page")
-                            print(f"unable to find username {username} for listing {actual_url}, likely failed to bookmark or buy.")
-                        except Exception as search_error:
+                            #PUT NOTIFICATION STUFF HERE
+                            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
+                        except Exception as search_error:                        
                             print(f"📧 SEARCH ERROR: Error searching for username '{username}': {search_error}")
-                            print(f"unable to find username {username} for listing {actual_url}, likely failed to bookmark or buy.")
+                            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
                             
                     else:
                         print("📧 NO USERNAME: No username available for search, waiting 3 seconds...")
