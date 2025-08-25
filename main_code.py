@@ -52,7 +52,7 @@ import random
 test_bookmark_function = True
 bookmark_listings = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/6900829988-white-fluffy-baby-boots?referrer=catalog"
+test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 #bookmarked: https://www.vinted.co.uk/items/6938777693-aftermarket-wii-nunchuck?homepage_session_id=97514a97-7dc8-444e-9190-3ec19f2d4678
 # Config
@@ -4943,6 +4943,9 @@ class VintedScraper:
                 print(f"🔖 STARTING BOOKMARK: {actual_url}")
                 
                 # Initialize persistent driver if it doesn't exist
+                # In your bookmark_driver function, replace the driver initialization section with this:
+
+                # Initialize persistent driver if it doesn't exist
                 if not hasattr(self, 'persistent_bookmark_driver') or self.persistent_bookmark_driver is None:
                     print("🔖 INITIALIZING: Creating persistent bookmark driver...")
                     
@@ -4973,8 +4976,16 @@ class VintedScraper:
                     self.persistent_bookmark_driver.implicitly_wait(1)
                     self.persistent_bookmark_driver.set_page_load_timeout(8)
                     self.persistent_bookmark_driver.set_script_timeout(3)
-                
-                # Check if driver is still alive
+                    
+                    # NEW: Navigate to Vinted homepage on the main tab
+                    try:
+                        print("🔖 HOMEPAGE: Navigating to vinted.co.uk...")
+                        self.persistent_bookmark_driver.get("https://www.vinted.co.uk")
+                        print("🔖 HOMEPAGE: Successfully loaded vinted.co.uk")
+                    except Exception as homepage_error:
+                        print(f"🔖 HOMEPAGE: Failed to load vinted.co.uk - {homepage_error}")
+                        # Don't fail the whole process if homepage load fails
+                        pass
                 try:
                     self.persistent_bookmark_driver.current_url  # Test if driver is alive
                     print("🔖 DRIVER: Using existing persistent driver")
@@ -5088,15 +5099,46 @@ class VintedScraper:
                         
                         # Wait for loading and look for processing payment message
                         try:
-                            processing_element = WebDriverWait(self.persistent_bookmark_driver, 10).until(
-                                EC.presence_of_element_located((By.XPATH, 
-                                    "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft' and text()='Processing payment']"
-                                ))
-                            )
+                            # Use the exact HTML structure you provided
+                            processing_selectors = [
+                                # Exact selector for the h2 "Processing payment" element
+                                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
+                                
+                                # Alternative: look for the reservation message span
+                                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format' and contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+                                
+                                # Fallback: broader selectors
+                                "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
+                                "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]"
+                            ]
                             
-                            print('SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+                            processing_found = False
                             
-                        except:
+                            for i, selector in enumerate(processing_selectors, 1):
+                                try:
+                                    print(f"🔖 SECOND SEQUENCE: Trying selector {i}...")
+                                    
+                                    processing_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
+                                        EC.presence_of_element_located((By.XPATH, selector))
+                                    )
+                                    
+                                    element_text = processing_element.text.strip()
+                                    print(f"🔖 SECOND SEQUENCE: Found element with text: '{element_text}'")
+                                    print('SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+                                    processing_found = True
+                                    break
+                                    
+                                except TimeoutException:
+                                    continue
+                                except Exception as e:
+                                    print(f"🔖 SECOND SEQUENCE: Selector {i} error: {e}")
+                                    continue
+                            
+                            if not processing_found:
+                                print('listing likely bookmarked by another')
+                                
+                        except Exception as detection_error:
+                            print(f'🔖 SECOND SEQUENCE: Error during processing payment detection: {detection_error}')
                             print('listing likely bookmarked by another')
                         
                         # Close tab and return (do NOT continue with messages)
@@ -5178,8 +5220,6 @@ class VintedScraper:
                                     time.sleep(2)
                                     
                                     try:
-                                        #REMOVE THIS LATER!!!
-                                        username = 'leh_lane'
                                         
                                         username_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
                                             EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
