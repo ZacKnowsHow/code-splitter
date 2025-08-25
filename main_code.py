@@ -52,7 +52,7 @@ import random
 test_bookmark_function = True
 bookmark_listings = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/6940643329-next-4-piece-bundle-tops-denim-pinafores?referrer=catalog"
+test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 # Config
 PROFILE_DIR = "Default"
@@ -4957,15 +4957,8 @@ class VintedScraper:
                 chrome_opts.add_argument("--no-sandbox")
                 chrome_opts.add_argument("--disable-dev-shm-usage")
                 chrome_opts.add_argument("--disable-gpu")
-                chrome_opts.add_argument("--disable-extensions")
-                chrome_opts.add_argument("--disable-plugins")
-                chrome_opts.add_argument("--disable-web-security")
-                chrome_opts.add_argument("--disable-features=TranslateUI")
-                chrome_opts.add_argument("--disable-background-networking")
-                chrome_opts.add_argument("--no-first-run")
                 chrome_opts.add_argument("--window-size=800,600")
                 chrome_opts.add_argument("--log-level=3")
-                chrome_opts.add_argument("--silent")
                 chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
                 
                 service = Service(self._cached_chromedriver_path, log_path=os.devnull)
@@ -5091,13 +5084,24 @@ class VintedScraper:
                         print(f"🔖 SELECTOR ERROR: {selector} - {e}")
                         continue
                 
-                # MODIFIED: Print 'already sold' when buy button not found
+                # MODIFIED: Print 'already sold' when buy button not found and RETURN EARLY
                 if not buy_button_found:
                     print("already sold")
-                
+                    # Close the current tab immediately
+                    print("🔖 TAB: Closing current tab (item already sold)...")
+                    self.persistent_bookmark_driver.close()
+                    
+                    # Switch back to the first tab to keep the driver ready
+                    if len(self.persistent_bookmark_driver.window_handles) > 0:
+                        self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
+                        print(f"🔖 TAB: Switched back to main tab (remaining tabs: {len(self.persistent_bookmark_driver.window_handles)})")
+                    
+                    return False  # RETURN EARLY - NO MESSAGES, NO FURTHER PROCESSING
+                    
             except Exception as nav_error:
                 # Timeout is fine - we just want to trigger the visit
                 print(f"🔖 NAVIGATION: Timeout (acceptable)")
+            
             if buy_button_found:
                 # Close the current tab (but keep the driver alive)
                 print("🔖 TAB: Closing current tab...")
