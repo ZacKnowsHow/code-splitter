@@ -50,12 +50,13 @@ from ultralytics import YOLO
 import random
 
 test_bookmark_function = True
+bookmark_listings = False
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/6934442506-mens-shirt-medium?referrer=catalog"
 #https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog
 # Config
 PROFILE_DIR = "Default"
-PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default"
+PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default2"
 #"C:\VintedScraper_Default" - first one
 #"C:\VintedScraper_Backup" - second one
 BASE_URL = "https://www.vinted.co.uk/catalog"
@@ -147,7 +148,6 @@ recent_listings = {
 }
 
 review_min = 3
-bookmark_listings = True
 MAX_LISTINGS_TO_SCAN = 50
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
 MAX_LISTINGS_VINTED_TO_SCAN = 250  # Maximum listings to scan before refresh

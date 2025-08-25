@@ -1431,69 +1431,18 @@ class VintedScraper:
             "profile.default_content_setting_values.popups": 0,
             "download.prompt_for_download": False,
         }
-        chrome_opts.add_experimental_option("prefs", prefs)
-        
-        # User data directory setup
-        chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--profile-directory=Default")
-        #profile 2 = pc
-        # default = laptop
-        
-        # Core stability arguments
-        chrome_opts.add_argument("--headless")
-        chrome_opts.add_argument("--no-sandbox")
-        chrome_opts.add_argument("--disable-dev-shm-usage")
-        chrome_opts.add_argument("--disable-gpu")
-        chrome_opts.add_argument("--disable-software-rasterizer")
-        
-        # Memory and process management
-        chrome_opts.add_argument("--disable-background-timer-throttling")
-        chrome_opts.add_argument("--disable-backgrounding-occluded-windows")
-        chrome_opts.add_argument("--disable-renderer-backgrounding")
-        chrome_opts.add_argument("--disable-features=TranslateUI,VizDisplayCompositor")
-        chrome_opts.add_argument("--disable-ipc-flooding-protection")
-        chrome_opts.add_argument("--disable-background-networking")
-        chrome_opts.add_argument("--disable-default-apps")
-        chrome_opts.add_argument("--disable-extensions")
-        chrome_opts.add_argument("--disable-sync")
-        chrome_opts.add_argument("--disable-translate")
-        chrome_opts.add_argument("--hide-scrollbars")
-        chrome_opts.add_argument("--mute-audio")
-        chrome_opts.add_argument("--no-first-run")
-        chrome_opts.add_argument("--disable-logging")
-        chrome_opts.add_argument("--disable-permissions-api")
-        chrome_opts.add_argument("--disable-web-security")
-        
-        # Critical for preventing crashes
-        chrome_opts.add_argument("--disable-blink-features=AutomationControlled")
-        chrome_opts.add_argument("--disable-dev-shm-usage")
-        chrome_opts.add_argument("--remote-debugging-port=0")  # Let Chrome choose available port
-        chrome_opts.add_argument("--disable-crash-reporter")
-        chrome_opts.add_argument("--disable-component-update")
-        chrome_opts.add_argument("--disable-domain-reliability")
-        chrome_opts.add_argument("--disable-client-side-phishing-detection")
-        chrome_opts.add_argument("--disable-hang-monitor")
-        chrome_opts.add_argument("--disable-prompt-on-repost")
-        chrome_opts.add_argument("--disable-background-mode")
-        
-        # Memory limits to prevent crashes
-        chrome_opts.add_argument("--max_old_space_size=2048")
-        chrome_opts.add_argument("--memory-pressure-off")
-        
-        # Window settings for headless mode
-        chrome_opts.add_argument("--window-size=1280,720")
-        chrome_opts.add_argument("--disable-infobars")
-        
-        # Logging control
-        chrome_opts.add_argument("--log-level=3")
-        chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-        chrome_opts.add_experimental_option('useAutomationExtension', False)
-        
-        # Additional stability options
-        chrome_opts.add_argument("--no-zygote")
-        chrome_opts.add_argument("--single-process")  # Use single process to avoid multi-process crashes
-        chrome_opts.add_argument("--disable-features=VizDisplayCompositor")
-        
+        options = Options()
+        options.add_experimental_option("prefs", prefs)
+        #options.add_argument("--headless")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--remote-debugging-port=0")
+        options.add_argument("--log-level=3")
+        options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+        options.add_argument(f"--profile-directory=Default")
         try:
             service = Service(
                 ChromeDriverManager().install(),
@@ -1508,7 +1457,7 @@ class VintedScraper:
             ]
             
             print("🚀 Starting Chrome driver with enhanced stability settings...")
-            driver = webdriver.Chrome(service=service, options=chrome_opts)
+            driver = webdriver.Chrome(service=service, options=options)
             
             # Set timeouts
             driver.implicitly_wait(10)
@@ -1532,7 +1481,7 @@ class VintedScraper:
             # Fallback: Remove problematic arguments
             fallback_opts = Options()
             fallback_opts.add_experimental_option("prefs", prefs)
-            fallback_opts.add_argument("--headless")
+            #fallback_opts.add_argument("--headless")
             fallback_opts.add_argument("--no-sandbox")
             fallback_opts.add_argument("--disable-dev-shm-usage")
             fallback_opts.add_argument("--disable-gpu")
@@ -1564,7 +1513,7 @@ class VintedScraper:
         
         fallback_opts = Options()
         fallback_opts.add_experimental_option("prefs", prefs)
-        #fallback_opts.add_argument("--headless")
+        fallback_opts.add_argument("--headless")
         fallback_opts.add_argument("--no-sandbox")
         fallback_opts.add_argument("--disable-dev-shm-usage")
         fallback_opts.add_argument("--disable-gpu")
@@ -2199,3 +2148,54 @@ class VintedScraper:
         print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
 
         # CRITICAL FIX: Filter out zero-count items for display (matching Facebook behavior)
+        display_objects = {k: v for k, v in detected_objects.items() if v > 0}
+
+        # Add miscellaneous games to display if present
+        if misc_games_count > 0:
+            display_objects['misc_games'] = misc_games_count
+
+        return total_revenue, expected_profit, profit_percentage, display_objects
+
+    def perform_detection_on_listing_images(self, model, listing_dir):
+        """
+        Enhanced object detection with all Facebook exceptions and logic
+        PLUS Vinted-specific post-scan game deduplication
+        """
+        if not os.path.isdir(listing_dir):
+            return {}, []
+
+        detected_objects = {class_name: [] for class_name in CLASS_NAMES}
+        processed_images = []
+        confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
+
+        image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
+        if not image_files:
+            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
+
+        for image_file in image_files:
+            image_path = os.path.join(listing_dir, image_file)
+            try:
+                img = cv2.imread(image_path)
+                if img is None:
+                    continue
+
+                # Track detections for this image
+                image_detections = {class_name: 0 for class_name in CLASS_NAMES}
+                results = model(img, verbose=False)
+                
+                for result in results:
+                    for box in result.boxes.cpu().numpy():
+                        class_id = int(box.cls[0])
+                        confidence = box.conf[0]
+                        
+                        if class_id < len(CLASS_NAMES):
+                            class_name = CLASS_NAMES[class_id]
+                            min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
+                            
+                            if confidence >= min_confidence:
+                                if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
+                                    confidences[class_name] = max(confidences[class_name], confidence)
+                                else:
+                                    image_detections[class_name] += 1
+                                
+                                # Draw bounding box
