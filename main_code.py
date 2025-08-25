@@ -50,12 +50,13 @@ from ultralytics import YOLO
 import random
 
 test_bookmark_function = True
+bookmark_listings = False
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/6934442506-mens-shirt-medium?referrer=catalog"
 #https://www.vinted.co.uk/items/6933213610-3xl-tshirt?referrer=catalog
 # Config
 PROFILE_DIR = "Default"
-PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default"
+PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default2"
 #"C:\VintedScraper_Default" - first one
 #"C:\VintedScraper_Backup" - second one
 BASE_URL = "https://www.vinted.co.uk/catalog"
@@ -147,7 +148,6 @@ recent_listings = {
 }
 
 review_min = 3
-bookmark_listings = True
 MAX_LISTINGS_TO_SCAN = 50
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
 MAX_LISTINGS_VINTED_TO_SCAN = 250  # Maximum listings to scan before refresh
@@ -3630,69 +3630,18 @@ class VintedScraper:
             "profile.default_content_setting_values.popups": 0,
             "download.prompt_for_download": False,
         }
-        chrome_opts.add_experimental_option("prefs", prefs)
-        
-        # User data directory setup
-        chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--profile-directory=Default")
-        #profile 2 = pc
-        # default = laptop
-        
-        # Core stability arguments
-        chrome_opts.add_argument("--headless")
-        chrome_opts.add_argument("--no-sandbox")
-        chrome_opts.add_argument("--disable-dev-shm-usage")
-        chrome_opts.add_argument("--disable-gpu")
-        chrome_opts.add_argument("--disable-software-rasterizer")
-        
-        # Memory and process management
-        chrome_opts.add_argument("--disable-background-timer-throttling")
-        chrome_opts.add_argument("--disable-backgrounding-occluded-windows")
-        chrome_opts.add_argument("--disable-renderer-backgrounding")
-        chrome_opts.add_argument("--disable-features=TranslateUI,VizDisplayCompositor")
-        chrome_opts.add_argument("--disable-ipc-flooding-protection")
-        chrome_opts.add_argument("--disable-background-networking")
-        chrome_opts.add_argument("--disable-default-apps")
-        chrome_opts.add_argument("--disable-extensions")
-        chrome_opts.add_argument("--disable-sync")
-        chrome_opts.add_argument("--disable-translate")
-        chrome_opts.add_argument("--hide-scrollbars")
-        chrome_opts.add_argument("--mute-audio")
-        chrome_opts.add_argument("--no-first-run")
-        chrome_opts.add_argument("--disable-logging")
-        chrome_opts.add_argument("--disable-permissions-api")
-        chrome_opts.add_argument("--disable-web-security")
-        
-        # Critical for preventing crashes
-        chrome_opts.add_argument("--disable-blink-features=AutomationControlled")
-        chrome_opts.add_argument("--disable-dev-shm-usage")
-        chrome_opts.add_argument("--remote-debugging-port=0")  # Let Chrome choose available port
-        chrome_opts.add_argument("--disable-crash-reporter")
-        chrome_opts.add_argument("--disable-component-update")
-        chrome_opts.add_argument("--disable-domain-reliability")
-        chrome_opts.add_argument("--disable-client-side-phishing-detection")
-        chrome_opts.add_argument("--disable-hang-monitor")
-        chrome_opts.add_argument("--disable-prompt-on-repost")
-        chrome_opts.add_argument("--disable-background-mode")
-        
-        # Memory limits to prevent crashes
-        chrome_opts.add_argument("--max_old_space_size=2048")
-        chrome_opts.add_argument("--memory-pressure-off")
-        
-        # Window settings for headless mode
-        chrome_opts.add_argument("--window-size=1280,720")
-        chrome_opts.add_argument("--disable-infobars")
-        
-        # Logging control
-        chrome_opts.add_argument("--log-level=3")
-        chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-        chrome_opts.add_experimental_option('useAutomationExtension', False)
-        
-        # Additional stability options
-        chrome_opts.add_argument("--no-zygote")
-        chrome_opts.add_argument("--single-process")  # Use single process to avoid multi-process crashes
-        chrome_opts.add_argument("--disable-features=VizDisplayCompositor")
-        
+        options = Options()
+        options.add_experimental_option("prefs", prefs)
+        #options.add_argument("--headless")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--remote-debugging-port=0")
+        options.add_argument("--log-level=3")
+        options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+        options.add_argument(f"--profile-directory=Default")
         try:
             service = Service(
                 ChromeDriverManager().install(),
@@ -3707,7 +3656,7 @@ class VintedScraper:
             ]
             
             print("🚀 Starting Chrome driver with enhanced stability settings...")
-            driver = webdriver.Chrome(service=service, options=chrome_opts)
+            driver = webdriver.Chrome(service=service, options=options)
             
             # Set timeouts
             driver.implicitly_wait(10)
@@ -3731,7 +3680,7 @@ class VintedScraper:
             # Fallback: Remove problematic arguments
             fallback_opts = Options()
             fallback_opts.add_experimental_option("prefs", prefs)
-            fallback_opts.add_argument("--headless")
+            #fallback_opts.add_argument("--headless")
             fallback_opts.add_argument("--no-sandbox")
             fallback_opts.add_argument("--disable-dev-shm-usage")
             fallback_opts.add_argument("--disable-gpu")
@@ -3763,7 +3712,7 @@ class VintedScraper:
         
         fallback_opts = Options()
         fallback_opts.add_experimental_option("prefs", prefs)
-        #fallback_opts.add_argument("--headless")
+        fallback_opts.add_argument("--headless")
         fallback_opts.add_argument("--no-sandbox")
         fallback_opts.add_argument("--disable-dev-shm-usage")
         fallback_opts.add_argument("--disable-gpu")
@@ -4968,13 +4917,12 @@ class VintedScraper:
             import traceback
             traceback.print_exc()
 
-
-
-    def bookmark_driver(self, listing_url, username=None):  # ADD username parameter
+    def bookmark_driver(self, listing_url, username=None):
         """
         ULTRA-FAST bookmark driver - uses single persistent driver with tabs
         MODIFIED: Now looks for username and bookmarks/buys accordingly
         FIXED: Now accepts username as parameter from process_vinted_listing
+        COMPREHENSIVE: Enhanced buy button detection with multiple fallback methods
         """
         # TEST MODE: If test_bookmark_function is True, use test_bookmark_link instead
         if test_bookmark_function:
@@ -5001,10 +4949,10 @@ class VintedScraper:
                 # SPEED OPTIMIZATION 1: Pre-cached service
                 if not hasattr(self, '_cached_chromedriver_path'):
                     self._cached_chromedriver_path = ChromeDriverManager().install()
-                
+                print('TRYING CHROME OPTIONS DRIVER THING')
                 # SPEED OPTIMIZATION 2: Minimal Chrome options
                 chrome_opts = Options()
-                bookmark_user_data_dir = f"{PERMANENT_USER_DATA_DIR}_Bookmark"
+                bookmark_user_data_dir = "C:\VintedScraper_Default_Bookmark"
                 chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
                 chrome_opts.add_argument("--profile-directory=Profile 4")
                 chrome_opts.add_argument("--no-sandbox")
@@ -5058,96 +5006,252 @@ class VintedScraper:
                 self.persistent_bookmark_driver.get(actual_url)
                 print("🔖 NAVIGATION: Complete")
                 
-                # ULTRA-FAST BUY BUTTON CLICKING
+                # COMPREHENSIVE BUY BUTTON DETECTION
                 print("🔖 SEARCHING: Looking for Buy now button...")
-                
-                # Multiple selectors for maximum speed and reliability
-                buy_selectors = [
-                    "button[data-testid='item-buy-button']",  # Most specific - this should work!
-                    "button.web_ui__Button__primary[data-testid='item-buy-button']",  # More specific backup
-                    "button.web_ui__Button__button.web_ui__Button__primary",  # Class-based selector
-                    # Remove these invalid CSS selectors:
-                    # "button:contains('Buy now')",  # ❌ INVALID - :contains() is not CSS
-                    # ".web_ui__Button__primary .web_ui__Button__label:contains('Buy now')",  # ❌ INVALID
+
+                # STAGE 1: Primary selectors based on debug output
+                primary_selectors = [
+                    # Based on your original HTML structure
+                    "button[data-testid='item-buy-button']",
+                    
+                    # Based on the debug output showing actual class structure
+                    "button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__primary",
+                    "button.web_ui__Button__button.web_ui__Button__primary",
+                    
+                    # Look for any primary button that might be the buy button
+                    "button[class*='web_ui__Button__primary'][class*='web_ui__Button__button']",
                 ]
-                
-                # Alternative approach using XPath for text-based selection
-                xpath_selectors = [
-                    "//button[@data-testid='item-buy-button']",  # Most reliable
-                    "//button[contains(@class, 'web_ui__Button__primary') and .//span[text()='Buy now']]",  # XPath with text
-                    "//button[contains(@class, 'web_ui__Button__button')]//span[text()='Buy now']/ancestor::button",  # Find by text
+
+                # STAGE 2: Text-based XPath selectors (most reliable for buy buttons)
+                xpath_text_selectors = [
+                    # Exact text match
+                    "//button[.//span[text()='Buy now']]",
+                    "//button[contains(., 'Buy now')]",
+                    "//button[.//text()[normalize-space()='Buy now']]",
+                    
+                    # Case variations
+                    "//button[.//span[text()='BUY NOW']]",
+                    "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'buy now')]",
+                    
+                    # Alternative buy button texts
+                    "//button[contains(., 'Buy')]",
+                    "//button[.//span[contains(text(), 'Purchase')]]",
+                    "//button[.//span[contains(text(), 'Add to bag')]]",
+                    "//button[.//span[contains(text(), 'Add to cart')]]",
                 ]
-                
+
+                # STAGE 3: Comprehensive detection with detailed logging
                 buy_button_found = False
-                
-                # First try CSS selectors
-                for selector in buy_selectors:
+                found_button = None
+                found_method = None
+
+                # Try primary selectors first
+                print("🔖 STAGE 1: Trying primary CSS selectors...")
+                for i, selector in enumerate(primary_selectors):
                     try:
-                        buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                        )
+                        print(f"🔖 Trying CSS selector {i+1}: {selector}")
+                        buttons = self.persistent_bookmark_driver.find_elements(By.CSS_SELECTOR, selector)
                         
-                        print(f"🔖 FOUND: Buy button with CSS selector: {selector}")
-                        
-                        # Click logic here...
-                        try:
-                            buy_button.click()
-                            print("🔖 CLICKED: Standard click successful")
-                            buy_button_found = True
-                            break
-                        except:
-                            try:
-                                self.persistent_bookmark_driver.execute_script("arguments[0].click();", buy_button)
-                                print("🔖 CLICKED: JavaScript click successful")
-                                buy_button_found = True
-                                break
-                            except:
-                                print("🔖 CLICK: CSS selector found button but click failed")
-                                
-                    except TimeoutException:
-                        continue
-                    except Exception as e:
-                        print(f"🔖 CSS SELECTOR ERROR: {selector} - {e}")
-                        continue
-                
-                # If CSS selectors failed, try XPath selectors
-                if not buy_button_found:
-                    print("🔖 FALLBACK: Trying XPath selectors...")
-                    for xpath in xpath_selectors:
-                        try:
-                            buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
-                                EC.element_to_be_clickable((By.XPATH, xpath))
-                            )
-                            
-                            print(f"🔖 FOUND: Buy button with XPath: {xpath}")
-                            
-                            try:
-                                buy_button.click()
-                                print("🔖 CLICKED: XPath click successful")
-                                buy_button_found = True
-                                break
-                            except:
+                        if buttons:
+                            print(f"🔖 Found {len(buttons)} button(s) with selector: {selector}")
+                            for j, btn in enumerate(buttons):
                                 try:
-                                    self.persistent_bookmark_driver.execute_script("arguments[0].click();", buy_button)
-                                    print("🔖 CLICKED: XPath JavaScript click successful")
-                                    buy_button_found = True
-                                    break
-                                except:
-                                    print("🔖 CLICK: XPath found button but click failed")
+                                    btn_text = btn.text.strip()
+                                    btn_visible = btn.is_displayed()
+                                    btn_enabled = btn.is_enabled()
+                                    print(f"🔖   Button {j+1}: text='{btn_text}', visible={btn_visible}, enabled={btn_enabled}")
                                     
-                        except TimeoutException:
-                            continue
-                        except Exception as e:
-                            print(f"🔖 XPATH ERROR: {xpath} - {e}")
-                            continue
-                
+                                    if btn_visible and btn_enabled:
+                                        found_button = btn
+                                        found_method = f"CSS: {selector}"
+                                        buy_button_found = True
+                                        break
+                                except Exception as btn_error:
+                                    print(f"🔖   Button {j+1}: Error getting details - {btn_error}")
+                            
+                            if buy_button_found:
+                                break
+                        else:
+                            print(f"🔖   No buttons found with selector: {selector}")
+                            
+                    except Exception as e:
+                        print(f"🔖 CSS selector error: {selector} - {e}")
+                        continue
+
+                # Try XPath text selectors if CSS failed
                 if not buy_button_found:
-                    print("🔖 NOT FOUND: Buy button not found with any selector")
-                    print("already sold")
-                
+                    print("🔖 STAGE 2: Trying XPath text-based selectors...")
+                    for i, xpath in enumerate(xpath_text_selectors):
+                        try:
+                            print(f"🔖 Trying XPath {i+1}: {xpath}")
+                            buttons = self.persistent_bookmark_driver.find_elements(By.XPATH, xpath)
+                            
+                            if buttons:
+                                print(f"🔖 Found {len(buttons)} button(s) with XPath: {xpath}")
+                                for j, btn in enumerate(buttons):
+                                    try:
+                                        btn_text = btn.text.strip()
+                                        btn_visible = btn.is_displayed()
+                                        btn_enabled = btn.is_enabled()
+                                        print(f"🔖   Button {j+1}: text='{btn_text}', visible={btn_visible}, enabled={btn_enabled}")
+                                        
+                                        if btn_visible and btn_enabled:
+                                            found_button = btn
+                                            found_method = f"XPath: {xpath}"
+                                            buy_button_found = True
+                                            break
+                                    except Exception as btn_error:
+                                        print(f"🔖   Button {j+1}: Error getting details - {btn_error}")
+                                
+                                if buy_button_found:
+                                    break
+                            else:
+                                print(f"🔖   No buttons found with XPath: {xpath}")
+                                
+                        except Exception as e:
+                            print(f"🔖 XPath error: {xpath} - {e}")
+                            continue
+
+                # STAGE 3: Manual inspection of all buttons if still not found
+                if not buy_button_found:
+                    print("🔖 STAGE 3: Manual inspection of all buttons...")
+                    try:
+                        all_buttons = self.persistent_bookmark_driver.find_elements(By.TAG_NAME, "button")
+                        print(f"🔖 Analyzing all {len(all_buttons)} buttons on the page...")
+                        
+                        # Look for potential buy buttons by analyzing text content
+                        potential_buy_buttons = []
+                        
+                        for i, btn in enumerate(all_buttons):
+                            try:
+                                btn_text = btn.text.strip().lower()
+                                btn_classes = btn.get_attribute("class") or ""
+                                btn_testid = btn.get_attribute("data-testid") or ""
+                                btn_visible = btn.is_displayed()
+                                btn_enabled = btn.is_enabled()
+                                
+                                # Check if this could be a buy button
+                                is_potential_buy = (
+                                    # Text-based detection
+                                    any(keyword in btn_text for keyword in ['buy', 'purchase', 'add to', 'order']) or
+                                    # Class-based detection
+                                    ('primary' in btn_classes.lower() and 'button' in btn_classes.lower()) or
+                                    # TestID-based detection
+                                    ('buy' in btn_testid.lower() or 'purchase' in btn_testid.lower())
+                                )
+                                
+                                if is_potential_buy and btn_visible and btn_enabled:
+                                    potential_buy_buttons.append({
+                                        'button': btn,
+                                        'index': i,
+                                        'text': btn_text,
+                                        'classes': btn_classes,
+                                        'testid': btn_testid,
+                                        'score': 0
+                                    })
+                                    
+                                    # Scoring system to find the most likely buy button
+                                    score = 0
+                                    if 'buy now' in btn_text:
+                                        score += 100
+                                    elif 'buy' in btn_text:
+                                        score += 50
+                                    elif 'purchase' in btn_text:
+                                        score += 40
+                                    elif 'add to' in btn_text:
+                                        score += 30
+                                    
+                                    if 'primary' in btn_classes.lower():
+                                        score += 20
+                                    if 'buy' in btn_testid.lower():
+                                        score += 30
+                                        
+                                    potential_buy_buttons[-1]['score'] = score
+                                    
+                            except Exception as analysis_error:
+                                print(f"🔖   Error analyzing button {i}: {analysis_error}")
+                                continue
+                        
+                        if potential_buy_buttons:
+                            # Sort by score (highest first)
+                            potential_buy_buttons.sort(key=lambda x: x['score'], reverse=True)
+                            
+                            print(f"🔖 Found {len(potential_buy_buttons)} potential buy buttons:")
+                            for i, pot_btn in enumerate(potential_buy_buttons[:3]):  # Show top 3
+                                print(f"🔖   Candidate {i+1}: text='{pot_btn['text']}', score={pot_btn['score']}")
+                                print(f"🔖     classes='{pot_btn['classes'][:100]}...'")
+                                print(f"🔖     testid='{pot_btn['testid']}'")
+                            
+                            # Use the highest scoring button
+                            best_candidate = potential_buy_buttons[0]
+                            found_button = best_candidate['button']
+                            found_method = f"Manual analysis (score: {best_candidate['score']})"
+                            buy_button_found = True
+                            print(f"🔖 Selected best candidate: '{best_candidate['text']}' (score: {best_candidate['score']})")
+                            
+                    except Exception as manual_error:
+                        print(f"🔖 Error during manual analysis: {manual_error}")
+
+                # STAGE 4: Execute the click if button was found
+                if buy_button_found and found_button:
+                    print(f"🔖 SUCCESS: Found buy button using {found_method}")
+                    
+                    # Try multiple click methods
+                    click_methods = [
+                        ('Standard click', lambda btn: btn.click()),
+                        ('JavaScript click', lambda btn: self.persistent_bookmark_driver.execute_script("arguments[0].click();", btn)),
+                        ('ActionChains click', lambda btn: ActionChains(self.persistent_bookmark_driver).move_to_element(btn).click().perform()),
+                        ('JavaScript focus+click', lambda btn: self.persistent_bookmark_driver.execute_script("arguments[0].focus(); arguments[0].click();", btn)),
+                        ('Scroll into view + click', lambda btn: (
+                            self.persistent_bookmark_driver.execute_script("arguments[0].scrollIntoView(true);", btn),
+                            time.sleep(0.5),
+                            btn.click()
+                        )),
+                    ]
+                    
+                    click_successful = False
+                    for method_name, method_func in click_methods:
+                        try:
+                            print(f"🔖 Attempting {method_name}...")
+                            method_func(found_button)
+                            print(f"🔖 CLICKED: {method_name} successful!")
+                            click_successful = True
+                            break
+                        except Exception as click_error:
+                            print(f"🔖 {method_name} failed: {click_error}")
+                            continue
+                    
+                    if not click_successful:
+                        print("🔖 ERROR: All click methods failed")
+                        
+                        # Final debug: get more info about the button
+                        try:
+                            btn_rect = found_button.rect
+                            btn_tag = found_button.tag_name
+                            btn_location = found_button.location
+                            print(f"🔖 Button details: tag={btn_tag}, rect={btn_rect}, location={btn_location}")
+                        except:
+                            print("🔖 Could not get additional button details")
+                    
+                else:
+                    print("🔖 NOT FOUND: No buy button found with any method")
+                    print("🔖 This typically means:")
+                    print("🔖   1. Item is already sold/unavailable")
+                    print("🔖   2. Item requires login to purchase")
+                    print("🔖   3. Item is in a different state (auction, reserved, etc.)")
+                    
+                    # Final debug: show page title and URL to confirm we're on the right page
+                    try:
+                        page_title = self.persistent_bookmark_driver.title
+                        current_url = self.persistent_bookmark_driver.current_url
+                        print(f"🔖 Page title: {page_title}")
+                        print(f"🔖 Current URL: {current_url}")
+                    except:
+                        print("🔖 Could not get page details")
+                    
             except Exception as nav_error:
                 # Timeout is fine - we just want to trigger the visit
-                print(f"🔖 NAVIGATION: Timeout (acceptable)")
+                print(f"🔖 NAVIGATION: Error - {nav_error}")
             
             # Close the current tab (but keep the driver alive)
             print("🔖 TAB: Closing current tab...")
@@ -5232,9 +5336,6 @@ class VintedScraper:
                         # Wait for messages page to load
                         time.sleep(2)
                         
-                        # Look for the username using the specific pattern provided
-                        username_selector = f'h2.web_uiTexttext.web_uiTexttitle.web_uiTextleft:contains("{username}")'
-                        
                         try:
                             #REMOVE THIS LATER!!!
                             username = 'sunflowers453'
@@ -5261,7 +5362,6 @@ class VintedScraper:
                                         print(f"📧 CLICK FAILED: Could not click username '{username}'")
                             
                             # Wait 3 seconds after clicking
-
                             try:
                                 print('waiting 5s for shit to load')
                                 # Try multiple selectors in order of preference
