@@ -52,8 +52,9 @@ import random
 test_bookmark_function = True
 bookmark_listings = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
+test_bookmark_link = "https://www.vinted.co.uk/items/6900829988-white-fluffy-baby-boots?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
+#bookmarked: https://www.vinted.co.uk/items/6938777693-aftermarket-wii-nunchuck?homepage_session_id=97514a97-7dc8-444e-9190-3ec19f2d4678
 # Config
 PROFILE_DIR = "Default"
 PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default2"
@@ -2197,4 +2198,3 @@ class FacebookScraper:
         # Game classes for detection
         game_classes = [
     '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
-    'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
