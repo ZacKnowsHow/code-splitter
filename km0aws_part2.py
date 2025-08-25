@@ -1,4 +1,5 @@
 # Continuation from line 2201
+    'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
     'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
     'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
     'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
@@ -2198,4 +2199,3 @@ class VintedScraper:
                                 else:
                                     image_detections[class_name] += 1
                                 
-                                # Draw bounding box
