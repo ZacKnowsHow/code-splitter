@@ -1,4 +1,46 @@
 # Continuation from line 4401
+            
+        if should_bookmark:
+            # INSTANT bookmark execution - now with username parameter
+            print(f"🔖 INSTANT BOOKMARK: {url}")
+            
+            # Capture stdout to detect the success message
+            from io import StringIO
+            import contextlib
+            
+            # Create a string buffer to capture print output
+            captured_output = StringIO()
+            
+            # Temporarily redirect stdout to capture the bookmark_driver output
+            with contextlib.redirect_stdout(captured_output):
+                self.bookmark_driver(url, username)
+            
+            # Get the captured output and restore normal stdout
+            bookmark_output = captured_output.getvalue()
+            
+            # Print the captured output normally so you can still see it
+            print(bookmark_output, end='')
+            
+            # Check if the success message was printed
+            if 'SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!' in bookmark_output:
+                bookmark_success = True
+                print("🎉 BOOKMARK SUCCESS DETECTED!")
+                self.start_bookmark_stopwatch(url)
+            else:
+                print("❌ Bookmark did not succeed")
+
+        # Create final listing info
+        final_listing_info = {
+            'title': details.get("title", "No title"),
+            'description': details.get("description", "No description"),
+            'join_date': details.get("uploaded", "Unknown upload date"),
+            'price': str(total_price),
+            'expected_revenue': total_revenue,
+            'profit': expected_profit,
+            'detected_items': detected_objects, # Raw detected objects for box 1
+            'processed_images': processed_images,
+            'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
+            'url': url,
             'suitability': suitability_reason,
             'seller_reviews': seller_reviews
         }
@@ -720,6 +762,7 @@
             traceback.print_exc()
 
     def bookmark_driver(self, listing_url, username=None):  # ADD username parameter
+            print('entering bookmark_driver')
             """
             ULTRA-FAST bookmark driver - uses single persistent driver with tabs
             MODIFIED: Now looks for username and bookmarks/buys accordingly
@@ -731,12 +774,14 @@
                 print(f"🔖 TEST MODE: Using test URL instead of actual listing URL")
                 print(f"🔖 TEST URL: {actual_url}")
             else:
+                print('else')
                 actual_url = listing_url
                 print(f"🔖 NORMAL MODE: Using actual listing URL")
             
             # USERNAME IS NOW PASSED AS PARAMETER - NO NEED TO EXTRACT FROM DRIVER
             if not username:
-                print("⚠️ Could not extract username, proceeding without username lookup")
+                print("⚠️ Could not extract username, possible unable to detect false buy, exiting.")
+                sys.exit(0)
             
             print(f"🔖 Looking at listing {actual_url} posted by {username if username else 'unknown user'}")
             
@@ -1248,7 +1293,9 @@
             self.search_vinted_with_refresh(driver, SEARCH_QUERY)
         finally:
             driver.quit()
+            pygame.quit()
             self.cleanup_persistent_buying_driver()
+            sys.exit(0)
 
 if __name__ == "__main__":
     if programme_to_run == 0:
