@@ -49,10 +49,11 @@ import logging
 from ultralytics import YOLO
 import random
 
-test_bookmark_function = True
-bookmark_listings = False
+test_bookmark_function = False
+bookmark_listings = True
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
+bookmark_stopwatch_length = 5  # 10 minutes in seconds
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
 # Config
@@ -450,20 +451,22 @@ def vinted_button_clicked():
         # Print the appropriate message based on the action
         if action == 'buy_yes':
             print(f'✅ VINTED YES BUTTON: User wishes to buy listing: {url}')
+            
+            # Access the Vinted scraper instance and trigger enhanced button functionality
+            if 'vinted_scraper_instance' in globals():
+                vinted_scraper_instance.vinted_button_clicked_enhanced(url)
+            else:
+                print("WARNING: No Vinted scraper instance found")
+                print(f'Vinted button clicked on listing: {url}')
+                with open('vinted_clicked_listings.txt', 'a') as f:
+                    f.write(f"{action}: {url}\n")
+                    
         elif action == 'buy_no':
             print(f'❌ VINTED NO BUTTON: User does not wish to buy listing: {url}')
+            # DO NOT CALL vinted_button_clicked_enhanced - just print message
+            # No navigation should happen for "No" button
         else:
             print(f'🔘 VINTED BUTTON: Unknown action "{action}" for listing: {url}')
-        
-        # Access the Vinted scraper instance and trigger enhanced button functionality
-        if 'vinted_scraper_instance' in globals():
-            vinted_scraper_instance.vinted_button_clicked_enhanced(url)
-        else:
-            print("WARNING: No Vinted scraper instance found")
-            # Fallback to simple logging
-            print(f'Vinted button clicked on listing: {url}')
-            with open('vinted_clicked_listings.txt', 'a') as f:
-                f.write(f"{action}: {url}\n")
         
         return 'VINTED BUTTON CLICK PROCESSED', 200
         
@@ -3315,6 +3318,38 @@ class VintedScraper:
         self.main_driver = None
         self.persistent_buying_driver = None
         self.main_tab_handle = None
+        self.clicked_yes_listings = set()
+        self.clicked_yes_listings = set()  # Track listings that have been clicked "yes"
+        self.bookmark_timers = {}
+
+    def start_bookmark_stopwatch(self, listing_url):
+        """
+        Start a stopwatch for a successfully bookmarked listing
+        """
+        print(f"⏱️ STOPWATCH: Starting timer for {listing_url}")
+        
+        def stopwatch_timer():
+            time.sleep(bookmark_stopwatch_length)
+            print(f'LISTING {listing_url} HAS BEEN BOOKMARKED FOR {bookmark_stopwatch_length} SECONDS!')
+            
+            # Clean up the timer reference
+            if listing_url in self.bookmark_timers:
+                del self.bookmark_timers[listing_url]
+        
+        # Start the timer thread
+        timer_thread = threading.Thread(target=stopwatch_timer)
+        timer_thread.daemon = True
+        timer_thread.start()
+        
+        # Store reference to track active timers
+        self.bookmark_timers[listing_url] = timer_thread
+
+    def cleanup_bookmark_timers(self):
+        """
+        Clean up any remaining bookmark timers when shutting down
+        """
+        print(f"🧹 CLEANUP: Stopping {len(self.bookmark_timers)} active bookmark timers")
+        self.bookmark_timers.clear()  # Timer threads are daemon threads, so they'll stop automatically
 
     def run_pygame_window(self):
         global LOCK_POSITION, current_listing_index, suitable_listings
@@ -3661,14 +3696,20 @@ class VintedScraper:
         """
         print(f"🔘 VINTED BUTTON: Processing {url}")
         
-        # Add to queue for fast processing
-        self.vinted_button_queue.put(url)
-        
-        # Start processing if not already active
-        if not self.vinted_processing_active.is_set():
-            processing_thread = threading.Thread(target=self.process_vinted_button_queue)
-            processing_thread.daemon = True
-            processing_thread.start()
+        # Add to queue for fast processing - ONLY if not already clicked yes
+        if url not in self.clicked_yes_listings:
+            self.vinted_button_queue.put(url)
+            
+            # Mark as clicked to prevent duplicate processing
+            self.clicked_yes_listings.add(url)
+            
+            # Start processing if not already active
+            if not self.vinted_processing_active.is_set():
+                processing_thread = threading.Thread(target=self.process_vinted_button_queue)
+                processing_thread.daemon = True
+                processing_thread.start()
+        else:
+            print(f"🔄 VINTED BUTTON: Listing {url} already processed, ignoring")
 
     def process_vinted_button_queue(self):
         """
@@ -3769,7 +3810,7 @@ class VintedScraper:
         }
         options = Options()
         options.add_experimental_option("prefs", prefs)
-        options.add_argument("--headless")
+        #options.add_argument("--headless")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
@@ -4383,6 +4424,7 @@ class VintedScraper:
             if 'SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!' in bookmark_output:
                 bookmark_success = True
                 print("🎉 BOOKMARK SUCCESS DETECTED!")
+                self.start_bookmark_stopwatch(url)
             else:
                 print("❌ Bookmark did not succeed")
 
@@ -5119,6 +5161,7 @@ class VintedScraper:
             traceback.print_exc()
 
     def bookmark_driver(self, listing_url, username=None):  # ADD username parameter
+            print('entering bookmark_driver')
             """
             ULTRA-FAST bookmark driver - uses single persistent driver with tabs
             MODIFIED: Now looks for username and bookmarks/buys accordingly
@@ -5130,12 +5173,14 @@ class VintedScraper:
                 print(f"🔖 TEST MODE: Using test URL instead of actual listing URL")
                 print(f"🔖 TEST URL: {actual_url}")
             else:
+                print('else')
                 actual_url = listing_url
                 print(f"🔖 NORMAL MODE: Using actual listing URL")
             
             # USERNAME IS NOW PASSED AS PARAMETER - NO NEED TO EXTRACT FROM DRIVER
             if not username:
-                print("⚠️ Could not extract username, proceeding without username lookup")
+                print("⚠️ Could not extract username, possible unable to detect false buy, exiting.")
+                sys.exit(0)
             
             print(f"🔖 Looking at listing {actual_url} posted by {username if username else 'unknown user'}")
             
@@ -5647,7 +5692,9 @@ class VintedScraper:
             self.search_vinted_with_refresh(driver, SEARCH_QUERY)
         finally:
             driver.quit()
+            pygame.quit()
             self.cleanup_persistent_buying_driver()
+            sys.exit(0)
 
 if __name__ == "__main__":
     if programme_to_run == 0:
