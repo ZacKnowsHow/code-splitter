@@ -52,7 +52,7 @@ import random
 test_bookmark_function = True
 bookmark_listings = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
 # Config
@@ -395,7 +395,7 @@ def serve_icon():
     #pc
     #return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2 (1).png", mimetype='image/png')
     #laptop
-    return send_file(r"C:\Users\zacha\Downloads\icon_2 (1).png", mimetype='image/png')
+    return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2.png", mimetype='image/png')
 
 @app.route('/change_listing', methods=['POST'])
 def change_listing():
@@ -694,9 +694,62 @@ def render_main_page():
                     margin: 15px 0;
                 }}
                 .open-listing-button {{
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    background-color: #28a745;
                     font-size: 18px;
                     padding: 15px;
+                }}
+                
+                /* NEW: Buy decision buttons */
+                .buy-decision-container {{
+                    display: flex;
+                    gap: 10px;
+                    margin: 15px 0;
+                }}
+                .buy-yes-button {{
+                    background-color: #28a745;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                .buy-yes-button:hover {{
+                    background-color: #218838;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                .buy-yes-button:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                .buy-no-button {{
+                    background-color: #dc3545;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                .buy-no-button:hover {{
+                    background-color: #c82333;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                .buy-no-button:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 }}
             </style>
             <script>
@@ -747,7 +800,7 @@ def render_main_page():
                             const imageWrapper = document.createElement('div');
                             imageWrapper.className = 'image-wrapper';
                             const img = document.createElement('img');
-                            img.src = `data:image/png;base64,${{imgBase64}}`;
+                            img.src = `data:image/png;base64=${{imgBase64}}`;
                             img.alt = 'Listing Image';
                             imageWrapper.appendChild(img);
                             imageContainer.appendChild(imageWrapper);
@@ -763,7 +816,7 @@ def render_main_page():
                     }}
                 }}
 
-                // NEW: Single button function to open listing directly
+                // Single button function to open listing directly
                 function openListing() {{
                     var urlElement = document.querySelector('.content-url');
                     var url = urlElement ? urlElement.textContent.trim() : '';
@@ -773,6 +826,29 @@ def render_main_page():
                         window.open(url, '_blank');
                     }} else {{
                         alert('No valid URL available for this listing');
+                    }}
+                }}
+
+                // NEW: Buy decision functions
+                function buyYes() {{
+                    var urlElement = document.querySelector('.content-url');
+                    var url = urlElement ? urlElement.textContent.trim() : '';
+                    
+                    if (url && url !== 'No URL Available') {{
+                        console.log('User wishes to buy listing ' + url);
+                    }} else {{
+                        console.log('User wishes to buy listing but no URL available');
+                    }}
+                }}
+
+                function buyNo() {{
+                    var urlElement = document.querySelector('.content-url');
+                    var url = urlElement ? urlElement.textContent.trim() : '';
+                    
+                    if (url && url !== 'No URL Available') {{
+                        console.log('User does not wish to buy listing ' + url);
+                    }} else {{
+                        console.log('User does not wish to buy listing but no URL available');
                     }}
                 }}
 
@@ -810,10 +886,20 @@ def render_main_page():
                     <p><span class="content-description">{description}</span></p>
                 </div>
                 
-                <!-- MODIFIED: Single button instead of 4 small buttons -->
+                <!-- Single button for opening listing -->
                 <div class="single-button-container">
                     <button class="custom-button open-listing-button" onclick="openListing()">
-                        🔗 Open Listing in New Tab
+                        Open Listing in New Tab
+                    </button>
+                </div>
+                
+                <!-- NEW: Buy decision buttons -->
+                <div class="buy-decision-container">
+                    <button class="buy-yes-button" onclick="buyYes()">
+                        Yes - Buy now
+                    </button>
+                    <button class="buy-no-button" onclick="buyNo()">
+                        No - Do not purchase
                     </button>
                 </div>
                 
@@ -845,7 +931,7 @@ def render_main_page():
         print(f"ERROR in render_main_page: {e}")
         print(f"Traceback: {error_details}")
         return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
-
+    
 def base64_encode_image(img):
     """Convert PIL Image to base64 string, resizing if necessary"""
     max_size = (200, 200)
@@ -2112,89 +2198,3 @@ class FacebookScraper:
         current_listing_join_date = join_date
         current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
         current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
-        current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
-        current_listing_url = url
-        current_suitability = suitability if suitability else "Suitability unknown"
-
-    def update_pygame_window(self, title, description, join_date, price):
-        self.update_listing_details(title, description, join_date, price)
-        # No need to do anything else here, as the Pygame loop will use the updated global variables
-
-    def clear_output_file(self):
-        with open(OUTPUT_FILE_PATH, 'w') as f:
-            f.write('')  # This will clear the file
-        print(f"Cleared the content of {OUTPUT_FILE_PATH}")
-
-    def write_to_file(self, message, summary=False):
-        with open(OUTPUT_FILE_PATH, 'a') as f:
-            f.write(message + '\n')
-        if summary:
-            print(message)
-
-    def render_images(self, screen, images, rect, bounding_boxes):
-        if not images:
-            return
-
-        num_images = len(images)
-        if num_images == 1:
-            grid_size = 1
-        elif 2 <= num_images <= 4:
-            grid_size = 2
-        else:
-            grid_size = 3
-
-        cell_width = rect.width // grid_size
-        cell_height = rect.height // grid_size
-
-        for i, img in enumerate(images):
-            if i >= grid_size * grid_size:
-                break
-            row = i // grid_size
-            col = i % grid_size
-            img = img.resize((cell_width, cell_height))
-            img_surface = pygame.image.fromstring(img.tobytes(), img.size, img.mode)
-            screen.blit(img_surface, (rect.left + col * cell_width, rect.top + row * cell_height))
-
-        # Display suitability reason
-        if FAILURE_REASON_LISTED:
-            font = pygame.font.Font(None, 24)
-            suitability_text = font.render(current_suitability, True, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
-            screen.blit(suitability_text, (rect.left + 10, rect.bottom - 30))
-
-    def process_suitable_listing(self, listing_info, all_prices, listing_index):
-        # Default values to ensure the variable always exists
-        processed_images = []
-        image_paths = []
-        suitability_reason = "Not processed"
-        profit_suitability = False
-        display_objects = {}  # Initialize as empty dictionary
-
-        if listing_info["image_urls"]:
-            for j, image_url in enumerate(listing_info["image_urls"]):
-                save_path = os.path.join(r"C:\Users\ZacKnowsHow\Downloads", f"listing_{listing_index+1}_photo_{j+1}.jpg")
-                if self.save_image(image_url, save_path):
-                    image_paths.append(save_path)
-        else:
-            print("No product images found to save.")
-
-        detected_objects = {}
-        processed_images = []
-        total_revenue = 0
-        expected_profit = 0
-        profit_percentage = 0
-        
-        if image_paths:
-            print("Performing object detection...")
-            detected_objects, processed_images = self.perform_object_detection(image_paths, listing_info["title"], listing_info["description"])
-            listing_price = float(listing_info["price"])
-            total_revenue, expected_profit, profit_percentage, display_objects = self.calculate_revenue(
-                detected_objects, all_prices, listing_price, listing_info["title"], listing_info["description"])
-            listing_info['processed_images'] = processed_images.copy()
-
-        # Remove 'controller' from display_objects to prevent comparison issues    
-        # Store the processed images in listing_info, instead of creating copies
-        listing_info['processed_images'] = processed_images
-        
-        # Game classes for detection
-        game_classes = [
-    '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
