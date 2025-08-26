@@ -1,4 +1,134 @@
 # Continuation from line 4401
+        elif listing_price >= 100:
+            return 30 <= profit_percentage <= 450 # 30
+        else:
+            return False
+            
+    def calculate_vinted_revenue(self, detected_objects, listing_price, title, description=""):
+        """
+        Enhanced revenue calculation with all Facebook logic
+        """
+        debug_function_call("calculate_vinted_revenue")
+        import re  # FIXED: Import re at function level
+        
+        # List of game-related classes
+        game_classes = [
+            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
+            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
+            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
+            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
+            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
+            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
+            'sword_p', 'tears_z', 'violet_p'
+        ]
+
+        # Get all prices
+        all_prices = self.fetch_all_prices()
+
+        # Count detected games
+        detected_games_count = sum(detected_objects.get(game, 0) for game in game_classes)
+
+        # Detect anonymous games from title and description
+        text_games_count = self.detect_anonymous_games_vinted(title, description)
+
+        # Calculate miscellaneous games
+        misc_games_count = max(0, text_games_count - detected_games_count)
+        misc_games_revenue = misc_games_count * 5 # Using same price as Facebook
+
+        # Handle box adjustments (same as Facebook)
+        adjustments = {
+            'oled_box': ['switch', 'comfort_h', 'tv_white'],
+            'switch_box': ['switch', 'comfort_h', 'tv_black'],
+            'lite_box': ['lite']
+        }
+
+        for box, items in adjustments.items():
+            box_count = detected_objects.get(box, 0)
+            for item in items:
+                detected_objects[item] = max(0, detected_objects.get(item, 0) - box_count)
+
+        # Remove switch_screen if present
+        detected_objects.pop('switch_screen', None)
+
+        # Detect SD card and add revenue
+        total_revenue = misc_games_revenue
+        if self.detect_sd_card_vinted(title, description):
+            total_revenue += 5 # Same SD card revenue as Facebook
+            print(f"SD Card detected: Added £5 to revenue")
+
+        # Calculate revenue from detected objects
+        for item, count in detected_objects.items():
+            if isinstance(count, str):
+                count_match = re.match(r'(\d+)', count)
+                count = int(count_match.group(1)) if count_match else 0
+
+            if count > 0 and item in all_prices:
+                item_price = all_prices[item]
+                if item == 'controller' and 'pro' in title.lower():
+                    item_price += 7.50
+                
+                item_revenue = item_price * count
+                total_revenue += item_revenue
+
+        expected_profit = total_revenue - listing_price
+        profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
+
+        print(f"\nVinted Revenue Breakdown:")
+        print(f"Listing Price: £{listing_price:.2f}")
+        print(f"Total Expected Revenue: £{total_revenue:.2f}")
+        print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
+
+        # CRITICAL FIX: Filter out zero-count items for display (matching Facebook behavior)
+        display_objects = {k: v for k, v in detected_objects.items() if v > 0}
+
+        # Add miscellaneous games to display if present
+        if misc_games_count > 0:
+            display_objects['misc_games'] = misc_games_count
+
+        return total_revenue, expected_profit, profit_percentage, display_objects
+
+    def perform_detection_on_listing_images(self, model, listing_dir):
+        """
+        Enhanced object detection with all Facebook exceptions and logic
+        PLUS Vinted-specific post-scan game deduplication
+        """
+        if not os.path.isdir(listing_dir):
+            return {}, []
+
+        detected_objects = {class_name: [] for class_name in CLASS_NAMES}
+        processed_images = []
+        confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
+
+        image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
+        if not image_files:
+            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
+
+        for image_file in image_files:
+            image_path = os.path.join(listing_dir, image_file)
+            try:
+                img = cv2.imread(image_path)
+                if img is None:
+                    continue
+
+                # Track detections for this image
+                image_detections = {class_name: 0 for class_name in CLASS_NAMES}
+                results = model(img, verbose=False)
+                
+                for result in results:
+                    for box in result.boxes.cpu().numpy():
+                        class_id = int(box.cls[0])
+                        confidence = box.conf[0]
+                        
+                        if class_id < len(CLASS_NAMES):
+                            class_name = CLASS_NAMES[class_id]
+                            min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
+                            
+                            if confidence >= min_confidence:
+                                if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
+                                    confidences[class_name] = max(confidences[class_name], confidence)
+                                else:
+                                    image_detections[class_name] += 1
+                                
                                 # Draw bounding box
                                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                                 cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)

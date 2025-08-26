@@ -1,4 +1,90 @@
 # Continuation from line 2201
+        current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
+        current_listing_url = url
+        current_suitability = suitability if suitability else "Suitability unknown"
+
+    def update_pygame_window(self, title, description, join_date, price):
+        self.update_listing_details(title, description, join_date, price)
+        # No need to do anything else here, as the Pygame loop will use the updated global variables
+
+    def clear_output_file(self):
+        with open(OUTPUT_FILE_PATH, 'w') as f:
+            f.write('')  # This will clear the file
+        print(f"Cleared the content of {OUTPUT_FILE_PATH}")
+
+    def write_to_file(self, message, summary=False):
+        with open(OUTPUT_FILE_PATH, 'a') as f:
+            f.write(message + '\n')
+        if summary:
+            print(message)
+
+    def render_images(self, screen, images, rect, bounding_boxes):
+        if not images:
+            return
+
+        num_images = len(images)
+        if num_images == 1:
+            grid_size = 1
+        elif 2 <= num_images <= 4:
+            grid_size = 2
+        else:
+            grid_size = 3
+
+        cell_width = rect.width // grid_size
+        cell_height = rect.height // grid_size
+
+        for i, img in enumerate(images):
+            if i >= grid_size * grid_size:
+                break
+            row = i // grid_size
+            col = i % grid_size
+            img = img.resize((cell_width, cell_height))
+            img_surface = pygame.image.fromstring(img.tobytes(), img.size, img.mode)
+            screen.blit(img_surface, (rect.left + col * cell_width, rect.top + row * cell_height))
+
+        # Display suitability reason
+        if FAILURE_REASON_LISTED:
+            font = pygame.font.Font(None, 24)
+            suitability_text = font.render(current_suitability, True, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+            screen.blit(suitability_text, (rect.left + 10, rect.bottom - 30))
+
+    def process_suitable_listing(self, listing_info, all_prices, listing_index):
+        # Default values to ensure the variable always exists
+        processed_images = []
+        image_paths = []
+        suitability_reason = "Not processed"
+        profit_suitability = False
+        display_objects = {}  # Initialize as empty dictionary
+
+        if listing_info["image_urls"]:
+            for j, image_url in enumerate(listing_info["image_urls"]):
+                save_path = os.path.join(r"C:\Users\ZacKnowsHow\Downloads", f"listing_{listing_index+1}_photo_{j+1}.jpg")
+                if self.save_image(image_url, save_path):
+                    image_paths.append(save_path)
+        else:
+            print("No product images found to save.")
+
+        detected_objects = {}
+        processed_images = []
+        total_revenue = 0
+        expected_profit = 0
+        profit_percentage = 0
+        
+        if image_paths:
+            print("Performing object detection...")
+            detected_objects, processed_images = self.perform_object_detection(image_paths, listing_info["title"], listing_info["description"])
+            listing_price = float(listing_info["price"])
+            total_revenue, expected_profit, profit_percentage, display_objects = self.calculate_revenue(
+                detected_objects, all_prices, listing_price, listing_info["title"], listing_info["description"])
+            listing_info['processed_images'] = processed_images.copy()
+
+        # Remove 'controller' from display_objects to prevent comparison issues    
+        # Store the processed images in listing_info, instead of creating copies
+        listing_info['processed_images'] = processed_images
+        
+        # Game classes for detection
+        game_classes = [
+    '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
     'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
     'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
     'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
@@ -1889,12 +1975,13 @@ class VintedScraper:
             shutil.rmtree(DOWNLOAD_ROOT)
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
-# FIXED: Updated process_vinted_listing function - key section that handles suitability checking
+    # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
 
     def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
         """
         Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
         FIXED: Now passes username to bookmark_driver
+        MODIFIED: Only adds to pygame/website and sends notifications on successful bookmark when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -1993,7 +2080,8 @@ class VintedScraper:
 
         print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
 
-        # 🔖 ULTRA-FAST BOOKMARK FUNCTIONALITY - INSTANT EXECUTION!
+        # 🔖 MODIFIED BOOKMARK FUNCTIONALITY WITH SUCCESS TRACKING
+        bookmark_success = False
         should_bookmark = False
         
         if bookmark_listings and is_suitable:
@@ -2004,7 +2092,30 @@ class VintedScraper:
         if should_bookmark:
             # INSTANT bookmark execution - now with username parameter
             print(f"🔖 INSTANT BOOKMARK: {url}")
-            self.bookmark_driver(url, username)  # PASS THE USERNAME!
+            
+            # Capture stdout to detect the success message
+            from io import StringIO
+            import contextlib
+            
+            # Create a string buffer to capture print output
+            captured_output = StringIO()
+            
+            # Temporarily redirect stdout to capture the bookmark_driver output
+            with contextlib.redirect_stdout(captured_output):
+                self.bookmark_driver(url, username)
+            
+            # Get the captured output and restore normal stdout
+            bookmark_output = captured_output.getvalue()
+            
+            # Print the captured output normally so you can still see it
+            print(bookmark_output, end='')
+            
+            # Check if the success message was printed
+            if 'SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!' in bookmark_output:
+                bookmark_success = True
+                print("🎉 BOOKMARK SUCCESS DETECTED!")
+            else:
+                print("❌ Bookmark did not succeed")
 
         # Create final listing info
         final_listing_info = {
@@ -2022,25 +2133,44 @@ class VintedScraper:
             'seller_reviews': seller_reviews
         }
 
-        # Add to suitable listings based on VINTED_SHOW_ALL_LISTINGS setting
-        if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            # Send Pushover notification (same logic as Facebook)
-            notification_title = f"New Vinted Listing: £{total_price:.2f}"
-            notification_message = (
-                f"Title: {details.get('title', 'No title')}\n"
-                f"Price: £{total_price:.2f}\n"
-                f"Expected Profit: £{expected_profit:.2f}\n"
-                f"Profit %: {profit_percentage:.2f}%\n"
-            )
-            
-            # Use the Pushover tokens exactly as Facebook does
-            if send_notification:
-                self.send_pushover_notification(
-                    notification_title,
-                    notification_message,
-                    'aks3to8guqjye193w7ajnydk9jaxh5',
-                    'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+        # MODIFIED: Add to suitable listings based on new logic
+        should_add_listing = False
+        should_send_notification = False
+        # this here stops all of the non bookmarked listings from being added
+        if bookmark_listings and not VINTED_SHOW_ALL_LISTINGS:
+            # When bookmark_listings is ON and VINTED_SHOW_ALL_LISTINGS is OFF:
+            # Only add/notify if bookmark was successful
+            if bookmark_success:
+                should_add_listing = True
+                should_send_notification = True
+                print("✅ Adding listing because bookmark was successful")
+            else:
+                print("❌ Not adding listing because bookmark was not successful")
+        else:
+            # Original logic for other combinations
+            if is_suitable or VINTED_SHOW_ALL_LISTINGS:
+                should_add_listing = True
+                should_send_notification = True
+        
+        if should_add_listing:
+            # Send Pushover notification
+            if should_send_notification:
+                notification_title = f"New Vinted Listing: £{total_price:.2f}"
+                notification_message = (
+                    f"Title: {details.get('title', 'No title')}\n"
+                    f"Price: £{total_price:.2f}\n"
+                    f"Expected Profit: £{expected_profit:.2f}\n"
+                    f"Profit %: {profit_percentage:.2f}%\n"
                 )
+                
+                # Use the Pushover tokens exactly as Facebook does
+                if send_notification:
+                    self.send_pushover_notification(
+                        notification_title,
+                        notification_message,
+                        'aks3to8guqjye193w7ajnydk9jaxh5',
+                        'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                    )
 
             suitable_listings.append(final_listing_info)
 
@@ -2055,7 +2185,7 @@ class VintedScraper:
             if is_suitable:
                 print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
             else:
-                print(f"➕ Added unsuitable listing (SHOW_ALL mode): £{total_price:.2f}")
+                print(f"➕ Added unsuitable listing (SHOW_ALL mode or successful bookmark): £{total_price:.2f}")
         else:
             print(f"❌ Listing not added: {suitability_reason}")
 
@@ -2069,133 +2199,3 @@ class VintedScraper:
             return 37.5 <= profit_percentage <= 550 #35
         elif 50 <= listing_price < 100:
             return 35 <= profit_percentage <= 500 #32.5
-        elif listing_price >= 100:
-            return 30 <= profit_percentage <= 450 # 30
-        else:
-            return False
-            
-    def calculate_vinted_revenue(self, detected_objects, listing_price, title, description=""):
-        """
-        Enhanced revenue calculation with all Facebook logic
-        """
-        debug_function_call("calculate_vinted_revenue")
-        import re  # FIXED: Import re at function level
-        
-        # List of game-related classes
-        game_classes = [
-            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
-            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
-            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
-            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
-            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
-            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
-            'sword_p', 'tears_z', 'violet_p'
-        ]
-
-        # Get all prices
-        all_prices = self.fetch_all_prices()
-
-        # Count detected games
-        detected_games_count = sum(detected_objects.get(game, 0) for game in game_classes)
-
-        # Detect anonymous games from title and description
-        text_games_count = self.detect_anonymous_games_vinted(title, description)
-
-        # Calculate miscellaneous games
-        misc_games_count = max(0, text_games_count - detected_games_count)
-        misc_games_revenue = misc_games_count * 5 # Using same price as Facebook
-
-        # Handle box adjustments (same as Facebook)
-        adjustments = {
-            'oled_box': ['switch', 'comfort_h', 'tv_white'],
-            'switch_box': ['switch', 'comfort_h', 'tv_black'],
-            'lite_box': ['lite']
-        }
-
-        for box, items in adjustments.items():
-            box_count = detected_objects.get(box, 0)
-            for item in items:
-                detected_objects[item] = max(0, detected_objects.get(item, 0) - box_count)
-
-        # Remove switch_screen if present
-        detected_objects.pop('switch_screen', None)
-
-        # Detect SD card and add revenue
-        total_revenue = misc_games_revenue
-        if self.detect_sd_card_vinted(title, description):
-            total_revenue += 5 # Same SD card revenue as Facebook
-            print(f"SD Card detected: Added £5 to revenue")
-
-        # Calculate revenue from detected objects
-        for item, count in detected_objects.items():
-            if isinstance(count, str):
-                count_match = re.match(r'(\d+)', count)
-                count = int(count_match.group(1)) if count_match else 0
-
-            if count > 0 and item in all_prices:
-                item_price = all_prices[item]
-                if item == 'controller' and 'pro' in title.lower():
-                    item_price += 7.50
-                
-                item_revenue = item_price * count
-                total_revenue += item_revenue
-
-        expected_profit = total_revenue - listing_price
-        profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
-
-        print(f"\nVinted Revenue Breakdown:")
-        print(f"Listing Price: £{listing_price:.2f}")
-        print(f"Total Expected Revenue: £{total_revenue:.2f}")
-        print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
-
-        # CRITICAL FIX: Filter out zero-count items for display (matching Facebook behavior)
-        display_objects = {k: v for k, v in detected_objects.items() if v > 0}
-
-        # Add miscellaneous games to display if present
-        if misc_games_count > 0:
-            display_objects['misc_games'] = misc_games_count
-
-        return total_revenue, expected_profit, profit_percentage, display_objects
-
-    def perform_detection_on_listing_images(self, model, listing_dir):
-        """
-        Enhanced object detection with all Facebook exceptions and logic
-        PLUS Vinted-specific post-scan game deduplication
-        """
-        if not os.path.isdir(listing_dir):
-            return {}, []
-
-        detected_objects = {class_name: [] for class_name in CLASS_NAMES}
-        processed_images = []
-        confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
-
-        image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
-        if not image_files:
-            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
-
-        for image_file in image_files:
-            image_path = os.path.join(listing_dir, image_file)
-            try:
-                img = cv2.imread(image_path)
-                if img is None:
-                    continue
-
-                # Track detections for this image
-                image_detections = {class_name: 0 for class_name in CLASS_NAMES}
-                results = model(img, verbose=False)
-                
-                for result in results:
-                    for box in result.boxes.cpu().numpy():
-                        class_id = int(box.cls[0])
-                        confidence = box.conf[0]
-                        
-                        if class_id < len(CLASS_NAMES):
-                            class_name = CLASS_NAMES[class_id]
-                            min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
-                            
-                            if confidence >= min_confidence:
-                                if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
-                                    confidences[class_name] = max(confidences[class_name], confidence)
-                                else:
-                                    image_detections[class_name] += 1
-                                
