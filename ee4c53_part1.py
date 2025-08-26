@@ -50,7 +50,7 @@ from ultralytics import YOLO
 import random
 
 test_bookmark_function = True
-bookmark_listings = True
+bookmark_listings = False
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
@@ -438,14 +438,23 @@ def vinted_button_clicked():
     """Handle Vinted scraper button clicks with enhanced functionality"""
     print("DEBUG: Received a Vinted button-click POST request")
     
-    # Get the listing URL from the form data
+    # Get the listing URL and action from the form data
     url = request.form.get('url')
+    action = request.form.get('action')
     
     if not url:
         print("ERROR: No URL provided in Vinted button click")
         return 'NO URL PROVIDED', 400
     
     try:
+        # Print the appropriate message based on the action
+        if action == 'buy_yes':
+            print(f'✅ VINTED YES BUTTON: User wishes to buy listing: {url}')
+        elif action == 'buy_no':
+            print(f'❌ VINTED NO BUTTON: User does not wish to buy listing: {url}')
+        else:
+            print(f'🔘 VINTED BUTTON: Unknown action "{action}" for listing: {url}')
+        
         # Access the Vinted scraper instance and trigger enhanced button functionality
         if 'vinted_scraper_instance' in globals():
             vinted_scraper_instance.vinted_button_clicked_enhanced(url)
@@ -454,7 +463,7 @@ def vinted_button_clicked():
             # Fallback to simple logging
             print(f'Vinted button clicked on listing: {url}')
             with open('vinted_clicked_listings.txt', 'a') as f:
-                f.write(f"{url}\n")
+                f.write(f"{action}: {url}\n")
         
         return 'VINTED BUTTON CLICK PROCESSED', 200
         
@@ -835,8 +844,27 @@ def render_main_page():
                     var url = urlElement ? urlElement.textContent.trim() : '';
                     
                     if (url && url !== 'No URL Available') {{
-                        console.log('User wishes to buy listing ' + url);
-                    }} else {{
+                        console.log('User wishes to buy listing: ' + url);
+                        
+                        // Send POST request to Flask backend (similar to Facebook buttons)
+                        fetch('/vinted-button-clicked', {{
+                            method: 'POST',
+                            headers: {{
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            }},
+                            body: `url=${{encodeURIComponent(url)}}&action=buy_yes`
+                        }})
+                        .then(response => {{
+                            if (response.ok) {{
+                                console.log('Vinted YES button clicked successfully');
+                            }} else {{
+                                console.error('Failed to process Vinted YES button');
+                            }}
+                        }})
+                        .catch(error => {{
+                            console.error('Error with Vinted YES button:', error);
+                        }});
+                    }}else {{
                         console.log('User wishes to buy listing but no URL available');
                     }}
                 }}
@@ -846,7 +874,26 @@ def render_main_page():
                     var url = urlElement ? urlElement.textContent.trim() : '';
                     
                     if (url && url !== 'No URL Available') {{
-                        console.log('User does not wish to buy listing ' + url);
+                        console.log('User does not wish to buy listing: ' + url);
+                        
+                        // Send POST request to Flask backend (similar to Facebook buttons)
+                        fetch('/vinted-button-clicked', {{
+                            method: 'POST',
+                            headers: {{
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            }},
+                            body: `url=${{encodeURIComponent(url)}}&action=buy_no`
+                        }})
+                        .then(response => {{
+                            if (response.ok) {{
+                                console.log('Vinted NO button clicked successfully');
+                            }} else {{
+                                console.error('Failed to process Vinted NO button');
+                            }}
+                        }})
+                        .catch(error => {{
+                            console.error('Error with Vinted NO button:', error);
+                        }});
                     }} else {{
                         console.log('User does not wish to buy listing but no URL available');
                     }}
@@ -2151,50 +2198,3 @@ class FacebookScraper:
         current_bounding_boxes = {
             'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
             'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
-        }
-
-        # Handle price formatting
-        if isinstance(price, str) and price.startswith("Price:\n£"):
-            formatted_price = price
-        else:
-            try:
-                float_price = float(price) if price is not None else 0.00
-                formatted_price = f"Price:\n£{float_price:.2f}"
-            except ValueError:
-                formatted_price = "Price:\n£0.00"
-
-        # Handle expected_revenue formatting
-        if isinstance(expected_revenue, float):
-            formatted_expected_revenue = f"Rev:\n£{expected_revenue:.2f}"
-        elif isinstance(expected_revenue, str) and expected_revenue.startswith("Rev:\n£"):
-            formatted_expected_revenue = expected_revenue
-        else:
-            formatted_expected_revenue = "Rev:\n£0.00"
-
-        # Handle profit formatting
-        if isinstance(profit, float):
-            formatted_profit = f"Profit:\n£{profit:.2f}"
-        elif isinstance(profit, str) and profit.startswith("Profit:\n£"):
-            formatted_profit = profit
-        else:
-            formatted_profit = "Profit:\n£0.00"
-
-        # Handle detected_items with individual revenues
-            # Handle detected_items with individual revenues
-        if isinstance(detected_items, dict):
-            all_prices = self.fetch_all_prices()
-            formatted_detected_items = {}
-            for item, count in detected_items.items():
-                if count > 0:
-                    item_price = all_prices.get(item, 0) * float(count)
-                    formatted_detected_items[item] = f"{count} (£{item_price:.2f})"
-        else:
-            formatted_detected_items = {"no_items": "No items detected"}
-
-        # Explicitly set the global variable
-        current_detected_items = formatted_detected_items
-        current_listing_title = title[:50] + '...' if len(title) > 50 else title
-        current_listing_description = description[:200] + '...' if len(description) > 200 else description
-        current_listing_join_date = join_date
-        current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
-        current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
