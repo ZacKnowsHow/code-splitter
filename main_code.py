@@ -50,7 +50,7 @@ from ultralytics import YOLO
 import random
 
 test_bookmark_function = True
-bookmark_listings = True
+bookmark_listings = False
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
@@ -438,14 +438,23 @@ def vinted_button_clicked():
     """Handle Vinted scraper button clicks with enhanced functionality"""
     print("DEBUG: Received a Vinted button-click POST request")
     
-    # Get the listing URL from the form data
+    # Get the listing URL and action from the form data
     url = request.form.get('url')
+    action = request.form.get('action')
     
     if not url:
         print("ERROR: No URL provided in Vinted button click")
         return 'NO URL PROVIDED', 400
     
     try:
+        # Print the appropriate message based on the action
+        if action == 'buy_yes':
+            print(f'✅ VINTED YES BUTTON: User wishes to buy listing: {url}')
+        elif action == 'buy_no':
+            print(f'❌ VINTED NO BUTTON: User does not wish to buy listing: {url}')
+        else:
+            print(f'🔘 VINTED BUTTON: Unknown action "{action}" for listing: {url}')
+        
         # Access the Vinted scraper instance and trigger enhanced button functionality
         if 'vinted_scraper_instance' in globals():
             vinted_scraper_instance.vinted_button_clicked_enhanced(url)
@@ -454,7 +463,7 @@ def vinted_button_clicked():
             # Fallback to simple logging
             print(f'Vinted button clicked on listing: {url}')
             with open('vinted_clicked_listings.txt', 'a') as f:
-                f.write(f"{url}\n")
+                f.write(f"{action}: {url}\n")
         
         return 'VINTED BUTTON CLICK PROCESSED', 200
         
@@ -835,8 +844,27 @@ def render_main_page():
                     var url = urlElement ? urlElement.textContent.trim() : '';
                     
                     if (url && url !== 'No URL Available') {{
-                        console.log('User wishes to buy listing ' + url);
-                    }} else {{
+                        console.log('User wishes to buy listing: ' + url);
+                        
+                        // Send POST request to Flask backend (similar to Facebook buttons)
+                        fetch('/vinted-button-clicked', {{
+                            method: 'POST',
+                            headers: {{
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            }},
+                            body: `url=${{encodeURIComponent(url)}}&action=buy_yes`
+                        }})
+                        .then(response => {{
+                            if (response.ok) {{
+                                console.log('Vinted YES button clicked successfully');
+                            }} else {{
+                                console.error('Failed to process Vinted YES button');
+                            }}
+                        }})
+                        .catch(error => {{
+                            console.error('Error with Vinted YES button:', error);
+                        }});
+                    }}else {{
                         console.log('User wishes to buy listing but no URL available');
                     }}
                 }}
@@ -846,7 +874,26 @@ def render_main_page():
                     var url = urlElement ? urlElement.textContent.trim() : '';
                     
                     if (url && url !== 'No URL Available') {{
-                        console.log('User does not wish to buy listing ' + url);
+                        console.log('User does not wish to buy listing: ' + url);
+                        
+                        // Send POST request to Flask backend (similar to Facebook buttons)
+                        fetch('/vinted-button-clicked', {{
+                            method: 'POST',
+                            headers: {{
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            }},
+                            body: `url=${{encodeURIComponent(url)}}&action=buy_no`
+                        }})
+                        .then(response => {{
+                            if (response.ok) {{
+                                console.log('Vinted NO button clicked successfully');
+                            }} else {{
+                                console.error('Failed to process Vinted NO button');
+                            }}
+                        }})
+                        .catch(error => {{
+                            console.error('Error with Vinted NO button:', error);
+                        }});
                     }} else {{
                         console.log('User does not wish to buy listing but no URL available');
                     }}
@@ -3266,6 +3313,8 @@ class VintedScraper:
         self.vinted_button_queue = queue.Queue()
         self.vinted_processing_active = threading.Event()  # To track if we're currently processing
         self.main_driver = None
+        self.persistent_buying_driver = None
+        self.main_tab_handle = None
 
     def run_pygame_window(self):
         global LOCK_POSITION, current_listing_index, suitable_listings
@@ -3608,18 +3657,11 @@ class VintedScraper:
 
     def vinted_button_clicked_enhanced(self, url):
         """
-        Enhanced button click handler for Vinted with the requested functionality:
-        1. Start a stopwatch
-        2. Pause main scraping
-        3. Open second driver
-        4. Navigate to listing
-        5. Wait 3 seconds
-        6. Close second driver
-        7. Continue main scraping
+        ULTRA-FAST button click handler using persistent driver with tabs
         """
-        print(f"🔘 Vinted button clicked for: {url}")
+        print(f"🔘 VINTED BUTTON: Processing {url}")
         
-        # Add to queue
+        # Add to queue for fast processing
         self.vinted_button_queue.put(url)
         
         # Start processing if not already active
@@ -3627,83 +3669,91 @@ class VintedScraper:
             processing_thread = threading.Thread(target=self.process_vinted_button_queue)
             processing_thread.daemon = True
             processing_thread.start()
-        else:
-            print("📋 Request added to queue (currently processing another request)")
-    
+
     def process_vinted_button_queue(self):
         """
-        Process the Vinted button request queue
+        ULTRA-FAST queue processor using persistent driver with tabs
         """
         self.vinted_processing_active.set()
         
+        # Ensure persistent driver is ready
+        if not self.setup_persistent_buying_driver():
+            print("❌ QUEUE: Cannot process - persistent driver setup failed")
+            self.vinted_processing_active.clear()
+            return
+        
+        print("🚀 QUEUE: Starting ultra-fast processing...")
+        
         while not self.vinted_button_queue.empty():
             try:
-                url = self.vinted_button_queue.get(timeout=1)
-                self.handle_single_vinted_button_request(url)
+                url = self.vinted_button_queue.get_nowait()
+                self.handle_single_vinted_button_request_fast(url)
                 self.vinted_button_queue.task_done()
             except queue.Empty:
                 break
             except Exception as e:
-                print(f"❌ Error processing Vinted button request: {e}")
+                print(f"❌ QUEUE: Error processing request: {e}")
                 continue
         
+        print("✅ QUEUE: All requests processed!")
         self.vinted_processing_active.clear()
-        print("✅ Vinted button queue processing complete")
-    
-    def handle_single_vinted_button_request(self, url):
+
+    def handle_single_vinted_button_request_fast(self, url):
         """
-        Handle a single Vinted button request with all the specified requirements
+        ULTRA-FAST single request handler using tabs
         """
-        print(f"🚀 Starting Vinted button request for: {url}")
-        
-        # 1. Start stopwatch
         start_time = time.time()
         
-        # 2. Pause main scraping (signal to main driver if needed)
-        print("⏸️ Pausing main scraping...")
-        self.pause_main_scraping = True
-        
-        # 3. Open second driver on same account
-        second_driver = None
         try:
-            print("🌐 Opening second driver...")
-            second_driver = self.setup_buying_driver()  # Use same setup as main driver
+            # Verify driver is still alive
+            self.persistent_buying_driver.current_url
             
-            # 4. Navigate to the listing link
-            print(f"📍 Navigating to: {url}")
-            second_driver.get(url)
+            print(f"🔥 FAST: Processing {url}")
             
-            # Wait for page to load
-            WebDriverWait(second_driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            print("✅ Page loaded successfully")
+            # Open new tab
+            self.persistent_buying_driver.execute_script("window.open('');")
+            new_tab = self.persistent_buying_driver.window_handles[-1]
+            self.persistent_buying_driver.switch_to.window(new_tab)
             
-            # 5. Wait 3 seconds
-            print("⏱️ Waiting 3 seconds...")
+            # Navigate to URL
+            self.persistent_buying_driver.get(url)
+            
+            # Wait minimal time (you mentioned 3 seconds)
+            print("⏱️ FAST: Waiting 3 seconds...")
             time.sleep(3)
             
-        except Exception as e:
-            print(f"❌ Error during second driver operation: {e}")
-        finally:
-            # 6. Close second driver
-            if second_driver:
-                try:
-                    second_driver.quit()
-                    print("🔒 Second driver closed")
-                except Exception as e:
-                    print(f"⚠️ Warning: Error closing second driver: {e}")
+            # Close the tab
+            self.persistent_buying_driver.close()
             
-            # 7. Continue main scraping
-            self.pause_main_scraping = False
-            print("▶️ Resuming main scraping...")
-        
-        # Check if we hit the 10-second limit
-        elapsed_time = time.time() - start_time
-        if elapsed_time >= 10:
-            print(f"⏰ Process completed at 10-second limit (actual: {elapsed_time:.2f}s)")
-        else:
-            print(f"✅ Process completed in {elapsed_time:.2f} seconds")
+            # Switch back to main tab
+            self.persistent_buying_driver.switch_to.window(self.main_tab_handle)
+            
+            elapsed = time.time() - start_time
+            print(f"✅ FAST: Completed in {elapsed:.2f} seconds")
+            
+        except Exception as e:
+            print(f"❌ FAST: Error processing {url}: {e}")
+            
+            # Try to recover by switching back to main tab
+            try:
+                if self.main_tab_handle in self.persistent_buying_driver.window_handles:
+                    self.persistent_buying_driver.switch_to.window(self.main_tab_handle)
+            except:
+                pass
+
+    def cleanup_persistent_buying_driver(self):
+        """
+        Clean up the persistent buying driver when program exits
+        """
+        if self.persistent_buying_driver is not None:
+            try:
+                self.persistent_buying_driver.quit()
+                print("🔒 CLEANUP: Persistent buying driver closed")
+            except:
+                pass
+            finally:
+                self.persistent_buying_driver = None
+                self.main_tab_handle = None
     
     def setup_driver(self):
         """
@@ -3785,38 +3835,58 @@ class VintedScraper:
                 print(f"❌ Fallback also failed: {fallback_error}")
                 raise Exception(f"Could not start Chrome driver: {e}")
             
-    def setup_buying_driver(self):
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,
-            "profile.default_content_setting_values.popups": 0,
-            "download.prompt_for_download": False,
-        }
 
-        service = Service(
-                ChromeDriverManager().install(),
-                log_path=os.devnull  # Suppress driver logs
-            )
+    def setup_persistent_buying_driver(self):
+        """
+        Set up the persistent buying driver that stays open throughout the program
+        """
+        if self.persistent_buying_driver is not None:
+            return True  # Already set up
+            
+        print("🚀 SETUP: Initializing persistent buying driver...")
         
-        fallback_opts = Options()
-        fallback_opts.add_experimental_option("prefs", prefs)
-        fallback_opts.add_argument("--headless")
-        fallback_opts.add_argument("--no-sandbox")
-        fallback_opts.add_argument("--disable-dev-shm-usage")
-        fallback_opts.add_argument("--disable-gpu")
-        fallback_opts.add_argument("--remote-debugging-port=0")
-        fallback_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
-        fallback_opts.add_argument(f"--profile-directory=Profile 2")
-        #Profile 2 = pc
-        #Default = laptop
-            
         try:
-            fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
-            print("✅ Fallback Chrome driver started successfully")
-            return fallback_driver
-        except Exception as fallback_error:
-            print(f"❌ Fallback also failed: {fallback_error}")
-            raise Exception(f"Could not start Chrome driver")
+            prefs = {
+                "profile.default_content_setting_values.notifications": 2,
+                "profile.default_content_setting_values.popups": 0,
+                "download.prompt_for_download": False,
+            }
+
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull
+            )
             
+            chrome_opts = Options()
+            chrome_opts.add_experimental_option("prefs", prefs)
+            #chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--remote-debugging-port=0")
+            chrome_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
+            chrome_opts.add_argument(f"--profile-directory=Profile 2")
+            
+            self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set fast timeouts for quick processing
+            self.persistent_buying_driver.implicitly_wait(2)
+            self.persistent_buying_driver.set_page_load_timeout(10)
+            self.persistent_buying_driver.set_script_timeout(5)
+            
+            # Navigate main tab to vinted.co.uk and keep it as reference
+            print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
+            self.persistent_buying_driver.get("https://www.vinted.co.uk")
+            self.main_tab_handle = self.persistent_buying_driver.current_window_handle
+            
+            print("✅ SETUP: Persistent buying driver ready!")
+            return True
+            
+        except Exception as e:
+            print(f"❌ SETUP: Failed to create persistent buying driver: {e}")
+            self.persistent_buying_driver = None
+            self.main_tab_handle = None
+            return False
             
 
     def extract_vinted_price(self, text):
@@ -5572,10 +5642,12 @@ class VintedScraper:
         # Clear download folder and start scrapingu
         self.clear_download_folder()
         driver = self.setup_driver()
+        self.setup_persistent_buying_driver()
         try:
             self.search_vinted_with_refresh(driver, SEARCH_QUERY)
         finally:
             driver.quit()
+            self.cleanup_persistent_buying_driver()
 
 if __name__ == "__main__":
     if programme_to_run == 0:
