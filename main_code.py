@@ -52,7 +52,7 @@ import random
 test_bookmark_function = True
 bookmark_listings = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
 # Config
@@ -395,7 +395,7 @@ def serve_icon():
     #pc
     #return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2 (1).png", mimetype='image/png')
     #laptop
-    return send_file(r"C:\Users\zacha\Downloads\icon_2 (1).png", mimetype='image/png')
+    return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2.png", mimetype='image/png')
 
 @app.route('/change_listing', methods=['POST'])
 def change_listing():
@@ -694,9 +694,62 @@ def render_main_page():
                     margin: 15px 0;
                 }}
                 .open-listing-button {{
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    background-color: #28a745;
                     font-size: 18px;
                     padding: 15px;
+                }}
+                
+                /* NEW: Buy decision buttons */
+                .buy-decision-container {{
+                    display: flex;
+                    gap: 10px;
+                    margin: 15px 0;
+                }}
+                .buy-yes-button {{
+                    background-color: #28a745;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                .buy-yes-button:hover {{
+                    background-color: #218838;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                .buy-yes-button:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                .buy-no-button {{
+                    background-color: #dc3545;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                .buy-no-button:hover {{
+                    background-color: #c82333;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                .buy-no-button:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 }}
             </style>
             <script>
@@ -747,7 +800,7 @@ def render_main_page():
                             const imageWrapper = document.createElement('div');
                             imageWrapper.className = 'image-wrapper';
                             const img = document.createElement('img');
-                            img.src = `data:image/png;base64,${{imgBase64}}`;
+                            img.src = `data:image/png;base64=${{imgBase64}}`;
                             img.alt = 'Listing Image';
                             imageWrapper.appendChild(img);
                             imageContainer.appendChild(imageWrapper);
@@ -763,7 +816,7 @@ def render_main_page():
                     }}
                 }}
 
-                // NEW: Single button function to open listing directly
+                // Single button function to open listing directly
                 function openListing() {{
                     var urlElement = document.querySelector('.content-url');
                     var url = urlElement ? urlElement.textContent.trim() : '';
@@ -773,6 +826,29 @@ def render_main_page():
                         window.open(url, '_blank');
                     }} else {{
                         alert('No valid URL available for this listing');
+                    }}
+                }}
+
+                // NEW: Buy decision functions
+                function buyYes() {{
+                    var urlElement = document.querySelector('.content-url');
+                    var url = urlElement ? urlElement.textContent.trim() : '';
+                    
+                    if (url && url !== 'No URL Available') {{
+                        console.log('User wishes to buy listing ' + url);
+                    }} else {{
+                        console.log('User wishes to buy listing but no URL available');
+                    }}
+                }}
+
+                function buyNo() {{
+                    var urlElement = document.querySelector('.content-url');
+                    var url = urlElement ? urlElement.textContent.trim() : '';
+                    
+                    if (url && url !== 'No URL Available') {{
+                        console.log('User does not wish to buy listing ' + url);
+                    }} else {{
+                        console.log('User does not wish to buy listing but no URL available');
                     }}
                 }}
 
@@ -810,10 +886,20 @@ def render_main_page():
                     <p><span class="content-description">{description}</span></p>
                 </div>
                 
-                <!-- MODIFIED: Single button instead of 4 small buttons -->
+                <!-- Single button for opening listing -->
                 <div class="single-button-container">
                     <button class="custom-button open-listing-button" onclick="openListing()">
-                        🔗 Open Listing in New Tab
+                        Open Listing in New Tab
+                    </button>
+                </div>
+                
+                <!-- NEW: Buy decision buttons -->
+                <div class="buy-decision-container">
+                    <button class="buy-yes-button" onclick="buyYes()">
+                        Yes - Buy now
+                    </button>
+                    <button class="buy-no-button" onclick="buyNo()">
+                        No - Do not purchase
                     </button>
                 </div>
                 
@@ -845,7 +931,7 @@ def render_main_page():
         print(f"ERROR in render_main_page: {e}")
         print(f"Traceback: {error_details}")
         return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
-
+    
 def base64_encode_image(img):
     """Convert PIL Image to base64 string, resizing if necessary"""
     max_size = (200, 200)
@@ -4088,12 +4174,13 @@ class VintedScraper:
             shutil.rmtree(DOWNLOAD_ROOT)
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
-# FIXED: Updated process_vinted_listing function - key section that handles suitability checking
+    # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
 
     def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
         """
         Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
         FIXED: Now passes username to bookmark_driver
+        MODIFIED: Only adds to pygame/website and sends notifications on successful bookmark when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -4192,7 +4279,8 @@ class VintedScraper:
 
         print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
 
-        # 🔖 ULTRA-FAST BOOKMARK FUNCTIONALITY - INSTANT EXECUTION!
+        # 🔖 MODIFIED BOOKMARK FUNCTIONALITY WITH SUCCESS TRACKING
+        bookmark_success = False
         should_bookmark = False
         
         if bookmark_listings and is_suitable:
@@ -4203,7 +4291,30 @@ class VintedScraper:
         if should_bookmark:
             # INSTANT bookmark execution - now with username parameter
             print(f"🔖 INSTANT BOOKMARK: {url}")
-            self.bookmark_driver(url, username)  # PASS THE USERNAME!
+            
+            # Capture stdout to detect the success message
+            from io import StringIO
+            import contextlib
+            
+            # Create a string buffer to capture print output
+            captured_output = StringIO()
+            
+            # Temporarily redirect stdout to capture the bookmark_driver output
+            with contextlib.redirect_stdout(captured_output):
+                self.bookmark_driver(url, username)
+            
+            # Get the captured output and restore normal stdout
+            bookmark_output = captured_output.getvalue()
+            
+            # Print the captured output normally so you can still see it
+            print(bookmark_output, end='')
+            
+            # Check if the success message was printed
+            if 'SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!' in bookmark_output:
+                bookmark_success = True
+                print("🎉 BOOKMARK SUCCESS DETECTED!")
+            else:
+                print("❌ Bookmark did not succeed")
 
         # Create final listing info
         final_listing_info = {
@@ -4221,25 +4332,44 @@ class VintedScraper:
             'seller_reviews': seller_reviews
         }
 
-        # Add to suitable listings based on VINTED_SHOW_ALL_LISTINGS setting
-        if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            # Send Pushover notification (same logic as Facebook)
-            notification_title = f"New Vinted Listing: £{total_price:.2f}"
-            notification_message = (
-                f"Title: {details.get('title', 'No title')}\n"
-                f"Price: £{total_price:.2f}\n"
-                f"Expected Profit: £{expected_profit:.2f}\n"
-                f"Profit %: {profit_percentage:.2f}%\n"
-            )
-            
-            # Use the Pushover tokens exactly as Facebook does
-            if send_notification:
-                self.send_pushover_notification(
-                    notification_title,
-                    notification_message,
-                    'aks3to8guqjye193w7ajnydk9jaxh5',
-                    'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+        # MODIFIED: Add to suitable listings based on new logic
+        should_add_listing = False
+        should_send_notification = False
+        # this here stops all of the non bookmarked listings from being added
+        if bookmark_listings and not VINTED_SHOW_ALL_LISTINGS:
+            # When bookmark_listings is ON and VINTED_SHOW_ALL_LISTINGS is OFF:
+            # Only add/notify if bookmark was successful
+            if bookmark_success:
+                should_add_listing = True
+                should_send_notification = True
+                print("✅ Adding listing because bookmark was successful")
+            else:
+                print("❌ Not adding listing because bookmark was not successful")
+        else:
+            # Original logic for other combinations
+            if is_suitable or VINTED_SHOW_ALL_LISTINGS:
+                should_add_listing = True
+                should_send_notification = True
+        
+        if should_add_listing:
+            # Send Pushover notification
+            if should_send_notification:
+                notification_title = f"New Vinted Listing: £{total_price:.2f}"
+                notification_message = (
+                    f"Title: {details.get('title', 'No title')}\n"
+                    f"Price: £{total_price:.2f}\n"
+                    f"Expected Profit: £{expected_profit:.2f}\n"
+                    f"Profit %: {profit_percentage:.2f}%\n"
                 )
+                
+                # Use the Pushover tokens exactly as Facebook does
+                if send_notification:
+                    self.send_pushover_notification(
+                        notification_title,
+                        notification_message,
+                        'aks3to8guqjye193w7ajnydk9jaxh5',
+                        'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                    )
 
             suitable_listings.append(final_listing_info)
 
@@ -4254,7 +4384,7 @@ class VintedScraper:
             if is_suitable:
                 print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
             else:
-                print(f"➕ Added unsuitable listing (SHOW_ALL mode): £{total_price:.2f}")
+                print(f"➕ Added unsuitable listing (SHOW_ALL mode or successful bookmark): £{total_price:.2f}")
         else:
             print(f"❌ Listing not added: {suitability_reason}")
 
