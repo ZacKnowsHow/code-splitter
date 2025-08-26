@@ -50,10 +50,11 @@ from ultralytics import YOLO
 import random
 
 test_bookmark_function = False
-bookmark_listings = True
+bookmark_listings = False
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
 bookmark_stopwatch_length = 5  # 10 minutes in seconds
+buying_driver_click_pay_wait_time = 5
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
 # Config
@@ -2000,7 +2001,7 @@ class FacebookScraper:
         
         # Use a dedicated, isolated user data directory to prevent conflicts.
         chrome_options.add_argument(f"user-data-dir={SCRAPER_USER_DATA_DIR}")
-        chrome_options.add_argument("profile-directory=Profile 2")
+        chrome_options.add_argument("profile-directory=Default")
         #profile 10 is blue orchid
         #default = laptop
         #profile 2 = pc
@@ -3741,8 +3742,14 @@ class VintedScraper:
 
     def handle_single_vinted_button_request_fast(self, url):
         """
-        ULTRA-FAST single request handler using tabs
+        ULTRA-FAST single request handler with button clicking functionality
         """
+        import time
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.common.exceptions import TimeoutException, NoSuchElementException
+        
         start_time = time.time()
         
         try:
@@ -3759,9 +3766,81 @@ class VintedScraper:
             # Navigate to URL
             self.persistent_buying_driver.get(url)
             
-            # Wait minimal time (you mentioned 3 seconds)
-            print("⏱️ FAST: Waiting 3 seconds...")
+            # Wait for page to load
+            print("⏱️ FAST: Waiting for page to load...")
             time.sleep(3)
+            
+            # Click the "Buy now" button
+            print("🔘 FAST: Looking for Buy now button...")
+            try:
+                buy_button = WebDriverWait(self.persistent_buying_driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]'))
+                )
+                buy_button.click()
+                print("✅ FAST: Buy now button clicked")
+                
+                # Wait for next page to load - look for "Ship to pick-up point"
+                print("🔍 FAST: Waiting for shipping page to load...")
+                try:
+                    pickup_point_header = WebDriverWait(self.persistent_buying_driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'))
+                    )
+                    print("✅ FAST: Shipping page loaded")
+                    
+                    # Record the time when the first click happens
+                    first_click_time = time.time()
+                    
+                    # Start the alternating clicking loop
+                    print("🔄 FAST: Starting alternating click sequence...")
+                    
+                    while True:
+                        # Check if bookmark_stopwatch_length time has elapsed
+                        if time.time() - first_click_time >= bookmark_stopwatch_length:
+                            print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
+                            break
+                        
+                        # Click "Ship to pick-up point"
+                        try:
+                            pickup_point = self.persistent_buying_driver.find_element(
+                                By.XPATH, 
+                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
+                            )
+                            pickup_point.click()
+                            print("📦 FAST: Clicked 'Ship to pick-up point'")
+                        except (NoSuchElementException, Exception) as e:
+                            print(f"⚠️ FAST: Could not click 'Ship to pick-up point': {e}")
+                        
+                        # Wait the specified time
+                        time.sleep(buying_driver_click_pay_wait_time)
+                        
+                        # Check time again before next click
+                        if time.time() - first_click_time >= bookmark_stopwatch_length:
+                            print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
+                            break
+                        
+                        # Click "Ship to home"
+                        try:
+                            ship_to_home = self.persistent_buying_driver.find_element(
+                                By.XPATH, 
+                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
+                            )
+                            ship_to_home.click()
+                            print("🏠 FAST: Clicked 'Ship to home'")
+                        except (NoSuchElementException, Exception) as e:
+                            print(f"⚠️ FAST: Could not click 'Ship to home': {e}")
+                        
+                        # Wait the specified time
+                        time.sleep(buying_driver_click_pay_wait_time)
+                    
+                except TimeoutException:
+                    print("⚠️ FAST: Timeout waiting for shipping page to load")
+                except Exception as e:
+                    print(f"❌ FAST: Error during shipping page interaction: {e}")
+            
+            except TimeoutException:
+                print("⚠️ FAST: Timeout waiting for Buy now button")
+            except Exception as e:
+                print(f"❌ FAST: Error clicking Buy now button: {e}")
             
             # Close the tab
             self.persistent_buying_driver.close()
@@ -3906,7 +3985,7 @@ class VintedScraper:
             chrome_opts.add_argument("--disable-gpu")
             chrome_opts.add_argument("--remote-debugging-port=0")
             chrome_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
-            chrome_opts.add_argument(f"--profile-directory=Profile 2")
+            chrome_opts.add_argument(f"--profile-directory=Default")
             
             self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
             
