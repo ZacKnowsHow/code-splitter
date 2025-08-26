@@ -1,4 +1,7 @@
 # Continuation from line 2201
+        current_bounding_boxes = {
+            'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
+            'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
         }
 
         # Handle price formatting
@@ -1116,6 +1119,38 @@ class VintedScraper:
         self.main_driver = None
         self.persistent_buying_driver = None
         self.main_tab_handle = None
+        self.clicked_yes_listings = set()
+        self.clicked_yes_listings = set()  # Track listings that have been clicked "yes"
+        self.bookmark_timers = {}
+
+    def start_bookmark_stopwatch(self, listing_url):
+        """
+        Start a stopwatch for a successfully bookmarked listing
+        """
+        print(f"⏱️ STOPWATCH: Starting timer for {listing_url}")
+        
+        def stopwatch_timer():
+            time.sleep(bookmark_stopwatch_length)
+            print(f'LISTING {listing_url} HAS BEEN BOOKMARKED FOR {bookmark_stopwatch_length} SECONDS!')
+            
+            # Clean up the timer reference
+            if listing_url in self.bookmark_timers:
+                del self.bookmark_timers[listing_url]
+        
+        # Start the timer thread
+        timer_thread = threading.Thread(target=stopwatch_timer)
+        timer_thread.daemon = True
+        timer_thread.start()
+        
+        # Store reference to track active timers
+        self.bookmark_timers[listing_url] = timer_thread
+
+    def cleanup_bookmark_timers(self):
+        """
+        Clean up any remaining bookmark timers when shutting down
+        """
+        print(f"🧹 CLEANUP: Stopping {len(self.bookmark_timers)} active bookmark timers")
+        self.bookmark_timers.clear()  # Timer threads are daemon threads, so they'll stop automatically
 
     def run_pygame_window(self):
         global LOCK_POSITION, current_listing_index, suitable_listings
@@ -1462,14 +1497,20 @@ class VintedScraper:
         """
         print(f"🔘 VINTED BUTTON: Processing {url}")
         
-        # Add to queue for fast processing
-        self.vinted_button_queue.put(url)
-        
-        # Start processing if not already active
-        if not self.vinted_processing_active.is_set():
-            processing_thread = threading.Thread(target=self.process_vinted_button_queue)
-            processing_thread.daemon = True
-            processing_thread.start()
+        # Add to queue for fast processing - ONLY if not already clicked yes
+        if url not in self.clicked_yes_listings:
+            self.vinted_button_queue.put(url)
+            
+            # Mark as clicked to prevent duplicate processing
+            self.clicked_yes_listings.add(url)
+            
+            # Start processing if not already active
+            if not self.vinted_processing_active.is_set():
+                processing_thread = threading.Thread(target=self.process_vinted_button_queue)
+                processing_thread.daemon = True
+                processing_thread.start()
+        else:
+            print(f"🔄 VINTED BUTTON: Listing {url} already processed, ignoring")
 
     def process_vinted_button_queue(self):
         """
@@ -1570,7 +1611,7 @@ class VintedScraper:
         }
         options = Options()
         options.add_experimental_option("prefs", prefs)
-        options.add_argument("--headless")
+        #options.add_argument("--headless")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
@@ -2158,44 +2199,3 @@ class VintedScraper:
             should_bookmark = True
         elif bookmark_listings and VINTED_SHOW_ALL_LISTINGS:
             should_bookmark = True
-            
-        if should_bookmark:
-            # INSTANT bookmark execution - now with username parameter
-            print(f"🔖 INSTANT BOOKMARK: {url}")
-            
-            # Capture stdout to detect the success message
-            from io import StringIO
-            import contextlib
-            
-            # Create a string buffer to capture print output
-            captured_output = StringIO()
-            
-            # Temporarily redirect stdout to capture the bookmark_driver output
-            with contextlib.redirect_stdout(captured_output):
-                self.bookmark_driver(url, username)
-            
-            # Get the captured output and restore normal stdout
-            bookmark_output = captured_output.getvalue()
-            
-            # Print the captured output normally so you can still see it
-            print(bookmark_output, end='')
-            
-            # Check if the success message was printed
-            if 'SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!' in bookmark_output:
-                bookmark_success = True
-                print("🎉 BOOKMARK SUCCESS DETECTED!")
-            else:
-                print("❌ Bookmark did not succeed")
-
-        # Create final listing info
-        final_listing_info = {
-            'title': details.get("title", "No title"),
-            'description': details.get("description", "No description"),
-            'join_date': details.get("uploaded", "Unknown upload date"),
-            'price': str(total_price),
-            'expected_revenue': total_revenue,
-            'profit': expected_profit,
-            'detected_items': detected_objects, # Raw detected objects for box 1
-            'processed_images': processed_images,
-            'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
-            'url': url,

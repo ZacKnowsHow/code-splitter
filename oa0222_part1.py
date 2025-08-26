@@ -49,10 +49,11 @@ import logging
 from ultralytics import YOLO
 import random
 
-test_bookmark_function = True
-bookmark_listings = False
+test_bookmark_function = False
+bookmark_listings = True
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
+bookmark_stopwatch_length = 5  # 10 minutes in seconds
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
 # Config
@@ -450,20 +451,22 @@ def vinted_button_clicked():
         # Print the appropriate message based on the action
         if action == 'buy_yes':
             print(f'✅ VINTED YES BUTTON: User wishes to buy listing: {url}')
+            
+            # Access the Vinted scraper instance and trigger enhanced button functionality
+            if 'vinted_scraper_instance' in globals():
+                vinted_scraper_instance.vinted_button_clicked_enhanced(url)
+            else:
+                print("WARNING: No Vinted scraper instance found")
+                print(f'Vinted button clicked on listing: {url}')
+                with open('vinted_clicked_listings.txt', 'a') as f:
+                    f.write(f"{action}: {url}\n")
+                    
         elif action == 'buy_no':
             print(f'❌ VINTED NO BUTTON: User does not wish to buy listing: {url}')
+            # DO NOT CALL vinted_button_clicked_enhanced - just print message
+            # No navigation should happen for "No" button
         else:
             print(f'🔘 VINTED BUTTON: Unknown action "{action}" for listing: {url}')
-        
-        # Access the Vinted scraper instance and trigger enhanced button functionality
-        if 'vinted_scraper_instance' in globals():
-            vinted_scraper_instance.vinted_button_clicked_enhanced(url)
-        else:
-            print("WARNING: No Vinted scraper instance found")
-            # Fallback to simple logging
-            print(f'Vinted button clicked on listing: {url}')
-            with open('vinted_clicked_listings.txt', 'a') as f:
-                f.write(f"{action}: {url}\n")
         
         return 'VINTED BUTTON CLICK PROCESSED', 200
         
@@ -2195,6 +2198,3 @@ class FacebookScraper:
                     print(f"Error copying image: {str(e)}")
         
         # Store bounding boxes with more robust handling
-        current_bounding_boxes = {
-            'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
-            'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
