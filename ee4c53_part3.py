@@ -1,4 +1,74 @@
 # Continuation from line 4401
+            'suitability': suitability_reason,
+            'seller_reviews': seller_reviews
+        }
+
+        # MODIFIED: Add to suitable listings based on new logic
+        should_add_listing = False
+        should_send_notification = False
+        # this here stops all of the non bookmarked listings from being added
+        if bookmark_listings and not VINTED_SHOW_ALL_LISTINGS:
+            # When bookmark_listings is ON and VINTED_SHOW_ALL_LISTINGS is OFF:
+            # Only add/notify if bookmark was successful
+            if bookmark_success:
+                should_add_listing = True
+                should_send_notification = True
+                print("✅ Adding listing because bookmark was successful")
+            else:
+                print("❌ Not adding listing because bookmark was not successful")
+        else:
+            # Original logic for other combinations
+            if is_suitable or VINTED_SHOW_ALL_LISTINGS:
+                should_add_listing = True
+                should_send_notification = True
+        
+        if should_add_listing:
+            # Send Pushover notification
+            if should_send_notification:
+                notification_title = f"New Vinted Listing: £{total_price:.2f}"
+                notification_message = (
+                    f"Title: {details.get('title', 'No title')}\n"
+                    f"Price: £{total_price:.2f}\n"
+                    f"Expected Profit: £{expected_profit:.2f}\n"
+                    f"Profit %: {profit_percentage:.2f}%\n"
+                )
+                
+                # Use the Pushover tokens exactly as Facebook does
+                if send_notification:
+                    self.send_pushover_notification(
+                        notification_title,
+                        notification_message,
+                        'aks3to8guqjye193w7ajnydk9jaxh5',
+                        'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                    )
+
+            suitable_listings.append(final_listing_info)
+
+            # Add to recent_listings for website navigation
+            recent_listings['listings'].append(final_listing_info)
+            # Always set to the last (most recent) listing for website display
+            recent_listings['current_index'] = len(recent_listings['listings']) - 1
+
+            current_listing_index = len(suitable_listings) - 1
+            self.update_listing_details(**final_listing_info)
+
+            if is_suitable:
+                print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
+            else:
+                print(f"➕ Added unsuitable listing (SHOW_ALL mode or successful bookmark): £{total_price:.2f}")
+        else:
+            print(f"❌ Listing not added: {suitability_reason}")
+
+
+    def check_vinted_profit_suitability(self, listing_price, profit_percentage):
+        if 10 <= listing_price < 16:
+            return 100 <= profit_percentage <= 600 #50
+        elif 16 <= listing_price < 25:
+            return 65 <= profit_percentage <= 400 #50
+        elif 25 <= listing_price < 50:
+            return 37.5 <= profit_percentage <= 550 #35
+        elif 50 <= listing_price < 100:
+            return 35 <= profit_percentage <= 500 #32.5
         elif listing_price >= 100:
             return 30 <= profit_percentage <= 450 # 30
         else:
@@ -1173,10 +1243,12 @@
         # Clear download folder and start scrapingu
         self.clear_download_folder()
         driver = self.setup_driver()
+        self.setup_persistent_buying_driver()
         try:
             self.search_vinted_with_refresh(driver, SEARCH_QUERY)
         finally:
             driver.quit()
+            self.cleanup_persistent_buying_driver()
 
 if __name__ == "__main__":
     if programme_to_run == 0:

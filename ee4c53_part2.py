@@ -1,4 +1,51 @@
 # Continuation from line 2201
+        }
+
+        # Handle price formatting
+        if isinstance(price, str) and price.startswith("Price:\n£"):
+            formatted_price = price
+        else:
+            try:
+                float_price = float(price) if price is not None else 0.00
+                formatted_price = f"Price:\n£{float_price:.2f}"
+            except ValueError:
+                formatted_price = "Price:\n£0.00"
+
+        # Handle expected_revenue formatting
+        if isinstance(expected_revenue, float):
+            formatted_expected_revenue = f"Rev:\n£{expected_revenue:.2f}"
+        elif isinstance(expected_revenue, str) and expected_revenue.startswith("Rev:\n£"):
+            formatted_expected_revenue = expected_revenue
+        else:
+            formatted_expected_revenue = "Rev:\n£0.00"
+
+        # Handle profit formatting
+        if isinstance(profit, float):
+            formatted_profit = f"Profit:\n£{profit:.2f}"
+        elif isinstance(profit, str) and profit.startswith("Profit:\n£"):
+            formatted_profit = profit
+        else:
+            formatted_profit = "Profit:\n£0.00"
+
+        # Handle detected_items with individual revenues
+            # Handle detected_items with individual revenues
+        if isinstance(detected_items, dict):
+            all_prices = self.fetch_all_prices()
+            formatted_detected_items = {}
+            for item, count in detected_items.items():
+                if count > 0:
+                    item_price = all_prices.get(item, 0) * float(count)
+                    formatted_detected_items[item] = f"{count} (£{item_price:.2f})"
+        else:
+            formatted_detected_items = {"no_items": "No items detected"}
+
+        # Explicitly set the global variable
+        current_detected_items = formatted_detected_items
+        current_listing_title = title[:50] + '...' if len(title) > 50 else title
+        current_listing_description = description[:200] + '...' if len(description) > 200 else description
+        current_listing_join_date = join_date
+        current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
+        current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
         current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
@@ -1067,6 +1114,8 @@ class VintedScraper:
         self.vinted_button_queue = queue.Queue()
         self.vinted_processing_active = threading.Event()  # To track if we're currently processing
         self.main_driver = None
+        self.persistent_buying_driver = None
+        self.main_tab_handle = None
 
     def run_pygame_window(self):
         global LOCK_POSITION, current_listing_index, suitable_listings
@@ -1409,18 +1458,11 @@ class VintedScraper:
 
     def vinted_button_clicked_enhanced(self, url):
         """
-        Enhanced button click handler for Vinted with the requested functionality:
-        1. Start a stopwatch
-        2. Pause main scraping
-        3. Open second driver
-        4. Navigate to listing
-        5. Wait 3 seconds
-        6. Close second driver
-        7. Continue main scraping
+        ULTRA-FAST button click handler using persistent driver with tabs
         """
-        print(f"🔘 Vinted button clicked for: {url}")
+        print(f"🔘 VINTED BUTTON: Processing {url}")
         
-        # Add to queue
+        # Add to queue for fast processing
         self.vinted_button_queue.put(url)
         
         # Start processing if not already active
@@ -1428,83 +1470,91 @@ class VintedScraper:
             processing_thread = threading.Thread(target=self.process_vinted_button_queue)
             processing_thread.daemon = True
             processing_thread.start()
-        else:
-            print("📋 Request added to queue (currently processing another request)")
-    
+
     def process_vinted_button_queue(self):
         """
-        Process the Vinted button request queue
+        ULTRA-FAST queue processor using persistent driver with tabs
         """
         self.vinted_processing_active.set()
         
+        # Ensure persistent driver is ready
+        if not self.setup_persistent_buying_driver():
+            print("❌ QUEUE: Cannot process - persistent driver setup failed")
+            self.vinted_processing_active.clear()
+            return
+        
+        print("🚀 QUEUE: Starting ultra-fast processing...")
+        
         while not self.vinted_button_queue.empty():
             try:
-                url = self.vinted_button_queue.get(timeout=1)
-                self.handle_single_vinted_button_request(url)
+                url = self.vinted_button_queue.get_nowait()
+                self.handle_single_vinted_button_request_fast(url)
                 self.vinted_button_queue.task_done()
             except queue.Empty:
                 break
             except Exception as e:
-                print(f"❌ Error processing Vinted button request: {e}")
+                print(f"❌ QUEUE: Error processing request: {e}")
                 continue
         
+        print("✅ QUEUE: All requests processed!")
         self.vinted_processing_active.clear()
-        print("✅ Vinted button queue processing complete")
-    
-    def handle_single_vinted_button_request(self, url):
+
+    def handle_single_vinted_button_request_fast(self, url):
         """
-        Handle a single Vinted button request with all the specified requirements
+        ULTRA-FAST single request handler using tabs
         """
-        print(f"🚀 Starting Vinted button request for: {url}")
-        
-        # 1. Start stopwatch
         start_time = time.time()
         
-        # 2. Pause main scraping (signal to main driver if needed)
-        print("⏸️ Pausing main scraping...")
-        self.pause_main_scraping = True
-        
-        # 3. Open second driver on same account
-        second_driver = None
         try:
-            print("🌐 Opening second driver...")
-            second_driver = self.setup_buying_driver()  # Use same setup as main driver
+            # Verify driver is still alive
+            self.persistent_buying_driver.current_url
             
-            # 4. Navigate to the listing link
-            print(f"📍 Navigating to: {url}")
-            second_driver.get(url)
+            print(f"🔥 FAST: Processing {url}")
             
-            # Wait for page to load
-            WebDriverWait(second_driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            print("✅ Page loaded successfully")
+            # Open new tab
+            self.persistent_buying_driver.execute_script("window.open('');")
+            new_tab = self.persistent_buying_driver.window_handles[-1]
+            self.persistent_buying_driver.switch_to.window(new_tab)
             
-            # 5. Wait 3 seconds
-            print("⏱️ Waiting 3 seconds...")
+            # Navigate to URL
+            self.persistent_buying_driver.get(url)
+            
+            # Wait minimal time (you mentioned 3 seconds)
+            print("⏱️ FAST: Waiting 3 seconds...")
             time.sleep(3)
             
-        except Exception as e:
-            print(f"❌ Error during second driver operation: {e}")
-        finally:
-            # 6. Close second driver
-            if second_driver:
-                try:
-                    second_driver.quit()
-                    print("🔒 Second driver closed")
-                except Exception as e:
-                    print(f"⚠️ Warning: Error closing second driver: {e}")
+            # Close the tab
+            self.persistent_buying_driver.close()
             
-            # 7. Continue main scraping
-            self.pause_main_scraping = False
-            print("▶️ Resuming main scraping...")
-        
-        # Check if we hit the 10-second limit
-        elapsed_time = time.time() - start_time
-        if elapsed_time >= 10:
-            print(f"⏰ Process completed at 10-second limit (actual: {elapsed_time:.2f}s)")
-        else:
-            print(f"✅ Process completed in {elapsed_time:.2f} seconds")
+            # Switch back to main tab
+            self.persistent_buying_driver.switch_to.window(self.main_tab_handle)
+            
+            elapsed = time.time() - start_time
+            print(f"✅ FAST: Completed in {elapsed:.2f} seconds")
+            
+        except Exception as e:
+            print(f"❌ FAST: Error processing {url}: {e}")
+            
+            # Try to recover by switching back to main tab
+            try:
+                if self.main_tab_handle in self.persistent_buying_driver.window_handles:
+                    self.persistent_buying_driver.switch_to.window(self.main_tab_handle)
+            except:
+                pass
+
+    def cleanup_persistent_buying_driver(self):
+        """
+        Clean up the persistent buying driver when program exits
+        """
+        if self.persistent_buying_driver is not None:
+            try:
+                self.persistent_buying_driver.quit()
+                print("🔒 CLEANUP: Persistent buying driver closed")
+            except:
+                pass
+            finally:
+                self.persistent_buying_driver = None
+                self.main_tab_handle = None
     
     def setup_driver(self):
         """
@@ -1586,38 +1636,58 @@ class VintedScraper:
                 print(f"❌ Fallback also failed: {fallback_error}")
                 raise Exception(f"Could not start Chrome driver: {e}")
             
-    def setup_buying_driver(self):
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,
-            "profile.default_content_setting_values.popups": 0,
-            "download.prompt_for_download": False,
-        }
 
-        service = Service(
-                ChromeDriverManager().install(),
-                log_path=os.devnull  # Suppress driver logs
-            )
+    def setup_persistent_buying_driver(self):
+        """
+        Set up the persistent buying driver that stays open throughout the program
+        """
+        if self.persistent_buying_driver is not None:
+            return True  # Already set up
+            
+        print("🚀 SETUP: Initializing persistent buying driver...")
         
-        fallback_opts = Options()
-        fallback_opts.add_experimental_option("prefs", prefs)
-        fallback_opts.add_argument("--headless")
-        fallback_opts.add_argument("--no-sandbox")
-        fallback_opts.add_argument("--disable-dev-shm-usage")
-        fallback_opts.add_argument("--disable-gpu")
-        fallback_opts.add_argument("--remote-debugging-port=0")
-        fallback_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
-        fallback_opts.add_argument(f"--profile-directory=Profile 2")
-        #Profile 2 = pc
-        #Default = laptop
-            
         try:
-            fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
-            print("✅ Fallback Chrome driver started successfully")
-            return fallback_driver
-        except Exception as fallback_error:
-            print(f"❌ Fallback also failed: {fallback_error}")
-            raise Exception(f"Could not start Chrome driver")
+            prefs = {
+                "profile.default_content_setting_values.notifications": 2,
+                "profile.default_content_setting_values.popups": 0,
+                "download.prompt_for_download": False,
+            }
+
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull
+            )
             
+            chrome_opts = Options()
+            chrome_opts.add_experimental_option("prefs", prefs)
+            #chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--remote-debugging-port=0")
+            chrome_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
+            chrome_opts.add_argument(f"--profile-directory=Profile 2")
+            
+            self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set fast timeouts for quick processing
+            self.persistent_buying_driver.implicitly_wait(2)
+            self.persistent_buying_driver.set_page_load_timeout(10)
+            self.persistent_buying_driver.set_script_timeout(5)
+            
+            # Navigate main tab to vinted.co.uk and keep it as reference
+            print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
+            self.persistent_buying_driver.get("https://www.vinted.co.uk")
+            self.main_tab_handle = self.persistent_buying_driver.current_window_handle
+            
+            print("✅ SETUP: Persistent buying driver ready!")
+            return True
+            
+        except Exception as e:
+            print(f"❌ SETUP: Failed to create persistent buying driver: {e}")
+            self.persistent_buying_driver = None
+            self.main_tab_handle = None
+            return False
             
 
     def extract_vinted_price(self, text):
@@ -2129,73 +2199,3 @@ class VintedScraper:
             'processed_images': processed_images,
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
-            'suitability': suitability_reason,
-            'seller_reviews': seller_reviews
-        }
-
-        # MODIFIED: Add to suitable listings based on new logic
-        should_add_listing = False
-        should_send_notification = False
-        # this here stops all of the non bookmarked listings from being added
-        if bookmark_listings and not VINTED_SHOW_ALL_LISTINGS:
-            # When bookmark_listings is ON and VINTED_SHOW_ALL_LISTINGS is OFF:
-            # Only add/notify if bookmark was successful
-            if bookmark_success:
-                should_add_listing = True
-                should_send_notification = True
-                print("✅ Adding listing because bookmark was successful")
-            else:
-                print("❌ Not adding listing because bookmark was not successful")
-        else:
-            # Original logic for other combinations
-            if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-                should_add_listing = True
-                should_send_notification = True
-        
-        if should_add_listing:
-            # Send Pushover notification
-            if should_send_notification:
-                notification_title = f"New Vinted Listing: £{total_price:.2f}"
-                notification_message = (
-                    f"Title: {details.get('title', 'No title')}\n"
-                    f"Price: £{total_price:.2f}\n"
-                    f"Expected Profit: £{expected_profit:.2f}\n"
-                    f"Profit %: {profit_percentage:.2f}%\n"
-                )
-                
-                # Use the Pushover tokens exactly as Facebook does
-                if send_notification:
-                    self.send_pushover_notification(
-                        notification_title,
-                        notification_message,
-                        'aks3to8guqjye193w7ajnydk9jaxh5',
-                        'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
-                    )
-
-            suitable_listings.append(final_listing_info)
-
-            # Add to recent_listings for website navigation
-            recent_listings['listings'].append(final_listing_info)
-            # Always set to the last (most recent) listing for website display
-            recent_listings['current_index'] = len(recent_listings['listings']) - 1
-
-            current_listing_index = len(suitable_listings) - 1
-            self.update_listing_details(**final_listing_info)
-
-            if is_suitable:
-                print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
-            else:
-                print(f"➕ Added unsuitable listing (SHOW_ALL mode or successful bookmark): £{total_price:.2f}")
-        else:
-            print(f"❌ Listing not added: {suitability_reason}")
-
-
-    def check_vinted_profit_suitability(self, listing_price, profit_percentage):
-        if 10 <= listing_price < 16:
-            return 100 <= profit_percentage <= 600 #50
-        elif 16 <= listing_price < 25:
-            return 65 <= profit_percentage <= 400 #50
-        elif 25 <= listing_price < 50:
-            return 37.5 <= profit_percentage <= 550 #35
-        elif 50 <= listing_price < 100:
-            return 35 <= profit_percentage <= 500 #32.5
