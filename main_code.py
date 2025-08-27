@@ -3332,7 +3332,7 @@ class VintedScraper:
     def get_available_driver(self):
         """
         FIXED: Find and reserve the first available driver with proper initialization
-        Returns: (driver_number, driver_instance) or (None, None) if all busy
+        Driver 1 uses the persistent_buying_driver, drivers 2-5 are created on demand
         """
         with self.driver_lock:
             for driver_num in range(1, 6):  # Check drivers 1-5
@@ -3343,24 +3343,56 @@ class VintedScraper:
                 # Reserve this driver slot
                 self.driver_status[driver_num] = 'busy'
                 
-                # Create driver if it doesn't exist or is dead
-                if self.buying_drivers[driver_num] is None or self.is_driver_dead(driver_num):
-                    print(f"🚗 CREATING: Buying driver {driver_num}")
-                    new_driver = self.setup_buying_driver(driver_num)
+                # SPECIAL HANDLING FOR DRIVER 1 - use persistent_buying_driver
+                if driver_num == 1:
+                    print(f"🚗 DRIVER 1: Using persistent buying driver")
                     
-                    if new_driver is None:
-                        print(f"❌ FAILED: Could not create buying driver {driver_num}")
-                        self.driver_status[driver_num] = 'not_created'
-                        continue
+                    # Check if persistent driver exists and is alive
+                    if self.persistent_buying_driver is None or self.is_persistent_driver_dead():
+                        print(f"🚗 DRIVER 1: Persistent driver is dead, recreating...")
+                        if not self.setup_persistent_buying_driver():
+                            print(f"❌ DRIVER 1: Failed to recreate persistent driver")
+                            self.driver_status[driver_num] = 'not_created'
+                            continue
+                    
+                    print(f"✅ RESERVED: Persistent buying driver (driver 1)")
+                    return driver_num, self.persistent_buying_driver
+                    
+                # For drivers 2-5, create on demand as before
+                else:
+                    if self.buying_drivers[driver_num] is None or self.is_driver_dead(driver_num):
+                        print(f"🚗 CREATING: Buying driver {driver_num}")
+                        new_driver = self.setup_buying_driver(driver_num)
                         
-                    self.buying_drivers[driver_num] = new_driver
-                    print(f"✅ CREATED: Buying driver {driver_num} successfully")
-                
-                print(f"✅ RESERVED: Buying driver {driver_num}")
-                return driver_num, self.buying_drivers[driver_num]
+                        if new_driver is None:
+                            print(f"❌ FAILED: Could not create buying driver {driver_num}")
+                            self.driver_status[driver_num] = 'not_created'
+                            continue
+                            
+                        self.buying_drivers[driver_num] = new_driver
+                        print(f"✅ CREATED: Buying driver {driver_num} successfully")
+                    
+                    print(f"✅ RESERVED: Buying driver {driver_num}")
+                    return driver_num, self.buying_drivers[driver_num]
             
             print("❌ ERROR: All 5 buying drivers are currently busy")
             return None, None
+    
+    def is_persistent_driver_dead(self):
+        """
+        Check if the persistent buying driver is dead/unresponsive
+        """
+        if self.persistent_buying_driver is None:
+            return True
+            
+        try:
+            # Try to access current_url to test if driver is alive
+            _ = self.persistent_buying_driver.current_url
+            return False
+        except:
+            print(f"💀 DEAD: Persistent buying driver is unresponsive")
+            return True
+
     def is_driver_dead(self, driver_num):
         """
         Check if a driver is dead/unresponsive
@@ -3378,13 +3410,17 @@ class VintedScraper:
 
     def release_driver(self, driver_num):
         """
-        FIXED: Release a driver back to the free pool with better cleanup
+        FIXED: Release a driver back to the free pool with special handling for driver 1
         """
         with self.driver_lock:
             print(f"🔓 RELEASING: Buying driver {driver_num}")
             
-            # CRITICAL FIX: Only close drivers 2-5, keep driver 1 alive
-            if driver_num != 1:
+            if driver_num == 1:
+                # Driver 1 is the persistent driver - keep it alive, just mark as free
+                self.driver_status[driver_num] = 'not_created'  # Allow it to be reused
+                print(f"🔄 KEPT ALIVE: Persistent buying driver (driver 1) marked as available")
+            else:
+                # For drivers 2-5, close them after use
                 if self.buying_drivers[driver_num] is not None:
                     try:
                         print(f"🗑️ CLOSING: Buying driver {driver_num}")
@@ -3400,11 +3436,7 @@ class VintedScraper:
                         print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
                         self.buying_drivers[driver_num] = None
                         self.driver_status[driver_num] = 'not_created'
-            else:
-                # Driver 1 stays alive, just mark as free
-                self.driver_status[driver_num] = 'not_created'  # Changed to allow recreation if needed
-                print(f"🔄 KEPT ALIVE: Buying driver {driver_num} (marked as available)")
-    
+
     def start_bookmark_stopwatch(self, listing_url):
         """
         Start a stopwatch for a successfully bookmarked listing
