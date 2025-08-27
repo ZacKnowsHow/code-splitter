@@ -50,13 +50,14 @@ from ultralytics import YOLO
 import random
 
 test_bookmark_function = False
-bookmark_listings = False
-click_pay_button_final_check = False
+bookmark_listings = True
+click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
-bookmark_stopwatch_length = 500
-buying_driver_click_pay_wait_time = 5
+bookmark_stopwatch_length = 540
+buying_driver_click_pay_wait_time = 7.5
 actually_purchase_listing = True
-test_purchase_not_true = True #uses the url below rather than the one from the web page
+wait_for_bookmark_stopwatch_to_buy = True
+test_purchase_not_true = False #uses the url below rather than the one from the web page
 test_purchase_url = "https://www.vinted.co.uk/items/6955075707-denim-shorts?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
@@ -152,18 +153,18 @@ recent_listings = {
     'current_index': 0
 }
 
-review_min = 1
+review_min = 3
 MAX_LISTINGS_TO_SCAN = 50
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
-MAX_LISTINGS_VINTED_TO_SCAN = 6  # Maximum listings to scan before refresh
+MAX_LISTINGS_VINTED_TO_SCAN = 50  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 10  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
 REPEAT_LISTINGS = True
 WAIT_TIME_AFTER_REFRESH = 125
 LOCK_POSITION = True
-SHOW_ALL_LISTINGS = True
-VINTED_SHOW_ALL_LISTINGS = True
+SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = False
 SHOW_PARTIALLY_SUITABLE = False
 setup_website = False
 send_message = True
@@ -3661,8 +3662,17 @@ class VintedScraper:
     def start_bookmark_stopwatch(self, listing_url):
         """
         Start a stopwatch for a successfully bookmarked listing
+        MODIFIED: Now tracks bookmark start time for wait_for_bookmark_stopwatch_to_buy functionality
         """
         print(f"⏱️ STOPWATCH: Starting timer for {listing_url}")
+        
+        # NEW: Track the start time for this listing
+        if not hasattr(self, 'bookmark_start_times'):
+            self.bookmark_start_times = {}
+        
+        # Record when the bookmark timer started
+        self.bookmark_start_times[listing_url] = time.time()
+        print(f"⏱️ RECORDED: Bookmark start time for {listing_url}")
         
         def stopwatch_timer():
             time.sleep(bookmark_stopwatch_length)
@@ -3671,6 +3681,10 @@ class VintedScraper:
             # Clean up the timer reference
             if listing_url in self.bookmark_timers:
                 del self.bookmark_timers[listing_url]
+                
+            # Clean up the start time reference
+            if hasattr(self, 'bookmark_start_times') and listing_url in self.bookmark_start_times:
+                del self.bookmark_start_times[listing_url]
         
         # Start the timer thread
         timer_thread = threading.Thread(target=stopwatch_timer)
@@ -4455,6 +4469,7 @@ class VintedScraper:
     def vinted_button_clicked_enhanced(self, url):
         """
         FIXED: Enhanced button click handler with better error handling and driver management
+        MODIFIED: Now checks wait_for_bookmark_stopwatch_to_buy variable and waits for bookmark timer
         """
         print(f"🔘 VINTED BUTTON: Processing {url}")
         
@@ -4465,6 +4480,39 @@ class VintedScraper:
         
         # Mark as clicked immediately to prevent race conditions
         self.clicked_yes_listings.add(url)
+        
+        # NEW: Check wait_for_bookmark_stopwatch_to_buy variable
+        if wait_for_bookmark_stopwatch_to_buy:
+            print(f"⏰ WAITING: wait_for_bookmark_stopwatch_to_buy is TRUE")
+            
+            # Check if this listing has a bookmark timer
+            if url in self.bookmark_timers:
+                print(f"⏰ TIMER: Found active bookmark timer for {url}")
+                
+                # Calculate how long the listing has been bookmarked
+                # We need to track when bookmarking started for each listing
+                if not hasattr(self, 'bookmark_start_times'):
+                    self.bookmark_start_times = {}
+                
+                if url in self.bookmark_start_times:
+                    elapsed_time = time.time() - self.bookmark_start_times[url]
+                    remaining_time = bookmark_stopwatch_length - elapsed_time
+                    
+                    if remaining_time > 0:
+                        print(f"⏰ WAITING: Need to wait {remaining_time:.1f} more seconds for bookmark timer")
+                        print(f"⏰ STATUS: Listing has been bookmarked for {elapsed_time:.1f} seconds")
+                        
+                        # Wait for the remaining time
+                        time.sleep(remaining_time)
+                        print(f"⏰ COMPLETE: Bookmark timer reached {bookmark_stopwatch_length} seconds")
+                    else:
+                        print(f"⏰ READY: Bookmark timer already exceeded {bookmark_stopwatch_length} seconds")
+                else:
+                    print(f"⚠️ WARNING: No bookmark start time found for {url}, proceeding immediately")
+            else:
+                print(f"⚠️ WARNING: No bookmark timer found for {url}, proceeding immediately")
+        else:
+            print(f"🚀 IMMEDIATE: wait_for_bookmark_stopwatch_to_buy is FALSE, proceeding immediately")
         
         # FIXED: Better driver acquisition with retry logic
         max_retries = 3
@@ -5407,7 +5455,7 @@ class VintedScraper:
 
         # SEPARATE logic for pygame and website
         should_add_to_website = False
-        should_add_to_pygame = True  # Always true for pygame to show suitable listings
+        should_add_to_pygame = False  # Always true for pygame to show suitable listings
         should_send_notification = False
 
         # Website logic (current behavior - only successful bookmarks when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False)
