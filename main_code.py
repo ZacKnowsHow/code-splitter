@@ -57,7 +57,7 @@ bookmark_stopwatch_length = 500
 buying_driver_click_pay_wait_time = 5
 actually_purchase_listing = True
 test_purchase_not_true = True #uses the url below rather than the one from the web page
-test_purchase_url = "https://www.vinted.co.uk/items/6954220240-ds-case?homepage_session_id=c83e277f-9c04-4515-b0f2-e67848d89002"
+test_purchase_url = "https://www.vinted.co.uk/items/6955075707-denim-shorts?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
 # Config
@@ -4079,30 +4079,133 @@ class VintedScraper:
                             # Check for error message (appears quickly)
                             error_found = False
                             try:
-                                error_element = WebDriverWait(driver, 6).until(
-                                    EC.presence_of_element_located((By.XPATH, 
-                                        "//span[contains(@class, 'web_uiTexttext') and contains(@class, 'web_uiTextbody') and contains(@class, 'web_uiTextleft') and contains(text(), \"Sorry, we couldn't process your payment. Some of the items belong to another purchase that is in progress. Please try again. If the problem recurs, contact us.\")]"
-                                    ))
-                                )
-                                print(f"⚠️ DRIVER {driver_num}: Payment error detected")
-                                error_found = True
+                                # FIXED: Updated error detection selectors to match actual HTML
+                                error_selectors = [
+                                    # Main error message span - the exact one from your error log
+                                    "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format']//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left' and contains(text(), 'Sorry, we couldn')]",
+                                    
+                                    # Alternative: the parent span with testid
+                                    "//span[@data-testid='checkout-payment-error-modal--body']",
+                                    
+                                    # More specific: target the error modal overlay
+                                    "//div[@data-testid='checkout-payment-error-modal--overlay']",
+                                    
+                                    # Broader fallback: any element containing the error text
+                                    "//span[contains(text(), \"Sorry, we couldn't process your payment\")]",
+                                    
+                                    # Very broad fallback
+                                    "//*[contains(text(), 'Some of the items belong to another purchase')]"
+                                ]
+                                
+                                error_element = None
+                                used_selector = None
+                                
+                                for selector in error_selectors:
+                                    try:
+                                        error_element = WebDriverWait(driver, 6).until(
+                                            EC.presence_of_element_located((By.XPATH, selector))
+                                        )
+                                        used_selector = selector
+                                        print(f"⚠️ DRIVER {driver_num}: Payment error detected using selector: {selector}")
+                                        error_found = True
+                                        break
+                                    except TimeoutException:
+                                        continue
+                                
                             except TimeoutException:
                                 print('TIMEOUT EXCEPTION')
                                 # No error message found, continue checking for success
                                 pass
-                            
+
                             if error_found:
-                                # Handle error - wait, click OK, wait again, then retry
+                                # FIXED: Updated OK button selector to match actual HTML
                                 print(f"⏳ DRIVER {driver_num}: Waiting {buying_driver_click_pay_wait_time}s before clicking OK")
                                 time.sleep(buying_driver_click_pay_wait_time)
                                 
-                                try:
-                                    ok_button = driver.find_element(By.XPATH, "//span[@class='web_uiButtonlabel' and text()='OK, close']")
-                                    ok_button.click()
-                                    print(f"✅ DRIVER {driver_num}: Clicked OK, close button")
-                                except Exception as ok_error:
-                                    print(f"❌ DRIVER {driver_num}: Failed to click OK button: {ok_error}")
+                                # Try multiple OK button selectors
+                                ok_selectors = [
+                                    # Main OK button with testid
+                                    "//button[@data-testid='checkout-payment-error-modal-action-button']",
+                                    
+                                    # Alternative: target by button text
+                                    "//button//span[@class='web_ui__Button__label' and text()='OK, close']",
+                                    
+                                    # Broader: any button containing "OK, close" 
+                                    "//button[contains(.//text(), 'OK, close')]",
+                                    
+                                    # Very broad fallback
+                                    "//button[contains(@class, 'web_ui__Button__primary')]"
+                                ]
                                 
+                                ok_clicked = False
+                                for ok_selector in ok_selectors:
+                                    try:
+                                        ok_button = driver.find_element(By.XPATH, ok_selector)
+                                        ok_button.click()
+                                        print(f"✅ DRIVER {driver_num}: Clicked OK button using selector: {ok_selector}")
+                                        ok_clicked = True
+                                        break
+                                    except Exception as ok_error:
+                                        continue
+                                
+                                if not ok_clicked:
+                                    print(f"❌ DRIVER {driver_num}: Failed to click OK button with any selector")
+                                
+                                print(f"⏳ DRIVER {driver_num}: Waiting {buying_driver_click_pay_wait_time}s before retry")
+                                time.sleep(buying_driver_click_pay_wait_time)
+                                
+                                # Continue to next attempt
+                                continue
+                                
+                            try:
+                                # Use the correct selector based on your HTML
+                                ok_button_selectors = [
+                                    # Your exact HTML structure
+                                    "button[data-testid='checkout-payment-error-modal-action-button']",
+                                    # Alternative selectors as fallbacks
+                                    "//button[@data-testid='checkout-payment-error-modal-action-button']",
+                                    "//button[contains(@class, 'web_ui__Button__primary')]//span[text()='OK, close']",
+                                    "//span[text()='OK, close']/parent::button",
+                                    "//span[@class='web_ui__Button__label' and text()='OK, close']/parent::button",
+                                    # Very broad fallback
+                                    "//*[text()='OK, close']"
+                                ]
+                                
+                                ok_button_found = False
+                                for selector in ok_button_selectors:
+                                    try:
+                                        if selector.startswith('//'):
+                                            ok_button = WebDriverWait(driver, 2).until(
+                                                EC.element_to_be_clickable((By.XPATH, selector))
+                                            )
+                                        else:
+                                            ok_button = WebDriverWait(driver, 2).until(
+                                                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                                            )
+                                        
+                                        # Try multiple click methods
+                                        try:
+                                            ok_button.click()
+                                            print(f"✅ DRIVER {driver_num}: Clicked OK button with selector: {selector}")
+                                            ok_button_found = True
+                                            break
+                                        except:
+                                            try:
+                                                driver.execute_script("arguments[0].click();", ok_button)
+                                                print(f"✅ DRIVER {driver_num}: Clicked OK button (JS) with selector: {selector}")
+                                                ok_button_found = True
+                                                break
+                                            except:
+                                                continue
+                                                
+                                    except:
+                                        continue
+                                
+                                if not ok_button_found:
+                                    print(f"❌ DRIVER {driver_num}: Could not find or click OK button with any selector")
+                                    
+                            except Exception as ok_error:
+                                print(f"❌ DRIVER {driver_num}: Failed to click OK button: {ok_error}")
                                 print(f"⏳ DRIVER {driver_num}: Waiting {buying_driver_click_pay_wait_time}s before retry")
                                 time.sleep(buying_driver_click_pay_wait_time)
                                 
