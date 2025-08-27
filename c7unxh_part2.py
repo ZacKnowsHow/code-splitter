@@ -1,5 +1,4 @@
 # Continuation from line 2201
-        # Store bounding boxes with more robust handling
         current_bounding_boxes = {
             'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
             'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
@@ -1123,7 +1122,60 @@ class VintedScraper:
         self.clicked_yes_listings = set()
         self.clicked_yes_listings = set()  # Track listings that have been clicked "yes"
         self.bookmark_timers = {}
+        self.buying_drivers = {}  # Dictionary to store drivers {1: driver_object, 2: driver_object, etc.}
+        self.driver_status = {}   # Track driver status {1: 'free'/'busy', 2: 'free'/'busy', etc.}
+        self.driver_lock = threading.Lock()  # Thread safety for driver management
+        
+        # Initialize all driver slots as not created
+        for i in range(1, 6):  # Drivers 1-5
+            self.buying_drivers[i] = None
+            self.driver_status[i] = 'free'
+    def get_available_driver(self):
+        """
+        Find and reserve the first available driver.
+        Returns: (driver_number, driver_instance) or (None, None) if all busy
+        """
+        with self.driver_lock:
+            for driver_num in range(1, 6):  # Check drivers 1-5
+                if self.driver_status[driver_num] == 'free':
+                    # Reserve this driver
+                    self.driver_status[driver_num] = 'busy'
+                    
+                    # Create driver if it doesn't exist
+                    if self.buying_drivers[driver_num] is None:
+                        print(f"🚗 CREATING: Buying driver {driver_num}")
+                        self.buying_drivers[driver_num] = self.setup_buying_driver(driver_num)
+                        if self.buying_drivers[driver_num] is None:
+                            print(f"❌ FAILED: Could not create buying driver {driver_num}")
+                            self.driver_status[driver_num] = 'free'  # Free it back up
+                            continue
+                    
+                    print(f"✅ RESERVED: Buying driver {driver_num}")
+                    return driver_num, self.buying_drivers[driver_num]
+            
+            print("❌ ERROR: All 5 buying drivers are currently busy")
+            return None, None
 
+    def release_driver(self, driver_num):
+        """
+        Release a driver back to the free pool and handle cleanup
+        """
+        with self.driver_lock:
+            print(f"🔓 RELEASING: Buying driver {driver_num}")
+            
+            # Close driver if it's not driver 1 (driver 1 stays open permanently)
+            if driver_num != 1 and self.buying_drivers[driver_num] is not None:
+                try:
+                    print(f"🗑️ CLOSING: Buying driver {driver_num}")
+                    self.buying_drivers[driver_num].quit()
+                    self.buying_drivers[driver_num] = None
+                except Exception as e:
+                    print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
+                    self.buying_drivers[driver_num] = None
+            
+            # Mark as free
+            self.driver_status[driver_num] = 'free'
+            print(f"✅ FREED: Buying driver {driver_num}")
     def start_bookmark_stopwatch(self, listing_url):
         """
         Start a stopwatch for a successfully bookmarked listing
@@ -1491,27 +1543,205 @@ class VintedScraper:
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
 
+    def process_single_listing_with_driver(self, url, driver_num, driver):
+        """
+        Process a single listing using the specified driver
+        """
+        start_time = time.time()
+        
+        try:
+            print(f"🔥 DRIVER {driver_num}: Processing {url}")
+            
+            # Verify driver is still alive
+            driver.current_url
+            
+            # Open new tab for processing
+            print(f"📑 DRIVER {driver_num}: Opening new tab")
+            driver.execute_script("window.open('');")
+            new_tab = driver.window_handles[-1]
+            driver.switch_to.window(new_tab)
+            
+            # Navigate to listing URL
+            print(f"🔗 DRIVER {driver_num}: Navigating to listing")
+            driver.get(url)
+            
+            # Wait for page to load
+            time.sleep(2)
+            
+            # Look for Buy now button
+            print(f"🔘 DRIVER {driver_num}: Looking for Buy now button")
+            
+            buy_selectors = [
+                'button[data-testid="item-buy-button"]',
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                'button.web_ui__Button__button[data-testid="item-buy-button"]',
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+            ]
+            
+            buy_button = None
+            for selector in buy_selectors:
+                try:
+                    if selector.startswith('//'):
+                        buy_button = WebDriverWait(driver, 2).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        buy_button = WebDriverWait(driver, 2).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                    print(f"✅ DRIVER {driver_num}: Found Buy now button")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if buy_button:
+                # Click the Buy now button
+                try:
+                    buy_button.click()
+                    print(f"✅ DRIVER {driver_num}: Clicked Buy now button")
+                except Exception as e:
+                    try:
+                        driver.execute_script("arguments[0].click();", buy_button)
+                        print(f"✅ DRIVER {driver_num}: Clicked Buy now button (JS)")
+                    except Exception as e2:
+                        print(f"❌ DRIVER {driver_num}: Failed to click Buy now button")
+                        raise e2
+                
+                # Wait for shipping page and start alternating clicks
+                print(f"🚚 DRIVER {driver_num}: Waiting for shipping page")
+                try:
+                    pickup_point_header = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'))
+                    )
+                    print(f"✅ DRIVER {driver_num}: Shipping page loaded")
+                    
+                    # Record start time for alternating clicks
+                    first_click_time = time.time()
+                    
+                    print(f"🔄 DRIVER {driver_num}: Starting {bookmark_stopwatch_length}s alternating click sequence")
+                    
+                    while True:
+                        # Check if time elapsed
+                        if time.time() - first_click_time >= bookmark_stopwatch_length:
+                            print(f"⏰ DRIVER {driver_num}: {bookmark_stopwatch_length} seconds elapsed, stopping")
+                            break
+                        
+                        # Click "Ship to pick-up point"
+                        try:
+                            pickup_point = driver.find_element(
+                                By.XPATH, 
+                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
+                            )
+                            pickup_point.click()
+                            print(f"📦 DRIVER {driver_num}: Clicked 'Ship to pick-up point'")
+                        except Exception as e:
+                            print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to pick-up point': {e}")
+                        
+                        # Wait
+                        time.sleep(buying_driver_click_pay_wait_time)
+                        
+                        # Check time again
+                        if time.time() - first_click_time >= bookmark_stopwatch_length:
+                            print(f"⏰ DRIVER {driver_num}: Time elapsed during wait, stopping")
+                            break
+                        
+                        # Click "Ship to home"
+                        try:
+                            ship_to_home = driver.find_element(
+                                By.XPATH, 
+                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
+                            )
+                            ship_to_home.click()
+                            print(f"🏠 DRIVER {driver_num}: Clicked 'Ship to home'")
+                        except Exception as e:
+                            print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to home': {e}")
+                        
+                        # Wait
+                        time.sleep(buying_driver_click_pay_wait_time)
+                
+                except TimeoutException:
+                    print(f"⚠️ DRIVER {driver_num}: Timeout waiting for shipping page")
+                
+            else:
+                print(f"❌ DRIVER {driver_num}: Buy now button not found")
+            
+            # Close the processing tab (keep main tab open)
+            print(f"🗑️ DRIVER {driver_num}: Closing processing tab")
+            driver.close()
+            
+            # Switch back to main tab (vinted.co.uk)
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+                print(f"🏠 DRIVER {driver_num}: Back to main tab")
+            
+            elapsed = time.time() - start_time
+            print(f"✅ DRIVER {driver_num}: Completed processing in {elapsed:.2f} seconds")
+            
+        except Exception as e:
+            print(f"❌ DRIVER {driver_num}: Error processing {url}: {e}")
+            
+            # Try to recover by switching back to main tab
+            try:
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+            except:
+                print(f"⚠️ DRIVER {driver_num}: Could not recover to main tab")
+        
+        finally:
+            # Always release the driver when done
+            self.release_driver(driver_num)
+
+    def cleanup_all_buying_drivers(self):
+        """
+        Clean up all buying drivers when program exits
+        """
+        print("🧹 CLEANUP: Closing all buying drivers")
+        
+        with self.driver_lock:
+            for driver_num in range(1, 6):
+                if self.buying_drivers[driver_num] is not None:
+                    try:
+                        self.buying_drivers[driver_num].quit()
+                        print(f"🗑️ CLEANUP: Closed buying driver {driver_num}")
+                    except:
+                        pass
+                    finally:
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'free'
+        
+        print("✅ CLEANUP: All buying drivers closed")
 
     def vinted_button_clicked_enhanced(self, url):
         """
-        ULTRA-FAST button click handler using persistent driver with tabs
+        UPDATED: Enhanced button click handler using multiple drivers
         """
         print(f"🔘 VINTED BUTTON: Processing {url}")
         
-        # Add to queue for fast processing - ONLY if not already clicked yes
-        if url not in self.clicked_yes_listings:
-            self.vinted_button_queue.put(url)
-            
-            # Mark as clicked to prevent duplicate processing
-            self.clicked_yes_listings.add(url)
-            
-            # Start processing if not already active
-            if not self.vinted_processing_active.is_set():
-                processing_thread = threading.Thread(target=self.process_vinted_button_queue)
-                processing_thread.daemon = True
-                processing_thread.start()
-        else:
+        # Check if already clicked to prevent duplicates
+        if url in self.clicked_yes_listings:
             print(f"🔄 VINTED BUTTON: Listing {url} already processed, ignoring")
+            return
+        
+        # Mark as clicked
+        self.clicked_yes_listings.add(url)
+        
+        # Get an available driver
+        driver_num, driver = self.get_available_driver()
+        
+        if driver is None:
+            print("❌ ERROR: All 5 buying drivers are currently busy. Please wait and try again.")
+            # Remove from clicked list so they can try again later
+            self.clicked_yes_listings.discard(url)
+            return
+        
+        # Process the listing in a separate thread so it doesn't block
+        processing_thread = threading.Thread(
+            target=self.process_single_listing_with_driver,
+            args=(url, driver_num, driver)
+        )
+        processing_thread.daemon = True
+        processing_thread.start()
 
     def process_vinted_button_queue(self):
         """
@@ -1849,54 +2079,50 @@ class VintedScraper:
                 raise Exception(f"Could not start Chrome driver: {e}")
             
 
-    def setup_persistent_buying_driver(self):
+    def setup_buying_driver(self, driver_num):
         """
-        Set up the persistent buying driver that stays open throughout the program
+        Setup a specific buying driver with its own user data directory
         """
-        if self.persistent_buying_driver is not None:
-            return True  # Already set up
-            
-        print("🚀 SETUP: Initializing persistent buying driver...")
-        
         try:
-            print('USING SETUP_PRSISTENT_BUYING_DRIVER')
-
+            print(f"🚗 SETUP: Creating buying driver {driver_num}")
+            
             service = Service(
                 ChromeDriverManager().install(),
                 log_path=os.devnull
             )
             
             chrome_opts = Options()
-            #chrome_opts.add_argument("--headless")
-            chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer")
+            # Each driver gets its own directory
+            user_data_dir = f"C:\\VintedBuyer{driver_num}"
+            chrome_opts.add_argument(f"--user-data-dir={user_data_dir}")
             chrome_opts.add_argument("--profile-directory=Default")
+            
+            # Standard options
             chrome_opts.add_argument("--no-sandbox")
             chrome_opts.add_argument("--disable-dev-shm-usage")
             chrome_opts.add_argument("--disable-gpu")
             chrome_opts.add_argument("--window-size=800,600")
             chrome_opts.add_argument("--log-level=3")
             chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-                                
-            self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
             
-            # Set fast timeouts for quick processing
-            self.persistent_buying_driver.implicitly_wait(1)
-            self.persistent_buying_driver.set_page_load_timeout(8)
-            self.persistent_buying_driver.set_script_timeout(3)
+            # Create the driver
+            driver = webdriver.Chrome(service=service, options=chrome_opts)
             
-            # Navigate main tab to vinted.co.uk and keep it as reference
-            print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
-            self.persistent_buying_driver.get("https://www.vinted.co.uk")
-            self.main_tab_handle = self.persistent_buying_driver.current_window_handle
+            # Set timeouts for quick processing
+            driver.implicitly_wait(1)
+            driver.set_page_load_timeout(10)
+            driver.set_script_timeout(5)
             
-            print("✅ SETUP: Persistent buying driver ready!")
-            return True
+            # Navigate to vinted.co.uk instead of blank page
+            print(f"🏠 NAVIGATE: Driver {driver_num} going to vinted.co.uk")
+            driver.get("https://www.vinted.co.uk")
+            
+            print(f"✅ SUCCESS: Buying driver {driver_num} created and ready")
+            return driver
             
         except Exception as e:
-            print(f"❌ SETUP: Failed to create persistent buying driver: {e}")
-            self.persistent_buying_driver = None
-            self.main_tab_handle = None
-            return False
+            print(f"❌ ERROR: Failed to create buying driver {driver_num}: {e}")
+            return None
             
 
     def extract_vinted_price(self, text):
@@ -1973,229 +2199,3 @@ class VintedScraper:
             matches = (
                 re.findall(r'(\d+)\s*(switch|nintendo)\s*games', text.lower()) + # Switch/Nintendo specific
                 re.findall(r'(\d+)\s*games', text.lower()) # Generic games
-            )
-            # Convert matches to integers and find the maximum
-            numeric_matches = [int(match[0]) if isinstance(match, tuple) else int(match) for match in matches]
-            return max(numeric_matches) if numeric_matches else 0
-        
-        title_games = extract_games_number(listing_title)
-        desc_games = extract_games_number(listing_description)
-        return max(title_games, desc_games)
-
-    def detect_sd_card_vinted(self, listing_title, listing_description):
-        """
-        Detect SD card presence in title or description
-        """
-        sd_card_keywords = {'sd card', 'sdcard', 'sd', 'card', 'memory card', 'memorycard', 'micro sd', 'microsd',
-                        'memory card', 'memorycard', 'sandisk', '128gb', '256gb', 'game'}
-        
-        title_lower = listing_title.lower()
-        desc_lower = listing_description.lower()
-        
-        return any(keyword in title_lower or keyword in desc_lower for keyword in sd_card_keywords)
-
-    def handle_mutually_exclusive_items_vinted(self, detected_objects, confidences):
-        """
-        Handle mutually exclusive items for Vinted (ported from Facebook)
-        """
-        mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
-        
-        # Find the item with highest confidence
-        selected_item = max(confidences.items(), key=lambda x: x[1])[0] if any(confidences.values()) else None
-        
-        if selected_item:
-            # Set the selected item to 1 and all others to 0
-            for item in mutually_exclusive_items:
-                detected_objects[item] = 1 if item == selected_item else 0
-                
-            # Handle accessory incompatibilities
-            if selected_item in ['oled', 'oled_in_tv', 'oled_box']:
-                detected_objects['tv_black'] = 0
-            elif selected_item in ['switch', 'switch_in_tv', 'switch_box']:
-                detected_objects['tv_white'] = 0
-                
-            if selected_item in ['lite', 'lite_box', 'switch_box', 'oled_box']:
-                detected_objects['comfort_h'] = 0
-                
-            if selected_item in ['switch_in_tv', 'switch_box']:
-                detected_objects['tv_black'] = 0
-                
-            if selected_item in ['oled_in_tv', 'oled_box']:
-                detected_objects['tv_white'] = 0
-        
-        return detected_objects
-
-    def handle_oled_title_conversion_vinted(self, detected_objects, listing_title, listing_description):
-        """
-        Handle OLED title conversion logic (ported from Facebook)
-        """
-        listing_title_lower = listing_title.lower()
-        listing_description_lower = listing_description.lower()
-        
-        if (('oled' in listing_title_lower) or ('oled' in listing_description_lower)) and \
-        'not oled' not in listing_title_lower and 'not oled' not in listing_description_lower:
-            
-            for old, new in [('switch', 'oled'), ('switch_in_tv', 'oled_in_tv'), ('switch_box', 'oled_box')]:
-                if detected_objects.get(old, 0) > 0:
-                    detected_objects[old] = 0
-                    detected_objects[new] = 1
-        
-        return detected_objects
-    
-    def check_vinted_listing_suitability(self, listing_info):
-        """
-        Check if a Vinted listing meets all suitability criteria
-        FIXED: Properly extract review count from seller_reviews field
-        """
-        debug_function_call("check_vinted_listing_suitability")
-        import re  # FIXED: Import re at function level
-        
-        title = listing_info.get("title", "").lower()
-        description = listing_info.get("description", "").lower()
-        price = listing_info.get("price", 0)
-        seller_reviews = listing_info.get("seller_reviews", "No reviews yet")
-        
-        try:
-            price_float = float(price)
-        except (ValueError, TypeError):
-            return "Unsuitable: Unable to parse price"
-        
-        # FIXED: Extract number of reviews from seller_reviews - this was the bug!
-        reviews_count = 0
-        if seller_reviews and seller_reviews != "No reviews yet":
-            # Handle multiple formats that might come from scrape_item_details
-            reviews_text = str(seller_reviews).strip()
-            
-            # Debug print to see what we're getting
-            print(f"DEBUG: Raw seller_reviews value: '{reviews_text}'")
-            
-            # Try multiple extraction methods
-            if reviews_text.startswith("Reviews: "):
-                # Format: "Reviews: 123"
-                try:
-                    reviews_count = int(reviews_text.replace("Reviews: ", ""))
-                except ValueError:
-                    reviews_count = 0
-            elif reviews_text.isdigit():
-                # Format: "123" (just the number)
-                reviews_count = int(reviews_text)
-            else:
-                # Try to extract any number from the string
-                match = re.search(r'\d+', reviews_text)
-                if match:
-                    reviews_count = int(match.group())
-                else:
-                    reviews_count = 0
-        
-        # Debug print to see final extracted count
-        print(f"DEBUG: Extracted reviews_count: {reviews_count} (review_min: {review_min})")
-        
-        checks = [
-            (lambda: reviews_count < review_min,
-            f"Lack of reviews (has {reviews_count}, needs {review_min}+)"),
-            (lambda: any(word in title for word in vinted_title_forbidden_words),
-            "Title contains forbidden words"),
-            (lambda: not any(word in title for word in vinted_title_must_contain),
-            "Title does not contain any required words"),
-            (lambda: any(word in description for word in vinted_description_forbidden_words),
-            "Description contains forbidden words"),
-            (lambda: price_float < vinted_min_price or price_float > vinted_max_price,
-            f"Price £{price_float} is outside the range £{vinted_min_price}-£{vinted_max_price}"),
-            (lambda: len(re.findall(r'[£$]\s*\d+|\d+\s*[£$]', description)) >= 3,
-            "Too many $ symbols in description"),
-            (lambda: price_float in vinted_banned_prices,
-            "Price in banned prices list")
-        ]
-        
-        for check, message in checks:
-            try:
-                if check():
-                    return f"Unsuitable: {message}"
-            except (ValueError, IndexError, AttributeError, TypeError):
-                continue
-        
-        return "Listing is suitable"
-
-    def scrape_item_details(self, driver):
-        """
-        Enhanced scraper with better price extraction and seller reviews
-        UPDATED: Now includes username collection
-        """
-        debug_function_call("scrape_item_details")
-        import re  # FIXED: Import re at function level
-        
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
-        )
-
-        fields = {
-            "title": "h1.web_ui__Text__title",
-            "price": "p.web_ui__Text__subtitle",  # Main price field for extraction
-            "second_price": "div.web_ui__Text__title.web_ui__Text__clickable.web_ui__Text__underline-none",
-            "postage": "h3[data-testid='item-shipping-banner-price']",
-            "description": "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span",
-            "uploaded": "span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold",
-            "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Main selector for seller reviews
-            "username": "span[data-testid='profile-username']",  # NEW: Username field
-        }
-
-        data = {}
-        for key, sel in fields.items():
-            try:
-                if key == "seller_reviews":
-                    # FIXED: Better handling for seller reviews with multiple selectors
-                    review_selectors = [
-                        "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Primary selector
-                        "span[class*='caption'][class*='left']",  # Broader selector
-                        "div[class*='reviews'] span",  # Alternative selector
-                        "*[class*='review']",  # Very broad selector as fallback
-                    ]
-                    
-                    reviews_text = None
-                    for review_sel in review_selectors:
-                        try:
-                            elements = driver.find_elements(By.CSS_SELECTOR, review_sel)
-                            for element in elements:
-                                text = element.text.strip()
-                                # Look for text that contains digits (likely review count)
-                                if text and (text.isdigit() or "review" in text.lower() or re.search(r'\d+', text)):
-                                    reviews_text = text
-                                    print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
-                                    break
-                            if reviews_text:
-                                break
-                        except Exception as e:
-                            print(f"DEBUG: Selector '{review_sel}' failed: {e}")
-                            continue
-                    
-                    # Process the found reviews text
-                    if reviews_text:
-                        if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
-                            data[key] = "No reviews yet"
-                        elif reviews_text.isdigit():
-                            # Just a number like "123"
-                            data[key] = reviews_text  # Keep as string for consistency
-                            print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
-                        else:
-                            # Try to extract number from text like "123 reviews" or "(123)"
-                            match = re.search(r'(\d+)', reviews_text)
-                            if match:
-                                data[key] = match.group(1)  # Just the number as string
-                                print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
-                            else:
-                                data[key] = "No reviews yet"
-                    else:
-                        data[key] = "No reviews yet"
-                        print("DEBUG: No seller reviews found with any selector")
-                        
-                elif key == "username":
-                    # NEW: Handle username extraction with careful error handling
-                    try:
-                        username_element = driver.find_element(By.CSS_SELECTOR, sel)
-                        username_text = username_element.text.strip()
-                        if username_text:
-                            data[key] = username_text
-                            print(f"DEBUG: Found username: '{username_text}'")
-                        else:
-                            data[key] = "Username not found"
-                            print("DEBUG: Username element found but no text")

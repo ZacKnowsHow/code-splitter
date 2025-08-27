@@ -105,7 +105,6 @@ SCRAPER_USER_DATA_DIR = r"C:\FacebookScraper_ScraperProfile"
 MESSAGING_USER_DATA_DIR = r"C:\FacebookScraper_MessagingProfile"
 #profile 2
 
-VINTED_BUYING_USER_DATA_DIR = r"C:\VintedPostButtonClick"
 
 app = Flask(__name__, template_folder='templates')
 
@@ -152,8 +151,8 @@ recent_listings = {
 
 review_min = 3
 MAX_LISTINGS_TO_SCAN = 50
-REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
-MAX_LISTINGS_VINTED_TO_SCAN = 250  # Maximum listings to scan before refresh
+REFRESH_AND_RESCAN = False  # Set to False to disable refresh functionality
+MAX_LISTINGS_VINTED_TO_SCAN = 6  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 10  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
@@ -2198,3 +2197,4 @@ class FacebookScraper:
                 except Exception as e:
                     print(f"Error copying image: {str(e)}")
         
+        # Store bounding boxes with more robust handling
