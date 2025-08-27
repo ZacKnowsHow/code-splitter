@@ -1,4 +1,36 @@
 # Continuation from line 4401
+            user_data_dir = f"C:\\VintedBuyer{driver_num}"  # Add timestamp for uniqueness
+            chrome_opts.add_argument(f"--user-data-dir={user_data_dir}")
+            chrome_opts.add_argument("--profile-directory=Default")
+            
+            # FIXED: Better stability options
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--disable-extensions")
+            chrome_opts.add_argument("--disable-plugins")
+            chrome_opts.add_argument("--disable-images")  # Speed optimization
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_argument("--disable-web-security")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+            chrome_opts.add_experimental_option('useAutomationExtension', False)
+            
+            # Create the driver
+            driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # FIXED: Set appropriate timeouts for buying process
+            driver.implicitly_wait(2)
+            driver.set_page_load_timeout(15)  # Increased for stability
+            driver.set_script_timeout(10)
+            
+            # CRITICAL FIX: Navigate to vinted.co.uk and WAIT for it to fully load
+            print(f"🏠 NAVIGATE: Driver {driver_num} going to vinted.co.uk")
+            driver.get("https://www.vinted.co.uk")
+            
+            # Wait for page to load completely before marking as ready
+            try:
+                WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.TAG_NAME, "body"))
                 )
                 print(f"✅ SUCCESS: Buying driver {driver_num} fully loaded and ready")
