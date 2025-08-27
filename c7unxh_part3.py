@@ -1,4 +1,230 @@
 # Continuation from line 4401
+            )
+            # Convert matches to integers and find the maximum
+            numeric_matches = [int(match[0]) if isinstance(match, tuple) else int(match) for match in matches]
+            return max(numeric_matches) if numeric_matches else 0
+        
+        title_games = extract_games_number(listing_title)
+        desc_games = extract_games_number(listing_description)
+        return max(title_games, desc_games)
+
+    def detect_sd_card_vinted(self, listing_title, listing_description):
+        """
+        Detect SD card presence in title or description
+        """
+        sd_card_keywords = {'sd card', 'sdcard', 'sd', 'card', 'memory card', 'memorycard', 'micro sd', 'microsd',
+                        'memory card', 'memorycard', 'sandisk', '128gb', '256gb', 'game'}
+        
+        title_lower = listing_title.lower()
+        desc_lower = listing_description.lower()
+        
+        return any(keyword in title_lower or keyword in desc_lower for keyword in sd_card_keywords)
+
+    def handle_mutually_exclusive_items_vinted(self, detected_objects, confidences):
+        """
+        Handle mutually exclusive items for Vinted (ported from Facebook)
+        """
+        mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
+        
+        # Find the item with highest confidence
+        selected_item = max(confidences.items(), key=lambda x: x[1])[0] if any(confidences.values()) else None
+        
+        if selected_item:
+            # Set the selected item to 1 and all others to 0
+            for item in mutually_exclusive_items:
+                detected_objects[item] = 1 if item == selected_item else 0
+                
+            # Handle accessory incompatibilities
+            if selected_item in ['oled', 'oled_in_tv', 'oled_box']:
+                detected_objects['tv_black'] = 0
+            elif selected_item in ['switch', 'switch_in_tv', 'switch_box']:
+                detected_objects['tv_white'] = 0
+                
+            if selected_item in ['lite', 'lite_box', 'switch_box', 'oled_box']:
+                detected_objects['comfort_h'] = 0
+                
+            if selected_item in ['switch_in_tv', 'switch_box']:
+                detected_objects['tv_black'] = 0
+                
+            if selected_item in ['oled_in_tv', 'oled_box']:
+                detected_objects['tv_white'] = 0
+        
+        return detected_objects
+
+    def handle_oled_title_conversion_vinted(self, detected_objects, listing_title, listing_description):
+        """
+        Handle OLED title conversion logic (ported from Facebook)
+        """
+        listing_title_lower = listing_title.lower()
+        listing_description_lower = listing_description.lower()
+        
+        if (('oled' in listing_title_lower) or ('oled' in listing_description_lower)) and \
+        'not oled' not in listing_title_lower and 'not oled' not in listing_description_lower:
+            
+            for old, new in [('switch', 'oled'), ('switch_in_tv', 'oled_in_tv'), ('switch_box', 'oled_box')]:
+                if detected_objects.get(old, 0) > 0:
+                    detected_objects[old] = 0
+                    detected_objects[new] = 1
+        
+        return detected_objects
+    
+    def check_vinted_listing_suitability(self, listing_info):
+        """
+        Check if a Vinted listing meets all suitability criteria
+        FIXED: Properly extract review count from seller_reviews field
+        """
+        debug_function_call("check_vinted_listing_suitability")
+        import re  # FIXED: Import re at function level
+        
+        title = listing_info.get("title", "").lower()
+        description = listing_info.get("description", "").lower()
+        price = listing_info.get("price", 0)
+        seller_reviews = listing_info.get("seller_reviews", "No reviews yet")
+        
+        try:
+            price_float = float(price)
+        except (ValueError, TypeError):
+            return "Unsuitable: Unable to parse price"
+        
+        # FIXED: Extract number of reviews from seller_reviews - this was the bug!
+        reviews_count = 0
+        if seller_reviews and seller_reviews != "No reviews yet":
+            # Handle multiple formats that might come from scrape_item_details
+            reviews_text = str(seller_reviews).strip()
+            
+            # Debug print to see what we're getting
+            print(f"DEBUG: Raw seller_reviews value: '{reviews_text}'")
+            
+            # Try multiple extraction methods
+            if reviews_text.startswith("Reviews: "):
+                # Format: "Reviews: 123"
+                try:
+                    reviews_count = int(reviews_text.replace("Reviews: ", ""))
+                except ValueError:
+                    reviews_count = 0
+            elif reviews_text.isdigit():
+                # Format: "123" (just the number)
+                reviews_count = int(reviews_text)
+            else:
+                # Try to extract any number from the string
+                match = re.search(r'\d+', reviews_text)
+                if match:
+                    reviews_count = int(match.group())
+                else:
+                    reviews_count = 0
+        
+        # Debug print to see final extracted count
+        print(f"DEBUG: Extracted reviews_count: {reviews_count} (review_min: {review_min})")
+        
+        checks = [
+            (lambda: reviews_count < review_min,
+            f"Lack of reviews (has {reviews_count}, needs {review_min}+)"),
+            (lambda: any(word in title for word in vinted_title_forbidden_words),
+            "Title contains forbidden words"),
+            (lambda: not any(word in title for word in vinted_title_must_contain),
+            "Title does not contain any required words"),
+            (lambda: any(word in description for word in vinted_description_forbidden_words),
+            "Description contains forbidden words"),
+            (lambda: price_float < vinted_min_price or price_float > vinted_max_price,
+            f"Price £{price_float} is outside the range £{vinted_min_price}-£{vinted_max_price}"),
+            (lambda: len(re.findall(r'[£$]\s*\d+|\d+\s*[£$]', description)) >= 3,
+            "Too many $ symbols in description"),
+            (lambda: price_float in vinted_banned_prices,
+            "Price in banned prices list")
+        ]
+        
+        for check, message in checks:
+            try:
+                if check():
+                    return f"Unsuitable: {message}"
+            except (ValueError, IndexError, AttributeError, TypeError):
+                continue
+        
+        return "Listing is suitable"
+
+    def scrape_item_details(self, driver):
+        """
+        Enhanced scraper with better price extraction and seller reviews
+        UPDATED: Now includes username collection
+        """
+        debug_function_call("scrape_item_details")
+        import re  # FIXED: Import re at function level
+        
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
+        )
+
+        fields = {
+            "title": "h1.web_ui__Text__title",
+            "price": "p.web_ui__Text__subtitle",  # Main price field for extraction
+            "second_price": "div.web_ui__Text__title.web_ui__Text__clickable.web_ui__Text__underline-none",
+            "postage": "h3[data-testid='item-shipping-banner-price']",
+            "description": "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span",
+            "uploaded": "span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold",
+            "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Main selector for seller reviews
+            "username": "span[data-testid='profile-username']",  # NEW: Username field
+        }
+
+        data = {}
+        for key, sel in fields.items():
+            try:
+                if key == "seller_reviews":
+                    # FIXED: Better handling for seller reviews with multiple selectors
+                    review_selectors = [
+                        "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Primary selector
+                        "span[class*='caption'][class*='left']",  # Broader selector
+                        "div[class*='reviews'] span",  # Alternative selector
+                        "*[class*='review']",  # Very broad selector as fallback
+                    ]
+                    
+                    reviews_text = None
+                    for review_sel in review_selectors:
+                        try:
+                            elements = driver.find_elements(By.CSS_SELECTOR, review_sel)
+                            for element in elements:
+                                text = element.text.strip()
+                                # Look for text that contains digits (likely review count)
+                                if text and (text.isdigit() or "review" in text.lower() or re.search(r'\d+', text)):
+                                    reviews_text = text
+                                    print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
+                                    break
+                            if reviews_text:
+                                break
+                        except Exception as e:
+                            print(f"DEBUG: Selector '{review_sel}' failed: {e}")
+                            continue
+                    
+                    # Process the found reviews text
+                    if reviews_text:
+                        if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
+                            data[key] = "No reviews yet"
+                        elif reviews_text.isdigit():
+                            # Just a number like "123"
+                            data[key] = reviews_text  # Keep as string for consistency
+                            print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
+                        else:
+                            # Try to extract number from text like "123 reviews" or "(123)"
+                            match = re.search(r'(\d+)', reviews_text)
+                            if match:
+                                data[key] = match.group(1)  # Just the number as string
+                                print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
+                            else:
+                                data[key] = "No reviews yet"
+                    else:
+                        data[key] = "No reviews yet"
+                        print("DEBUG: No seller reviews found with any selector")
+                        
+                elif key == "username":
+                    # NEW: Handle username extraction with careful error handling
+                    try:
+                        username_element = driver.find_element(By.CSS_SELECTOR, sel)
+                        username_text = username_element.text.strip()
+                        if username_text:
+                            data[key] = username_text
+                            print(f"DEBUG: Found username: '{username_text}'")
+                        else:
+                            data[key] = "Username not found"
+                            print("DEBUG: Username element found but no text")
                     except NoSuchElementException:
                         # Try alternative selectors for username
                         alternative_username_selectors = [
@@ -1415,6 +1641,55 @@
             
             return None
 
+    def setup_persistent_buying_driver(self):
+        """
+        Set up the persistent buying driver that stays open throughout the program
+        """
+        if self.persistent_buying_driver is not None:
+            return True  # Already set up
+            
+        print("🚀 SETUP: Initializing persistent buying driver...")
+        
+        try:
+            print('USING SETUP_PRSISTENT_BUYING_DRIVER')
+
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull
+            )
+            
+            chrome_opts = Options()
+            #chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer1")
+            chrome_opts.add_argument("--profile-directory=Default")
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+                                
+            self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set fast timeouts for quick processing
+            self.persistent_buying_driver.implicitly_wait(1)
+            self.persistent_buying_driver.set_page_load_timeout(8)
+            self.persistent_buying_driver.set_script_timeout(3)
+            
+            # Navigate main tab to vinted.co.uk and keep it as reference
+            print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
+            self.persistent_buying_driver.get("https://www.vinted.co.uk")
+            self.main_tab_handle = self.persistent_buying_driver.current_window_handle
+            
+            print("✅ SETUP: Persistent buying driver ready!")
+            return True
+            
+        except Exception as e:
+            print(f"❌ SETUP: Failed to create persistent buying driver: {e}")
+            self.persistent_buying_driver = None
+            self.main_tab_handle = None
+            return False
+
     def run(self):
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
@@ -1464,6 +1739,7 @@
             driver.quit()
             pygame.quit()
             self.cleanup_persistent_buying_driver()
+            self.cleanup_all_buying_drivers()  # NEW: Clean up buying drivers
             sys.exit(0)
 
 if __name__ == "__main__":
