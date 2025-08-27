@@ -1,4 +1,90 @@
 # Continuation from line 4401
+                            "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__amplified.web_ui__Text__bold[data-testid='profile-username']",
+                            "span[data-testid='profile-username']",
+                            "*[data-testid='profile-username']",
+                            "span.web_ui__Text__amplified.web_ui__Text__bold",  # Broader fallback
+                        ]
+                        
+                        username_found = False
+                        for alt_sel in alternative_username_selectors:
+                            try:
+                                alt_username_element = driver.find_element(By.CSS_SELECTOR, alt_sel)
+                                alt_username_text = alt_username_element.text.strip()
+                                if alt_username_text:
+                                    data[key] = alt_username_text
+                                    print(f"DEBUG: Found username with alternative selector '{alt_sel}': '{alt_username_text}'")
+                                    username_found = True
+                                    break
+                            except NoSuchElementException:
+                                continue
+                        
+                        if not username_found:
+                            data[key] = "Username not found"
+                            print("DEBUG: Username not found with any selector")
+                            
+                else:
+                    # Handle all other fields normally
+                    data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
+                    
+            except NoSuchElementException:
+                if key == "seller_reviews":
+                    data[key] = "No reviews yet"
+                    print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
+                elif key == "username":
+                    data[key] = "Username not found"
+                    print("DEBUG: NoSuchElementException - set username to 'Username not found'")
+                else:
+                    data[key] = None
+
+        # Keep title formatting for pygame display
+        if data["title"]:
+            data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
+
+        # DEBUG: Print final scraped data for seller_reviews and username
+        print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
+        print(f"DEBUG: Final scraped username: '{data.get('username')}'")
+        
+        return data
+
+    def clear_download_folder(self):
+        if os.path.exists(DOWNLOAD_ROOT):
+            shutil.rmtree(DOWNLOAD_ROOT)
+        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
+
+    # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
+
+    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
+        """
+        Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
+        FIXED: Now passes username to bookmark_driver
+        MODIFIED: Only adds to pygame/website and sends notifications on successful bookmark when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False
+        """
+        global suitable_listings, current_listing_index, recent_listings
+
+        # Extract username from details - THIS WAS MISSING!
+        username = details.get("username", None)
+        if username and username != "Username not found":
+            print(f"🔖 USERNAME EXTRACTED: {username}")
+        else:
+            username = None
+            print("🔖 USERNAME: Not available for this listing")
+
+        # Extract and validate price from the main price field
+        price_text = details.get("price", "0")
+        listing_price = self.extract_vinted_price(price_text)
+        postage = self.extract_price(details.get("postage", "0"))
+        total_price = listing_price + postage
+
+        # Get seller reviews
+        seller_reviews = details.get("seller_reviews", "No reviews yet")
+        print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
+
+        # Create basic listing info for suitability checking
+        listing_info = {
+            "title": details.get("title", "").lower(),
+            "description": details.get("description", "").lower(),
+            "price": total_price,
+            "seller_reviews": seller_reviews,
             "url": url
         }
 

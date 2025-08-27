@@ -1544,6 +1544,7 @@ class VintedScraper:
     def handle_single_vinted_button_request_fast(self, url):
         """
         ULTRA-FAST single request handler with button clicking functionality
+        FIXED: Updated Buy now button selectors and added fallback methods
         """
         import time
         from selenium.webdriver.common.by import By
@@ -1571,77 +1572,168 @@ class VintedScraper:
             print("⏱️ FAST: Waiting for page to load...")
             time.sleep(3)
             
-            # Click the "Buy now" button
+            # FIXED: Updated Buy now button selectors
             print("🔘 FAST: Looking for Buy now button...")
-            try:
-                buy_button = WebDriverWait(self.persistent_buying_driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]'))
-                )
-                buy_button.click()
-                print("✅ FAST: Buy now button clicked")
-                
-                # Wait for next page to load - look for "Ship to pick-up point"
-                print("🔍 FAST: Waiting for shipping page to load...")
+            
+            # Try multiple selectors based on the HTML you provided
+            buy_selectors = [
+                # Your exact HTML structure
+                'button[data-testid="item-buy-button"]',
+                # Alternative selectors that match the class structure
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                'button.web_ui__Button__button[data-testid="item-buy-button"]',
+                # Broader selectors as fallbacks
+                'button[data-testid="item-buy-button"] span.web_ui__Button__label',
+                'button:has(span.web_ui__Button__label:contains("Buy now"))',
+                'button .web_ui__Button__label:contains("Buy now")',
+                # XPath selectors for more precise matching
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+                '//span[text()="Buy now"]/ancestor::button'
+            ]
+            
+            buy_button = None
+            used_selector = None
+            
+            for selector in buy_selectors:
                 try:
-                    pickup_point_header = WebDriverWait(self.persistent_buying_driver, 10).until(
-                        EC.presence_of_element_located((By.XPATH, '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'))
-                    )
-                    print("✅ FAST: Shipping page loaded")
+                    print(f"🔍 FAST: Trying selector: {selector}")
                     
-                    # Record the time when the first click happens
-                    first_click_time = time.time()
+                    if selector.startswith('//'):
+                        # XPath selector
+                        buy_button = WebDriverWait(self.persistent_buying_driver, 2).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        # CSS selector
+                        buy_button = WebDriverWait(self.persistent_buying_driver, 2).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
                     
-                    # Start the alternating clicking loop
-                    print("🔄 FAST: Starting alternating click sequence...")
-                    
-                    while True:
-                        # Check if bookmark_stopwatch_length time has elapsed
-                        if time.time() - first_click_time >= bookmark_stopwatch_length:
-                            print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
-                            break
-                        
-                        # Click "Ship to pick-up point"
-                        try:
-                            pickup_point = self.persistent_buying_driver.find_element(
-                                By.XPATH, 
-                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
-                            )
-                            pickup_point.click()
-                            print("📦 FAST: Clicked 'Ship to pick-up point'")
-                        except (NoSuchElementException, Exception) as e:
-                            print(f"⚠️ FAST: Could not click 'Ship to pick-up point': {e}")
-                        
-                        # Wait the specified time
-                        time.sleep(buying_driver_click_pay_wait_time)
-                        
-                        # Check time again before next click
-                        if time.time() - first_click_time >= bookmark_stopwatch_length:
-                            print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
-                            break
-                        
-                        # Click "Ship to home"
-                        try:
-                            ship_to_home = self.persistent_buying_driver.find_element(
-                                By.XPATH, 
-                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
-                            )
-                            ship_to_home.click()
-                            print("🏠 FAST: Clicked 'Ship to home'")
-                        except (NoSuchElementException, Exception) as e:
-                            print(f"⚠️ FAST: Could not click 'Ship to home': {e}")
-                        
-                        # Wait the specified time
-                        time.sleep(buying_driver_click_pay_wait_time)
+                    used_selector = selector
+                    print(f"✅ FAST: Found Buy now button with selector: {selector}")
+                    break
                     
                 except TimeoutException:
-                    print("⚠️ FAST: Timeout waiting for shipping page to load")
+                    print(f"❌ FAST: Selector failed: {selector}")
+                    continue
                 except Exception as e:
-                    print(f"❌ FAST: Error during shipping page interaction: {e}")
+                    print(f"❌ FAST: Selector error: {selector} - {e}")
+                    continue
             
-            except TimeoutException:
-                print("⚠️ FAST: Timeout waiting for Buy now button")
-            except Exception as e:
-                print(f"❌ FAST: Error clicking Buy now button: {e}")
+            if buy_button:
+                try:
+                    # Try multiple click methods
+                    print(f"🔘 FAST: Attempting to click Buy now button...")
+                    
+                    # Method 1: Standard click
+                    try:
+                        buy_button.click()
+                        print("✅ FAST: Standard click successful")
+                    except Exception as e:
+                        print(f"❌ FAST: Standard click failed: {e}")
+                        
+                        # Method 2: JavaScript click
+                        try:
+                            self.persistent_buying_driver.execute_script("arguments[0].click();", buy_button)
+                            print("✅ FAST: JavaScript click successful")
+                        except Exception as e:
+                            print(f"❌ FAST: JavaScript click failed: {e}")
+                            
+                            # Method 3: ActionChains click
+                            try:
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                ActionChains(self.persistent_buying_driver).move_to_element(buy_button).click().perform()
+                                print("✅ FAST: ActionChains click successful")
+                            except Exception as e:
+                                print(f"❌ FAST: ActionChains click failed: {e}")
+                                raise Exception("All click methods failed")
+                    
+                    # Wait for next page to load - look for "Ship to pick-up point"
+                    print("🔍 FAST: Waiting for shipping page to load...")
+                    try:
+                        pickup_point_header = WebDriverWait(self.persistent_buying_driver, 10).until(
+                            EC.presence_of_element_located((By.XPATH, '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'))
+                        )
+                        print("✅ FAST: Shipping page loaded")
+                        
+                        # Record the time when the first click happens
+                        first_click_time = time.time()
+                        
+                        # Start the alternating clicking loop
+                        print("🔄 FAST: Starting alternating click sequence...")
+                        
+                        while True:
+                            # Check if bookmark_stopwatch_length time has elapsed
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
+                                break
+                            
+                            # Click "Ship to pick-up point"
+                            try:
+                                pickup_point = self.persistent_buying_driver.find_element(
+                                    By.XPATH, 
+                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
+                                )
+                                pickup_point.click()
+                                print("📦 FAST: Clicked 'Ship to pick-up point'")
+                            except (NoSuchElementException, Exception) as e:
+                                print(f"⚠️ FAST: Could not click 'Ship to pick-up point': {e}")
+                            
+                            # Wait the specified time
+                            time.sleep(buying_driver_click_pay_wait_time)
+                            
+                            # Check time again before next click
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
+                                break
+                            
+                            # Click "Ship to home"
+                            try:
+                                ship_to_home = self.persistent_buying_driver.find_element(
+                                    By.XPATH, 
+                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
+                                )
+                                ship_to_home.click()
+                                print("🏠 FAST: Clicked 'Ship to home'")
+                            except (NoSuchElementException, Exception) as e:
+                                print(f"⚠️ FAST: Could not click 'Ship to home': {e}")
+                            
+                            # Wait the specified time
+                            time.sleep(buying_driver_click_pay_wait_time)
+                    
+                    except TimeoutException:
+                        print("⚠️ FAST: Timeout waiting for shipping page to load")
+                    except Exception as e:
+                        print(f"❌ FAST: Error during shipping page interaction: {e}")
+                except Exception as click_e:
+                    print(f"❌ FAST: Error clicking Buy now button: {click_e}")
+            else:
+                print("⚠️ FAST: Buy now button not found with any selector")
+                # DEBUGGING: Print page source snippet to help diagnose
+                try:
+                    page_source = self.persistent_buying_driver.page_source
+                    if 'Buy now' in page_source:
+                        print("🔍 FAST: 'Buy now' text found in page source")
+                        # Find the button element in page source
+                        import re
+                        button_pattern = r'<button[^>]*Buy now[^>]*</button>'
+                        matches = re.findall(button_pattern, page_source, re.IGNORECASE | re.DOTALL)
+                        for i, match in enumerate(matches[:3]):  # Show first 3 matches
+                            print(f"🔍 FAST: Button HTML {i+1}: {match[:200]}...")
+                    else:
+                        print("❌ FAST: 'Buy now' text not found in page source")
+                        
+                        # Check if page loaded properly
+                        if 'vinted' in self.persistent_buying_driver.current_url:
+                            print("✅ FAST: On Vinted page")
+                            print(f"🔍 FAST: Current URL: {self.persistent_buying_driver.current_url}")
+                            print(f"🔍 FAST: Page title: {self.persistent_buying_driver.title}")
+                        else:
+                            print("❌ FAST: Not on Vinted page")
+                            
+                except Exception as debug_e:
+                    print(f"❌ FAST: Debug info collection failed: {debug_e}")
             
             # Close the tab
             self.persistent_buying_driver.close()
@@ -1767,11 +1859,7 @@ class VintedScraper:
         print("🚀 SETUP: Initializing persistent buying driver...")
         
         try:
-            prefs = {
-                "profile.default_content_setting_values.notifications": 2,
-                "profile.default_content_setting_values.popups": 0,
-                "download.prompt_for_download": False,
-            }
+
 
             service = Service(
                 ChromeDriverManager().install(),
@@ -1779,12 +1867,10 @@ class VintedScraper:
             )
             
             chrome_opts = Options()
-            chrome_opts.add_experimental_option("prefs", prefs)
             #chrome_opts.add_argument("--headless")
             chrome_opts.add_argument("--no-sandbox")
             chrome_opts.add_argument("--disable-dev-shm-usage")
             chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument("--remote-debugging-port=0")
             chrome_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
             chrome_opts.add_argument(f"--profile-directory=Default")
             
@@ -2113,89 +2199,3 @@ class VintedScraper:
                     except NoSuchElementException:
                         # Try alternative selectors for username
                         alternative_username_selectors = [
-                            "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__amplified.web_ui__Text__bold[data-testid='profile-username']",
-                            "span[data-testid='profile-username']",
-                            "*[data-testid='profile-username']",
-                            "span.web_ui__Text__amplified.web_ui__Text__bold",  # Broader fallback
-                        ]
-                        
-                        username_found = False
-                        for alt_sel in alternative_username_selectors:
-                            try:
-                                alt_username_element = driver.find_element(By.CSS_SELECTOR, alt_sel)
-                                alt_username_text = alt_username_element.text.strip()
-                                if alt_username_text:
-                                    data[key] = alt_username_text
-                                    print(f"DEBUG: Found username with alternative selector '{alt_sel}': '{alt_username_text}'")
-                                    username_found = True
-                                    break
-                            except NoSuchElementException:
-                                continue
-                        
-                        if not username_found:
-                            data[key] = "Username not found"
-                            print("DEBUG: Username not found with any selector")
-                            
-                else:
-                    # Handle all other fields normally
-                    data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
-                    
-            except NoSuchElementException:
-                if key == "seller_reviews":
-                    data[key] = "No reviews yet"
-                    print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
-                elif key == "username":
-                    data[key] = "Username not found"
-                    print("DEBUG: NoSuchElementException - set username to 'Username not found'")
-                else:
-                    data[key] = None
-
-        # Keep title formatting for pygame display
-        if data["title"]:
-            data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
-
-        # DEBUG: Print final scraped data for seller_reviews and username
-        print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
-        print(f"DEBUG: Final scraped username: '{data.get('username')}'")
-        
-        return data
-
-    def clear_download_folder(self):
-        if os.path.exists(DOWNLOAD_ROOT):
-            shutil.rmtree(DOWNLOAD_ROOT)
-        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
-
-    # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
-
-    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
-        """
-        Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
-        FIXED: Now passes username to bookmark_driver
-        MODIFIED: Only adds to pygame/website and sends notifications on successful bookmark when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False
-        """
-        global suitable_listings, current_listing_index, recent_listings
-
-        # Extract username from details - THIS WAS MISSING!
-        username = details.get("username", None)
-        if username and username != "Username not found":
-            print(f"🔖 USERNAME EXTRACTED: {username}")
-        else:
-            username = None
-            print("🔖 USERNAME: Not available for this listing")
-
-        # Extract and validate price from the main price field
-        price_text = details.get("price", "0")
-        listing_price = self.extract_vinted_price(price_text)
-        postage = self.extract_price(details.get("postage", "0"))
-        total_price = listing_price + postage
-
-        # Get seller reviews
-        seller_reviews = details.get("seller_reviews", "No reviews yet")
-        print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
-
-        # Create basic listing info for suitability checking
-        listing_info = {
-            "title": details.get("title", "").lower(),
-            "description": details.get("description", "").lower(),
-            "price": total_price,
-            "seller_reviews": seller_reviews,
