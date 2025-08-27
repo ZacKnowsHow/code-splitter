@@ -544,7 +544,7 @@ def render_main_page():
                     img_str = base64.b64encode(buffered.getvalue()).decode()
                     image_html += f'''
                     <div class="image-wrapper">
-                        <img src="data:image/png;base64,{{img_str}}" alt="Listing Image">
+                        <img src="data:image/png;base64,{img_str}" alt="Listing Image">
                     </div>
                     '''
                 image_html += "</div>"
@@ -554,7 +554,7 @@ def render_main_page():
         else:
             image_html = "<p>No images available</p>"
 
-        # Return the complete HTML with MODIFIED JavaScript for confirmation dialogs
+        # Return the complete HTML with NEW top bar layout and stopwatch functionality
         return f'''
         <!DOCTYPE html>
         <html>
@@ -598,6 +598,56 @@ def render_main_page():
                     height: calc(100vh - 10px);
                     overflow-y: auto;
                 }}
+                
+                /* NEW: Top bar styles */
+                .top-bar {{
+                    display: flex;
+                    gap: 5px;
+                    margin-bottom: 15px;
+                    justify-content: space-between;
+                }}
+                
+                .top-bar-item {{
+                    flex: 1;
+                    padding: 8px 4px;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    color: white;
+                    text-align: center;
+                    min-height: 40px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }}
+                
+                .refresh-button {{
+                    background-color: #4CAF50;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    border: none;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                
+                .refresh-button:hover {{
+                    background-color: #45a049;
+                    transform: translateY(-1px);
+                }}
+                
+                .refresh-button:active {{
+                    transform: translateY(0);
+                }}
+                
+                .listing-counter {{
+                    background-color: #2196F3;
+                }}
+                
+                .stopwatch-display {{
+                    background-color: #FF9800;
+                    font-family: monospace;
+                }}
+                
                 .custom-button {{
                     width: 100%;
                     padding: 12px;
@@ -767,9 +817,9 @@ def render_main_page():
                     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 }}
                 
-                /* NEW: Confirmation button styles */
+                /* Confirmation button styles */
                 .confirmation-container {{
-                    display: none; /* Initially hidden */
+                    display: none;
                     flex-direction: column;
                     gap: 10px;
                     margin: 15px 0;
@@ -838,11 +888,27 @@ def render_main_page():
             <script>
                 const allListings = {all_listings_json};
                 let currentListingIndex = 0;
+                let stopwatchIntervals = {{}};
                 console.log('All listings loaded:', allListings);
                 console.log('Number of listings:', allListings.length);
 
                 function refreshPage() {{
                     location.reload();
+                }}
+
+                function updateStopwatch() {{
+                    if (allListings.length === 0) return;
+                    
+                    const currentListing = allListings[currentListingIndex];
+                    const currentUrl = currentListing.url;
+                    const stopwatchElement = document.querySelector('.stopwatch-display');
+                    
+                    if (stopwatchElement) {{
+                        // Check if this URL has an active stopwatch
+                        // This would need to be populated from the Python backend
+                        // For now, show placeholder text
+                        stopwatchElement.textContent = 'No stopwatch - listing unbookmarked';
+                    }}
                 }}
 
                 function updateListingDisplay(index) {{
@@ -864,7 +930,7 @@ def render_main_page():
                     const detectedItemsEl = document.querySelector('.content-detected-items');
                     const descriptionEl = document.querySelector('.content-description');
                     const urlEl = document.querySelector('.content-url');
-                    const counterEl = document.getElementById('listing-counter');
+                    const counterEl = document.querySelector('.listing-counter');
 
                     if (titleEl) titleEl.textContent = listing.title;
                     if (priceEl) priceEl.textContent = 'Price: £' + listing.price;
@@ -873,7 +939,7 @@ def render_main_page():
                     if (detectedItemsEl) detectedItemsEl.textContent = listing.detected_items;
                     if (descriptionEl) descriptionEl.textContent = listing.description;
                     if (urlEl) urlEl.textContent = listing.url;
-                    if (counterEl) counterEl.textContent = `Listing ${{currentListingIndex + 1}} of ${{allListings.length}}`;
+                    if (counterEl) counterEl.textContent = `${{currentListingIndex + 1}} of ${{allListings.length}}`;
 
                     // Update images
                     const imageContainer = document.querySelector('.image-container');
@@ -889,6 +955,9 @@ def render_main_page():
                             imageContainer.appendChild(imageWrapper);
                         }});
                     }}
+                    
+                    // Update stopwatch
+                    updateStopwatch();
                     
                     // Reset confirmation dialog state
                     hideConfirmation();
@@ -915,9 +984,8 @@ def render_main_page():
                     }}
                 }}
                 
-                // NEW: Confirmation dialog functions
+                // Confirmation dialog functions
                 function showConfirmation(message, confirmCallback, cancelCallback) {{
-                    // Hide original buttons
                     const buyDecisionContainer = document.querySelector('.buy-decision-container');
                     const confirmationContainer = document.querySelector('.confirmation-container');
                     
@@ -925,11 +993,9 @@ def render_main_page():
                     if (confirmationContainer) {{
                         confirmationContainer.style.display = 'flex';
                         
-                        // Set the confirmation message
                         const confirmationText = confirmationContainer.querySelector('.confirmation-text');
                         if (confirmationText) confirmationText.textContent = message;
                         
-                        // Set up button handlers
                         const confirmYesBtn = confirmationContainer.querySelector('.confirm-yes-button');
                         const confirmNoBtn = confirmationContainer.querySelector('.confirm-no-button');
                         
@@ -957,19 +1023,17 @@ def render_main_page():
                     if (confirmationContainer) confirmationContainer.style.display = 'none';
                 }}
 
-                // MODIFIED: Buy decision functions with confirmation
+                // Buy decision functions with confirmation
                 function buyYes() {{
                     showConfirmation(
                         'Are you sure you want to buy this listing?',
                         function() {{
-                            // Confirmed YES - proceed with original buyYes logic
                             var urlElement = document.querySelector('.content-url');
                             var url = urlElement ? urlElement.textContent.trim() : '';
                             
                             if (url && url !== 'No URL Available') {{
                                 console.log('User confirmed: wants to buy listing: ' + url);
                                 
-                                // Send POST request to Flask backend
                                 fetch('/vinted-button-clicked', {{
                                     method: 'POST',
                                     headers: {{
@@ -992,7 +1056,6 @@ def render_main_page():
                             }}
                         }},
                         function() {{
-                            // Cancelled - just log
                             console.log('User cancelled buying decision');
                         }}
                     );
@@ -1002,14 +1065,12 @@ def render_main_page():
                     showConfirmation(
                         'Are you sure you don\\'t want to buy this listing?',
                         function() {{
-                            // Confirmed NO - proceed with original buyNo logic
                             var urlElement = document.querySelector('.content-url');
                             var url = urlElement ? urlElement.textContent.trim() : '';
                             
                             if (url && url !== 'No URL Available') {{
                                 console.log('User confirmed: does not want to buy listing: ' + url);
                                 
-                                // Send POST request to Flask backend
                                 fetch('/vinted-button-clicked', {{
                                     method: 'POST',
                                     headers: {{
@@ -1032,7 +1093,6 @@ def render_main_page():
                             }}
                         }},
                         function() {{
-                            // Cancelled - just log
                             console.log('User cancelled buying decision');
                         }}
                     );
@@ -1046,17 +1106,27 @@ def render_main_page():
                     }} else {{
                         console.log('No listings to display');
                     }}
+                    
+                    // Start stopwatch update interval
+                    setInterval(updateStopwatch, 1000);
                 }};
             </script>
         </head>
         <body>
             <div class="container listing-container">
-                <div class="button-row">
-                    <button class="custom-button" onclick="refreshPage()" style="background-color:rgb(108,178,209);">Refresh Page</button>
+                <!-- NEW: Top bar with three colored rectangles -->
+                <div class="top-bar">
+                    <button class="top-bar-item refresh-button" onclick="refreshPage()">
+                        Refresh Page
+                    </button>
+                    <div class="top-bar-item listing-counter" id="listing-counter">
+                        1 of 1
+                    </div>
+                    <div class="top-bar-item stopwatch-display" id="stopwatch-display">
+                        No stopwatch - listing unbookmarked
+                    </div>
                 </div>
-                <div class="listing-counter" id="listing-counter">
-                    Listing 1 of 1
-                </div>
+                
                 <div class="section-box">
                     <p><span class="content-title">{title}</span></p>
                 </div>
@@ -1079,7 +1149,7 @@ def render_main_page():
                     </button>
                 </div>
                 
-                <!-- Original Buy decision buttons -->
+                <!-- Buy decision buttons -->
                 <div class="buy-decision-container">
                     <button class="buy-yes-button" onclick="buyYes()">
                         Yes - Buy now
@@ -1089,7 +1159,7 @@ def render_main_page():
                     </button>
                 </div>
                 
-                <!-- NEW: Confirmation dialog (initially hidden) -->
+                <!-- Confirmation dialog (initially hidden) -->
                 <div class="confirmation-container">
                     <div class="confirmation-text">
                         Are you sure?
@@ -1132,7 +1202,7 @@ def render_main_page():
         print(f"ERROR in render_main_page: {e}")
         print(f"Traceback: {error_details}")
         return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
-    
+
 def base64_encode_image(img):
     """Convert PIL Image to base64 string, resizing if necessary"""
     max_size = (200, 200)
@@ -2128,73 +2198,3 @@ class FacebookScraper:
             screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
 
             if suitable_listings:
-                listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
-                screen.blit(listing_counter, (10, 40))
-
-            pygame.display.flip()
-            clock.tick(30)
-
-        self.save_rectangle_config(rectangles)
-        pygame.quit()
-
-    def setup_chrome_profile_driver(self):
-        # CRITICAL: Ensure NO Chrome instances are open before running
-        
-        # Comprehensive Chrome options
-        chrome_options = webdriver.ChromeOptions()
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,  # Disable notifications
-            "profile.default_content_setting_values.popups": 0,         # Block popups (default = 0)
-            "download.prompt_for_download": False,                      # Disable download prompt
-        }
-        chrome_options.add_experimental_option("prefs", prefs)
-        
-        # Use a dedicated, isolated user data directory to prevent conflicts.
-        chrome_options.add_argument(f"user-data-dir={SCRAPER_USER_DATA_DIR}")
-        chrome_options.add_argument("profile-directory=Default")
-        #profile 10 is blue orchid
-        #default = laptop
-        #profile 2 = pc
-        
-        # Additional safety options
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--log-level=3")
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        
-        try:
-            # Use specific Chrome driver path
-            service = Service(ChromeDriverManager().install(), log_path=os.devnull)
-            
-            # Create driver with robust error handling
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            
-            # Verify driver is functional
-            print("Scraper Chrome driver successfully initialized!")
-            
-            return driver
-        
-        except Exception as e:
-            print(f"CRITICAL CHROME DRIVER ERROR: {e}")
-            print("Possible solutions:")
-            print("1. Close all Chrome instances")
-            print("2. Verify Chrome profile exists")
-            print("3. Check Chrome and WebDriver versions")
-            sys.exit(1)
-
-
-    def setup_chrome_messaging_driver(self):
-        chrome_options = webdriver.ChromeOptions()
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,  # Disable notifications
-            "profile.default_content_setting_values.popups": 0,         # Block popups (default = 0)
-            "download.prompt_for_download": False,                      # Disable download prompt
-        }
-        chrome_options.add_experimental_option("prefs", prefs)
-        # Use a separate, dedicated user data directory for the second driver.
-        chrome_options.add_argument(f"user-data-dir={MESSAGING_USER_DATA_DIR}")
-        chrome_options.add_argument("profile-directory=Profile 11")
-        #profile 11 = pc
-        #profile 1 = laptop
-
