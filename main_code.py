@@ -57,7 +57,7 @@ bookmark_stopwatch_length = 500
 buying_driver_click_pay_wait_time = 5
 actually_purchase_listing = True
 test_purchase_not_true = True #uses the url below rather than the one from the web page
-test_purchase_url = "https://www.vinted.co.uk/items/6952619780-nintendo-ds-lite-charger-cable-dsl?homepage_session_id=d6cf09db-4bff-4fcc-9dcf-e8bddb779916"
+test_purchase_url = "https://www.vinted.co.uk/items/6954220240-ds-case?homepage_session_id=c83e277f-9c04-4515-b0f2-e67848d89002"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
 # Config
