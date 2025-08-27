@@ -51,9 +51,9 @@ import random
 
 test_bookmark_function = False
 bookmark_listings = False
-click_pay_button_final_check = True
+click_pay_button_final_check = False
 test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
-bookmark_stopwatch_length = 5  # 10 minutes in seconds
+bookmark_stopwatch_length = 500
 buying_driver_click_pay_wait_time = 5
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
@@ -3769,7 +3769,7 @@ class VintedScraper:
             
             # Wait for page to load
             print("⏱️ FAST: Waiting for page to load...")
-            time.sleep(3)
+            time.sleep(2)
             
             # FIXED: Updated Buy now button selectors
             print("🔘 FAST: Looking for Buy now button...")
@@ -3981,7 +3981,7 @@ class VintedScraper:
         }
         options = Options()
         options.add_experimental_option("prefs", prefs)
-        #options.add_argument("--headless")
+        options.add_argument("--headless")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
@@ -4029,7 +4029,7 @@ class VintedScraper:
             # Fallback: Remove problematic arguments
             fallback_opts = Options()
             fallback_opts.add_experimental_option("prefs", prefs)
-            #fallback_opts.add_argument("--headless")
+            fallback_opts.add_argument("--headless")
             fallback_opts.add_argument("--no-sandbox")
             fallback_opts.add_argument("--disable-dev-shm-usage")
             fallback_opts.add_argument("--disable-gpu")
@@ -4058,7 +4058,7 @@ class VintedScraper:
         print("🚀 SETUP: Initializing persistent buying driver...")
         
         try:
-
+            print('USING SETUP_PRSISTENT_BUYING_DRIVER')
 
             service = Service(
                 ChromeDriverManager().install(),
@@ -4067,18 +4067,21 @@ class VintedScraper:
             
             chrome_opts = Options()
             #chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer")
+            chrome_opts.add_argument("--profile-directory=Default")
             chrome_opts.add_argument("--no-sandbox")
             chrome_opts.add_argument("--disable-dev-shm-usage")
             chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument(f"--user-data-dir=C:\VintedBuyer")
-            chrome_opts.add_argument(f"--profile-directory=Default")
-            
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+                                
             self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
             
             # Set fast timeouts for quick processing
-            self.persistent_buying_driver.implicitly_wait(2)
-            self.persistent_buying_driver.set_page_load_timeout(10)
-            self.persistent_buying_driver.set_script_timeout(5)
+            self.persistent_buying_driver.implicitly_wait(1)
+            self.persistent_buying_driver.set_page_load_timeout(8)
+            self.persistent_buying_driver.set_script_timeout(3)
             
             # Navigate main tab to vinted.co.uk and keep it as reference
             print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
@@ -5368,6 +5371,7 @@ class VintedScraper:
                     bookmark_user_data_dir = "C:\VintedScraper_Default_Bookmark"
                     chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
                     chrome_opts.add_argument("--profile-directory=Profile 4")
+                    #chrome_opts.add_argument("--headless")
                     chrome_opts.add_argument("--no-sandbox")
                     chrome_opts.add_argument("--disable-dev-shm-usage")
                     chrome_opts.add_argument("--disable-gpu")
@@ -5773,7 +5777,7 @@ class VintedScraper:
         chrome_opts.add_argument("--disable-software-rasterizer")
         
         # Remove potentially problematic arguments
-        # chrome_opts.add_argument("--headless")  # Try without headless first
+        chrome_opts.add_argument("--headless")  # Try without headless first
         
         # Keep some logging for debugging
         chrome_opts.add_argument("--log-level=1")  # More detailed logging
