@@ -1,4 +1,6 @@
 # Continuation from line 2201
+        
+        # Store bounding boxes with more robust handling
         current_bounding_boxes = {
             'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
             'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
@@ -2197,5 +2199,3 @@ class VintedScraper:
             service = Service(self._cached_chromedriver_path, log_path=os.devnull)
             
             chrome_opts = Options()
-            
-            # CRITICAL FIX: Each driver gets its own UNIQUE directory to prevent conflicts

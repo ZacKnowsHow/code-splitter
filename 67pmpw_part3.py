@@ -1,4 +1,6 @@
 # Continuation from line 4401
+            
+            # CRITICAL FIX: Each driver gets its own UNIQUE directory to prevent conflicts
             user_data_dir = f"C:\\VintedBuyer{driver_num}"  # Add timestamp for uniqueness
             chrome_opts.add_argument(f"--user-data-dir={user_data_dir}")
             chrome_opts.add_argument("--profile-directory=Default")
