@@ -51,9 +51,9 @@ import random
 
 test_bookmark_function = False
 bookmark_listings = False
-click_pay_button_final_check = True
+click_pay_button_final_check = False
 test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
-bookmark_stopwatch_length = 5  # 10 minutes in seconds
+bookmark_stopwatch_length = 500
 buying_driver_click_pay_wait_time = 5
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 

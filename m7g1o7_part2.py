@@ -1570,7 +1570,7 @@ class VintedScraper:
             
             # Wait for page to load
             print("⏱️ FAST: Waiting for page to load...")
-            time.sleep(3)
+            time.sleep(2)
             
             # FIXED: Updated Buy now button selectors
             print("🔘 FAST: Looking for Buy now button...")
@@ -1782,7 +1782,7 @@ class VintedScraper:
         }
         options = Options()
         options.add_experimental_option("prefs", prefs)
-        #options.add_argument("--headless")
+        options.add_argument("--headless")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
@@ -1830,7 +1830,7 @@ class VintedScraper:
             # Fallback: Remove problematic arguments
             fallback_opts = Options()
             fallback_opts.add_experimental_option("prefs", prefs)
-            #fallback_opts.add_argument("--headless")
+            fallback_opts.add_argument("--headless")
             fallback_opts.add_argument("--no-sandbox")
             fallback_opts.add_argument("--disable-dev-shm-usage")
             fallback_opts.add_argument("--disable-gpu")
@@ -1859,7 +1859,7 @@ class VintedScraper:
         print("🚀 SETUP: Initializing persistent buying driver...")
         
         try:
-
+            print('USING SETUP_PRSISTENT_BUYING_DRIVER')
 
             service = Service(
                 ChromeDriverManager().install(),
@@ -1868,18 +1868,21 @@ class VintedScraper:
             
             chrome_opts = Options()
             #chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer")
+            chrome_opts.add_argument("--profile-directory=Default")
             chrome_opts.add_argument("--no-sandbox")
             chrome_opts.add_argument("--disable-dev-shm-usage")
             chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument(f"--user-data-dir=C:\VintedBuyer")
-            chrome_opts.add_argument(f"--profile-directory=Default")
-            
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+                                
             self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
             
             # Set fast timeouts for quick processing
-            self.persistent_buying_driver.implicitly_wait(2)
-            self.persistent_buying_driver.set_page_load_timeout(10)
-            self.persistent_buying_driver.set_script_timeout(5)
+            self.persistent_buying_driver.implicitly_wait(1)
+            self.persistent_buying_driver.set_page_load_timeout(8)
+            self.persistent_buying_driver.set_script_timeout(3)
             
             # Navigate main tab to vinted.co.uk and keep it as reference
             print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
@@ -2196,6 +2199,3 @@ class VintedScraper:
                         else:
                             data[key] = "Username not found"
                             print("DEBUG: Username element found but no text")
-                    except NoSuchElementException:
-                        # Try alternative selectors for username
-                        alternative_username_selectors = [
