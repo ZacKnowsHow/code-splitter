@@ -544,7 +544,7 @@ def render_main_page():
                     img_str = base64.b64encode(buffered.getvalue()).decode()
                     image_html += f'''
                     <div class="image-wrapper">
-                        <img src="data:image/png;base64,{{img_str}}" alt="Listing Image">
+                        <img src="data:image/png;base64,{img_str}" alt="Listing Image">
                     </div>
                     '''
                 image_html += "</div>"
@@ -554,7 +554,7 @@ def render_main_page():
         else:
             image_html = "<p>No images available</p>"
 
-        # Return the complete HTML with MODIFIED JavaScript for confirmation dialogs
+        # Return the complete HTML with NEW top bar layout and stopwatch functionality
         return f'''
         <!DOCTYPE html>
         <html>
@@ -598,6 +598,56 @@ def render_main_page():
                     height: calc(100vh - 10px);
                     overflow-y: auto;
                 }}
+                
+                /* NEW: Top bar styles */
+                .top-bar {{
+                    display: flex;
+                    gap: 5px;
+                    margin-bottom: 15px;
+                    justify-content: space-between;
+                }}
+                
+                .top-bar-item {{
+                    flex: 1;
+                    padding: 8px 4px;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    color: white;
+                    text-align: center;
+                    min-height: 40px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }}
+                
+                .refresh-button {{
+                    background-color: #4CAF50;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    border: none;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                
+                .refresh-button:hover {{
+                    background-color: #45a049;
+                    transform: translateY(-1px);
+                }}
+                
+                .refresh-button:active {{
+                    transform: translateY(0);
+                }}
+                
+                .listing-counter {{
+                    background-color: #2196F3;
+                }}
+                
+                .stopwatch-display {{
+                    background-color: #FF9800;
+                    font-family: monospace;
+                }}
+                
                 .custom-button {{
                     width: 100%;
                     padding: 12px;
@@ -767,9 +817,9 @@ def render_main_page():
                     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 }}
                 
-                /* NEW: Confirmation button styles */
+                /* Confirmation button styles */
                 .confirmation-container {{
-                    display: none; /* Initially hidden */
+                    display: none;
                     flex-direction: column;
                     gap: 10px;
                     margin: 15px 0;
@@ -838,11 +888,27 @@ def render_main_page():
             <script>
                 const allListings = {all_listings_json};
                 let currentListingIndex = 0;
+                let stopwatchIntervals = {{}};
                 console.log('All listings loaded:', allListings);
                 console.log('Number of listings:', allListings.length);
 
                 function refreshPage() {{
                     location.reload();
+                }}
+
+                function updateStopwatch() {{
+                    if (allListings.length === 0) return;
+                    
+                    const currentListing = allListings[currentListingIndex];
+                    const currentUrl = currentListing.url;
+                    const stopwatchElement = document.querySelector('.stopwatch-display');
+                    
+                    if (stopwatchElement) {{
+                        // Check if this URL has an active stopwatch
+                        // This would need to be populated from the Python backend
+                        // For now, show placeholder text
+                        stopwatchElement.textContent = 'No stopwatch - listing unbookmarked';
+                    }}
                 }}
 
                 function updateListingDisplay(index) {{
@@ -864,7 +930,7 @@ def render_main_page():
                     const detectedItemsEl = document.querySelector('.content-detected-items');
                     const descriptionEl = document.querySelector('.content-description');
                     const urlEl = document.querySelector('.content-url');
-                    const counterEl = document.getElementById('listing-counter');
+                    const counterEl = document.querySelector('.listing-counter');
 
                     if (titleEl) titleEl.textContent = listing.title;
                     if (priceEl) priceEl.textContent = 'Price: £' + listing.price;
@@ -873,7 +939,7 @@ def render_main_page():
                     if (detectedItemsEl) detectedItemsEl.textContent = listing.detected_items;
                     if (descriptionEl) descriptionEl.textContent = listing.description;
                     if (urlEl) urlEl.textContent = listing.url;
-                    if (counterEl) counterEl.textContent = `Listing ${{currentListingIndex + 1}} of ${{allListings.length}}`;
+                    if (counterEl) counterEl.textContent = `${{currentListingIndex + 1}} of ${{allListings.length}}`;
 
                     // Update images
                     const imageContainer = document.querySelector('.image-container');
@@ -889,6 +955,9 @@ def render_main_page():
                             imageContainer.appendChild(imageWrapper);
                         }});
                     }}
+                    
+                    // Update stopwatch
+                    updateStopwatch();
                     
                     // Reset confirmation dialog state
                     hideConfirmation();
@@ -915,9 +984,8 @@ def render_main_page():
                     }}
                 }}
                 
-                // NEW: Confirmation dialog functions
+                // Confirmation dialog functions
                 function showConfirmation(message, confirmCallback, cancelCallback) {{
-                    // Hide original buttons
                     const buyDecisionContainer = document.querySelector('.buy-decision-container');
                     const confirmationContainer = document.querySelector('.confirmation-container');
                     
@@ -925,11 +993,9 @@ def render_main_page():
                     if (confirmationContainer) {{
                         confirmationContainer.style.display = 'flex';
                         
-                        // Set the confirmation message
                         const confirmationText = confirmationContainer.querySelector('.confirmation-text');
                         if (confirmationText) confirmationText.textContent = message;
                         
-                        // Set up button handlers
                         const confirmYesBtn = confirmationContainer.querySelector('.confirm-yes-button');
                         const confirmNoBtn = confirmationContainer.querySelector('.confirm-no-button');
                         
@@ -957,19 +1023,17 @@ def render_main_page():
                     if (confirmationContainer) confirmationContainer.style.display = 'none';
                 }}
 
-                // MODIFIED: Buy decision functions with confirmation
+                // Buy decision functions with confirmation
                 function buyYes() {{
                     showConfirmation(
                         'Are you sure you want to buy this listing?',
                         function() {{
-                            // Confirmed YES - proceed with original buyYes logic
                             var urlElement = document.querySelector('.content-url');
                             var url = urlElement ? urlElement.textContent.trim() : '';
                             
                             if (url && url !== 'No URL Available') {{
                                 console.log('User confirmed: wants to buy listing: ' + url);
                                 
-                                // Send POST request to Flask backend
                                 fetch('/vinted-button-clicked', {{
                                     method: 'POST',
                                     headers: {{
@@ -992,7 +1056,6 @@ def render_main_page():
                             }}
                         }},
                         function() {{
-                            // Cancelled - just log
                             console.log('User cancelled buying decision');
                         }}
                     );
@@ -1002,14 +1065,12 @@ def render_main_page():
                     showConfirmation(
                         'Are you sure you don\\'t want to buy this listing?',
                         function() {{
-                            // Confirmed NO - proceed with original buyNo logic
                             var urlElement = document.querySelector('.content-url');
                             var url = urlElement ? urlElement.textContent.trim() : '';
                             
                             if (url && url !== 'No URL Available') {{
                                 console.log('User confirmed: does not want to buy listing: ' + url);
                                 
-                                // Send POST request to Flask backend
                                 fetch('/vinted-button-clicked', {{
                                     method: 'POST',
                                     headers: {{
@@ -1032,7 +1093,6 @@ def render_main_page():
                             }}
                         }},
                         function() {{
-                            // Cancelled - just log
                             console.log('User cancelled buying decision');
                         }}
                     );
@@ -1046,17 +1106,27 @@ def render_main_page():
                     }} else {{
                         console.log('No listings to display');
                     }}
+                    
+                    // Start stopwatch update interval
+                    setInterval(updateStopwatch, 1000);
                 }};
             </script>
         </head>
         <body>
             <div class="container listing-container">
-                <div class="button-row">
-                    <button class="custom-button" onclick="refreshPage()" style="background-color:rgb(108,178,209);">Refresh Page</button>
+                <!-- NEW: Top bar with three colored rectangles -->
+                <div class="top-bar">
+                    <button class="top-bar-item refresh-button" onclick="refreshPage()">
+                        Refresh Page
+                    </button>
+                    <div class="top-bar-item listing-counter" id="listing-counter">
+                        1 of 1
+                    </div>
+                    <div class="top-bar-item stopwatch-display" id="stopwatch-display">
+                        No stopwatch - listing unbookmarked
+                    </div>
                 </div>
-                <div class="listing-counter" id="listing-counter">
-                    Listing 1 of 1
-                </div>
+                
                 <div class="section-box">
                     <p><span class="content-title">{title}</span></p>
                 </div>
@@ -1079,7 +1149,7 @@ def render_main_page():
                     </button>
                 </div>
                 
-                <!-- Original Buy decision buttons -->
+                <!-- Buy decision buttons -->
                 <div class="buy-decision-container">
                     <button class="buy-yes-button" onclick="buyYes()">
                         Yes - Buy now
@@ -1089,7 +1159,7 @@ def render_main_page():
                     </button>
                 </div>
                 
-                <!-- NEW: Confirmation dialog (initially hidden) -->
+                <!-- Confirmation dialog (initially hidden) -->
                 <div class="confirmation-container">
                     <div class="confirmation-text">
                         Are you sure?
@@ -1132,7 +1202,7 @@ def render_main_page():
         print(f"ERROR in render_main_page: {e}")
         print(f"Traceback: {error_details}")
         return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
-    
+
 def base64_encode_image(img):
     """Convert PIL Image to base64 string, resizing if necessary"""
     max_size = (200, 200)
@@ -5182,7 +5252,7 @@ class VintedScraper:
         """
         Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
         FIXED: Now passes username to bookmark_driver
-        MODIFIED: Only adds to pygame/website and sends notifications on successful bookmark when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False
+        MODIFIED: Separate logic for pygame and website display - pygame shows all suitable listings with bookmark failure notices
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -5335,26 +5405,40 @@ class VintedScraper:
             'seller_reviews': seller_reviews
         }
 
-        # MODIFIED: Add to suitable listings based on new logic
-        should_add_listing = False
+        # SEPARATE logic for pygame and website
+        should_add_to_website = False
+        should_add_to_pygame = True  # Always true for pygame to show suitable listings
         should_send_notification = False
-        # this here stops all of the non bookmarked listings from being added
+
+        # Website logic (current behavior - only successful bookmarks when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False)
         if bookmark_listings and not VINTED_SHOW_ALL_LISTINGS:
             # When bookmark_listings is ON and VINTED_SHOW_ALL_LISTINGS is OFF:
             # Only add/notify if bookmark was successful
             if bookmark_success:
-                should_add_listing = True
+                should_add_to_website = True
                 should_send_notification = True
-                print("✅ Adding listing because bookmark was successful")
+                print("✅ Adding to website because bookmark was successful")
             else:
-                print("❌ Not adding listing because bookmark was not successful")
+                print("❌ Not adding to website because bookmark was not successful")
         else:
             # Original logic for other combinations
             if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-                should_add_listing = True
+                should_add_to_website = True
                 should_send_notification = True
-        
-        if should_add_listing:
+
+        # NEW: Pygame logic (always show suitable listings + bookmark failure info)
+        if VINTED_SHOW_ALL_LISTINGS:
+            should_add_to_pygame = True
+        elif is_suitable:  # Show all suitable listings regardless of bookmark success
+            should_add_to_pygame = True
+
+        # Modify suitability_reason for pygame if bookmark failed
+        pygame_suitability_reason = suitability_reason
+        if should_add_to_pygame and bookmark_listings and is_suitable and not bookmark_success:
+            pygame_suitability_reason = suitability_reason + "\n⚠️ BOOKMARK FAILED"
+
+        # Add to website (existing logic)
+        if should_add_to_website:
             # Send Pushover notification
             if should_send_notification:
                 notification_title = f"New Vinted Listing: £{total_price:.2f}"
@@ -5374,22 +5458,30 @@ class VintedScraper:
                         'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
                     )
 
-            suitable_listings.append(final_listing_info)
-
             # Add to recent_listings for website navigation
             recent_listings['listings'].append(final_listing_info)
             # Always set to the last (most recent) listing for website display
             recent_listings['current_index'] = len(recent_listings['listings']) - 1
 
+        # Add to pygame (NEW separate logic)
+        if should_add_to_pygame:
+            # Create pygame-specific listing info with modified suitability
+            pygame_listing_info = final_listing_info.copy()
+            pygame_listing_info['suitability'] = pygame_suitability_reason
+            
+            suitable_listings.append(pygame_listing_info)
             current_listing_index = len(suitable_listings) - 1
-            self.update_listing_details(**final_listing_info)
+            self.update_listing_details(**pygame_listing_info)
 
-            if is_suitable:
-                print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
+            if is_suitable and not bookmark_success and bookmark_listings:
+                print(f"✅ Added suitable listing to pygame with bookmark failure notice: £{total_price:.2f}")
+            elif is_suitable:
+                print(f"✅ Added suitable listing to pygame: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
             else:
-                print(f"➕ Added unsuitable listing (SHOW_ALL mode or successful bookmark): £{total_price:.2f}")
-        else:
-            print(f"❌ Listing not added: {suitability_reason}")
+                print(f"➕ Added unsuitable listing to pygame (SHOW_ALL mode): £{total_price:.2f}")
+
+        if not should_add_to_pygame:
+            print(f"❌ Listing not added to pygame: {suitability_reason}")
 
 
     def check_vinted_profit_suitability(self, listing_price, profit_percentage):
