@@ -105,7 +105,6 @@ SCRAPER_USER_DATA_DIR = r"C:\FacebookScraper_ScraperProfile"
 MESSAGING_USER_DATA_DIR = r"C:\FacebookScraper_MessagingProfile"
 #profile 2
 
-VINTED_BUYING_USER_DATA_DIR = r"C:\VintedPostButtonClick"
 
 app = Flask(__name__, template_folder='templates')
 
@@ -152,8 +151,8 @@ recent_listings = {
 
 review_min = 3
 MAX_LISTINGS_TO_SCAN = 50
-REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
-MAX_LISTINGS_VINTED_TO_SCAN = 250  # Maximum listings to scan before refresh
+REFRESH_AND_RESCAN = False  # Set to False to disable refresh functionality
+MAX_LISTINGS_VINTED_TO_SCAN = 6  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 10  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
@@ -3322,7 +3321,60 @@ class VintedScraper:
         self.clicked_yes_listings = set()
         self.clicked_yes_listings = set()  # Track listings that have been clicked "yes"
         self.bookmark_timers = {}
+        self.buying_drivers = {}  # Dictionary to store drivers {1: driver_object, 2: driver_object, etc.}
+        self.driver_status = {}   # Track driver status {1: 'free'/'busy', 2: 'free'/'busy', etc.}
+        self.driver_lock = threading.Lock()  # Thread safety for driver management
+        
+        # Initialize all driver slots as not created
+        for i in range(1, 6):  # Drivers 1-5
+            self.buying_drivers[i] = None
+            self.driver_status[i] = 'free'
+    def get_available_driver(self):
+        """
+        Find and reserve the first available driver.
+        Returns: (driver_number, driver_instance) or (None, None) if all busy
+        """
+        with self.driver_lock:
+            for driver_num in range(1, 6):  # Check drivers 1-5
+                if self.driver_status[driver_num] == 'free':
+                    # Reserve this driver
+                    self.driver_status[driver_num] = 'busy'
+                    
+                    # Create driver if it doesn't exist
+                    if self.buying_drivers[driver_num] is None:
+                        print(f"🚗 CREATING: Buying driver {driver_num}")
+                        self.buying_drivers[driver_num] = self.setup_buying_driver(driver_num)
+                        if self.buying_drivers[driver_num] is None:
+                            print(f"❌ FAILED: Could not create buying driver {driver_num}")
+                            self.driver_status[driver_num] = 'free'  # Free it back up
+                            continue
+                    
+                    print(f"✅ RESERVED: Buying driver {driver_num}")
+                    return driver_num, self.buying_drivers[driver_num]
+            
+            print("❌ ERROR: All 5 buying drivers are currently busy")
+            return None, None
 
+    def release_driver(self, driver_num):
+        """
+        Release a driver back to the free pool and handle cleanup
+        """
+        with self.driver_lock:
+            print(f"🔓 RELEASING: Buying driver {driver_num}")
+            
+            # Close driver if it's not driver 1 (driver 1 stays open permanently)
+            if driver_num != 1 and self.buying_drivers[driver_num] is not None:
+                try:
+                    print(f"🗑️ CLOSING: Buying driver {driver_num}")
+                    self.buying_drivers[driver_num].quit()
+                    self.buying_drivers[driver_num] = None
+                except Exception as e:
+                    print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
+                    self.buying_drivers[driver_num] = None
+            
+            # Mark as free
+            self.driver_status[driver_num] = 'free'
+            print(f"✅ FREED: Buying driver {driver_num}")
     def start_bookmark_stopwatch(self, listing_url):
         """
         Start a stopwatch for a successfully bookmarked listing
@@ -3690,27 +3742,205 @@ class VintedScraper:
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
 
+    def process_single_listing_with_driver(self, url, driver_num, driver):
+        """
+        Process a single listing using the specified driver
+        """
+        start_time = time.time()
+        
+        try:
+            print(f"🔥 DRIVER {driver_num}: Processing {url}")
+            
+            # Verify driver is still alive
+            driver.current_url
+            
+            # Open new tab for processing
+            print(f"📑 DRIVER {driver_num}: Opening new tab")
+            driver.execute_script("window.open('');")
+            new_tab = driver.window_handles[-1]
+            driver.switch_to.window(new_tab)
+            
+            # Navigate to listing URL
+            print(f"🔗 DRIVER {driver_num}: Navigating to listing")
+            driver.get(url)
+            
+            # Wait for page to load
+            time.sleep(2)
+            
+            # Look for Buy now button
+            print(f"🔘 DRIVER {driver_num}: Looking for Buy now button")
+            
+            buy_selectors = [
+                'button[data-testid="item-buy-button"]',
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                'button.web_ui__Button__button[data-testid="item-buy-button"]',
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+            ]
+            
+            buy_button = None
+            for selector in buy_selectors:
+                try:
+                    if selector.startswith('//'):
+                        buy_button = WebDriverWait(driver, 2).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        buy_button = WebDriverWait(driver, 2).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                    print(f"✅ DRIVER {driver_num}: Found Buy now button")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if buy_button:
+                # Click the Buy now button
+                try:
+                    buy_button.click()
+                    print(f"✅ DRIVER {driver_num}: Clicked Buy now button")
+                except Exception as e:
+                    try:
+                        driver.execute_script("arguments[0].click();", buy_button)
+                        print(f"✅ DRIVER {driver_num}: Clicked Buy now button (JS)")
+                    except Exception as e2:
+                        print(f"❌ DRIVER {driver_num}: Failed to click Buy now button")
+                        raise e2
+                
+                # Wait for shipping page and start alternating clicks
+                print(f"🚚 DRIVER {driver_num}: Waiting for shipping page")
+                try:
+                    pickup_point_header = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'))
+                    )
+                    print(f"✅ DRIVER {driver_num}: Shipping page loaded")
+                    
+                    # Record start time for alternating clicks
+                    first_click_time = time.time()
+                    
+                    print(f"🔄 DRIVER {driver_num}: Starting {bookmark_stopwatch_length}s alternating click sequence")
+                    
+                    while True:
+                        # Check if time elapsed
+                        if time.time() - first_click_time >= bookmark_stopwatch_length:
+                            print(f"⏰ DRIVER {driver_num}: {bookmark_stopwatch_length} seconds elapsed, stopping")
+                            break
+                        
+                        # Click "Ship to pick-up point"
+                        try:
+                            pickup_point = driver.find_element(
+                                By.XPATH, 
+                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
+                            )
+                            pickup_point.click()
+                            print(f"📦 DRIVER {driver_num}: Clicked 'Ship to pick-up point'")
+                        except Exception as e:
+                            print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to pick-up point': {e}")
+                        
+                        # Wait
+                        time.sleep(buying_driver_click_pay_wait_time)
+                        
+                        # Check time again
+                        if time.time() - first_click_time >= bookmark_stopwatch_length:
+                            print(f"⏰ DRIVER {driver_num}: Time elapsed during wait, stopping")
+                            break
+                        
+                        # Click "Ship to home"
+                        try:
+                            ship_to_home = driver.find_element(
+                                By.XPATH, 
+                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
+                            )
+                            ship_to_home.click()
+                            print(f"🏠 DRIVER {driver_num}: Clicked 'Ship to home'")
+                        except Exception as e:
+                            print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to home': {e}")
+                        
+                        # Wait
+                        time.sleep(buying_driver_click_pay_wait_time)
+                
+                except TimeoutException:
+                    print(f"⚠️ DRIVER {driver_num}: Timeout waiting for shipping page")
+                
+            else:
+                print(f"❌ DRIVER {driver_num}: Buy now button not found")
+            
+            # Close the processing tab (keep main tab open)
+            print(f"🗑️ DRIVER {driver_num}: Closing processing tab")
+            driver.close()
+            
+            # Switch back to main tab (vinted.co.uk)
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+                print(f"🏠 DRIVER {driver_num}: Back to main tab")
+            
+            elapsed = time.time() - start_time
+            print(f"✅ DRIVER {driver_num}: Completed processing in {elapsed:.2f} seconds")
+            
+        except Exception as e:
+            print(f"❌ DRIVER {driver_num}: Error processing {url}: {e}")
+            
+            # Try to recover by switching back to main tab
+            try:
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+            except:
+                print(f"⚠️ DRIVER {driver_num}: Could not recover to main tab")
+        
+        finally:
+            # Always release the driver when done
+            self.release_driver(driver_num)
+
+    def cleanup_all_buying_drivers(self):
+        """
+        Clean up all buying drivers when program exits
+        """
+        print("🧹 CLEANUP: Closing all buying drivers")
+        
+        with self.driver_lock:
+            for driver_num in range(1, 6):
+                if self.buying_drivers[driver_num] is not None:
+                    try:
+                        self.buying_drivers[driver_num].quit()
+                        print(f"🗑️ CLEANUP: Closed buying driver {driver_num}")
+                    except:
+                        pass
+                    finally:
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'free'
+        
+        print("✅ CLEANUP: All buying drivers closed")
 
     def vinted_button_clicked_enhanced(self, url):
         """
-        ULTRA-FAST button click handler using persistent driver with tabs
+        UPDATED: Enhanced button click handler using multiple drivers
         """
         print(f"🔘 VINTED BUTTON: Processing {url}")
         
-        # Add to queue for fast processing - ONLY if not already clicked yes
-        if url not in self.clicked_yes_listings:
-            self.vinted_button_queue.put(url)
-            
-            # Mark as clicked to prevent duplicate processing
-            self.clicked_yes_listings.add(url)
-            
-            # Start processing if not already active
-            if not self.vinted_processing_active.is_set():
-                processing_thread = threading.Thread(target=self.process_vinted_button_queue)
-                processing_thread.daemon = True
-                processing_thread.start()
-        else:
+        # Check if already clicked to prevent duplicates
+        if url in self.clicked_yes_listings:
             print(f"🔄 VINTED BUTTON: Listing {url} already processed, ignoring")
+            return
+        
+        # Mark as clicked
+        self.clicked_yes_listings.add(url)
+        
+        # Get an available driver
+        driver_num, driver = self.get_available_driver()
+        
+        if driver is None:
+            print("❌ ERROR: All 5 buying drivers are currently busy. Please wait and try again.")
+            # Remove from clicked list so they can try again later
+            self.clicked_yes_listings.discard(url)
+            return
+        
+        # Process the listing in a separate thread so it doesn't block
+        processing_thread = threading.Thread(
+            target=self.process_single_listing_with_driver,
+            args=(url, driver_num, driver)
+        )
+        processing_thread.daemon = True
+        processing_thread.start()
 
     def process_vinted_button_queue(self):
         """
@@ -4048,54 +4278,50 @@ class VintedScraper:
                 raise Exception(f"Could not start Chrome driver: {e}")
             
 
-    def setup_persistent_buying_driver(self):
+    def setup_buying_driver(self, driver_num):
         """
-        Set up the persistent buying driver that stays open throughout the program
+        Setup a specific buying driver with its own user data directory
         """
-        if self.persistent_buying_driver is not None:
-            return True  # Already set up
-            
-        print("🚀 SETUP: Initializing persistent buying driver...")
-        
         try:
-            print('USING SETUP_PRSISTENT_BUYING_DRIVER')
-
+            print(f"🚗 SETUP: Creating buying driver {driver_num}")
+            
             service = Service(
                 ChromeDriverManager().install(),
                 log_path=os.devnull
             )
             
             chrome_opts = Options()
-            #chrome_opts.add_argument("--headless")
-            chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer")
+            # Each driver gets its own directory
+            user_data_dir = f"C:\\VintedBuyer{driver_num}"
+            chrome_opts.add_argument(f"--user-data-dir={user_data_dir}")
             chrome_opts.add_argument("--profile-directory=Default")
+            
+            # Standard options
             chrome_opts.add_argument("--no-sandbox")
             chrome_opts.add_argument("--disable-dev-shm-usage")
             chrome_opts.add_argument("--disable-gpu")
             chrome_opts.add_argument("--window-size=800,600")
             chrome_opts.add_argument("--log-level=3")
             chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-                                
-            self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
             
-            # Set fast timeouts for quick processing
-            self.persistent_buying_driver.implicitly_wait(1)
-            self.persistent_buying_driver.set_page_load_timeout(8)
-            self.persistent_buying_driver.set_script_timeout(3)
+            # Create the driver
+            driver = webdriver.Chrome(service=service, options=chrome_opts)
             
-            # Navigate main tab to vinted.co.uk and keep it as reference
-            print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
-            self.persistent_buying_driver.get("https://www.vinted.co.uk")
-            self.main_tab_handle = self.persistent_buying_driver.current_window_handle
+            # Set timeouts for quick processing
+            driver.implicitly_wait(1)
+            driver.set_page_load_timeout(10)
+            driver.set_script_timeout(5)
             
-            print("✅ SETUP: Persistent buying driver ready!")
-            return True
+            # Navigate to vinted.co.uk instead of blank page
+            print(f"🏠 NAVIGATE: Driver {driver_num} going to vinted.co.uk")
+            driver.get("https://www.vinted.co.uk")
+            
+            print(f"✅ SUCCESS: Buying driver {driver_num} created and ready")
+            return driver
             
         except Exception as e:
-            print(f"❌ SETUP: Failed to create persistent buying driver: {e}")
-            self.persistent_buying_driver = None
-            self.main_tab_handle = None
-            return False
+            print(f"❌ ERROR: Failed to create buying driver {driver_num}: {e}")
+            return None
             
 
     def extract_vinted_price(self, text):
@@ -5814,6 +6040,55 @@ class VintedScraper:
             
             return None
 
+    def setup_persistent_buying_driver(self):
+        """
+        Set up the persistent buying driver that stays open throughout the program
+        """
+        if self.persistent_buying_driver is not None:
+            return True  # Already set up
+            
+        print("🚀 SETUP: Initializing persistent buying driver...")
+        
+        try:
+            print('USING SETUP_PRSISTENT_BUYING_DRIVER')
+
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull
+            )
+            
+            chrome_opts = Options()
+            #chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer1")
+            chrome_opts.add_argument("--profile-directory=Default")
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+                                
+            self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set fast timeouts for quick processing
+            self.persistent_buying_driver.implicitly_wait(1)
+            self.persistent_buying_driver.set_page_load_timeout(8)
+            self.persistent_buying_driver.set_script_timeout(3)
+            
+            # Navigate main tab to vinted.co.uk and keep it as reference
+            print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
+            self.persistent_buying_driver.get("https://www.vinted.co.uk")
+            self.main_tab_handle = self.persistent_buying_driver.current_window_handle
+            
+            print("✅ SETUP: Persistent buying driver ready!")
+            return True
+            
+        except Exception as e:
+            print(f"❌ SETUP: Failed to create persistent buying driver: {e}")
+            self.persistent_buying_driver = None
+            self.main_tab_handle = None
+            return False
+
     def run(self):
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
@@ -5863,6 +6138,7 @@ class VintedScraper:
             driver.quit()
             pygame.quit()
             self.cleanup_persistent_buying_driver()
+            self.cleanup_all_buying_drivers()  # NEW: Clean up buying drivers
             sys.exit(0)
 
 if __name__ == "__main__":
