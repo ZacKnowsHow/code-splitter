@@ -56,7 +56,7 @@ test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
 bookmark_stopwatch_length = 500
 buying_driver_click_pay_wait_time = 5
 actually_purchase_listing = False
-test_purchase_not_true = True
+test_purchase_not_true = True #just tests the buying function using the url below
 test_purchase_url = "https://www.vinted.co.uk/items/6951780860-nintendo-switch-case?homepage_session_id=b5966afa-d833-4a5b-83b1-351ed8660796"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
@@ -544,7 +544,7 @@ def render_main_page():
                     img_str = base64.b64encode(buffered.getvalue()).decode()
                     image_html += f'''
                     <div class="image-wrapper">
-                        <img src="data:image/png;base64,{img_str}" alt="Listing Image">
+                        <img src="data:image/png;base64,{{img_str}}" alt="Listing Image">
                     </div>
                     '''
                 image_html += "</div>"
@@ -554,7 +554,7 @@ def render_main_page():
         else:
             image_html = "<p>No images available</p>"
 
-        # Return the complete HTML with modified JavaScript for Vinted
+        # Return the complete HTML with MODIFIED JavaScript for confirmation dialogs
         return f'''
         <!DOCTYPE html>
         <html>
@@ -714,7 +714,7 @@ def render_main_page():
                     padding: 15px;
                 }}
                 
-                /* NEW: Buy decision buttons */
+                /* Buy decision buttons */
                 .buy-decision-container {{
                     display: flex;
                     gap: 10px;
@@ -763,6 +763,74 @@ def render_main_page():
                     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
                 }}
                 .buy-no-button:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                
+                /* NEW: Confirmation button styles */
+                .confirmation-container {{
+                    display: none; /* Initially hidden */
+                    flex-direction: column;
+                    gap: 10px;
+                    margin: 15px 0;
+                }}
+                
+                .confirmation-text {{
+                    color: #333;
+                    font-weight: bold;
+                    font-size: 14px;
+                    margin-bottom: 10px;
+                    text-align: center;
+                }}
+                
+                .confirmation-buttons {{
+                    display: flex;
+                    gap: 10px;
+                }}
+                
+                .confirm-yes-button {{
+                    background-color: #28a745;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                
+                .confirm-no-button {{
+                    background-color: #6c757d;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                
+                .confirm-yes-button:hover {{
+                    background-color: #218838;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                
+                .confirm-no-button:hover {{
+                    background-color: #5a6268;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                
+                .confirm-yes-button:active, .confirm-no-button:active {{
                     transform: translateY(0);
                     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 }}
@@ -821,6 +889,9 @@ def render_main_page():
                             imageContainer.appendChild(imageWrapper);
                         }});
                     }}
+                    
+                    // Reset confirmation dialog state
+                    hideConfirmation();
                 }}
 
                 function changeListingIndex(direction) {{
@@ -843,66 +914,128 @@ def render_main_page():
                         alert('No valid URL available for this listing');
                     }}
                 }}
-
-                // NEW: Buy decision functions
-                function buyYes() {{
-                    var urlElement = document.querySelector('.content-url');
-                    var url = urlElement ? urlElement.textContent.trim() : '';
+                
+                // NEW: Confirmation dialog functions
+                function showConfirmation(message, confirmCallback, cancelCallback) {{
+                    // Hide original buttons
+                    const buyDecisionContainer = document.querySelector('.buy-decision-container');
+                    const confirmationContainer = document.querySelector('.confirmation-container');
                     
-                    if (url && url !== 'No URL Available') {{
-                        console.log('User wishes to buy listing: ' + url);
+                    if (buyDecisionContainer) buyDecisionContainer.style.display = 'none';
+                    if (confirmationContainer) {{
+                        confirmationContainer.style.display = 'flex';
                         
-                        // Send POST request to Flask backend (similar to Facebook buttons)
-                        fetch('/vinted-button-clicked', {{
-                            method: 'POST',
-                            headers: {{
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                            }},
-                            body: `url=${{encodeURIComponent(url)}}&action=buy_yes`
-                        }})
-                        .then(response => {{
-                            if (response.ok) {{
-                                console.log('Vinted YES button clicked successfully');
-                            }} else {{
-                                console.error('Failed to process Vinted YES button');
-                            }}
-                        }})
-                        .catch(error => {{
-                            console.error('Error with Vinted YES button:', error);
-                        }});
-                    }}else {{
-                        console.log('User wishes to buy listing but no URL available');
+                        // Set the confirmation message
+                        const confirmationText = confirmationContainer.querySelector('.confirmation-text');
+                        if (confirmationText) confirmationText.textContent = message;
+                        
+                        // Set up button handlers
+                        const confirmYesBtn = confirmationContainer.querySelector('.confirm-yes-button');
+                        const confirmNoBtn = confirmationContainer.querySelector('.confirm-no-button');
+                        
+                        if (confirmYesBtn) {{
+                            confirmYesBtn.onclick = function() {{
+                                confirmCallback();
+                                hideConfirmation();
+                            }};
+                        }}
+                        
+                        if (confirmNoBtn) {{
+                            confirmNoBtn.onclick = function() {{
+                                cancelCallback();
+                                hideConfirmation();
+                            }};
+                        }}
                     }}
+                }}
+                
+                function hideConfirmation() {{
+                    const buyDecisionContainer = document.querySelector('.buy-decision-container');
+                    const confirmationContainer = document.querySelector('.confirmation-container');
+                    
+                    if (buyDecisionContainer) buyDecisionContainer.style.display = 'flex';
+                    if (confirmationContainer) confirmationContainer.style.display = 'none';
+                }}
+
+                // MODIFIED: Buy decision functions with confirmation
+                function buyYes() {{
+                    showConfirmation(
+                        'Are you sure you want to buy this listing?',
+                        function() {{
+                            // Confirmed YES - proceed with original buyYes logic
+                            var urlElement = document.querySelector('.content-url');
+                            var url = urlElement ? urlElement.textContent.trim() : '';
+                            
+                            if (url && url !== 'No URL Available') {{
+                                console.log('User confirmed: wants to buy listing: ' + url);
+                                
+                                // Send POST request to Flask backend
+                                fetch('/vinted-button-clicked', {{
+                                    method: 'POST',
+                                    headers: {{
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                    }},
+                                    body: `url=${{encodeURIComponent(url)}}&action=buy_yes`
+                                }})
+                                .then(response => {{
+                                    if (response.ok) {{
+                                        console.log('Vinted YES button confirmed and sent successfully');
+                                    }} else {{
+                                        console.error('Failed to process Vinted YES button');
+                                    }}
+                                }})
+                                .catch(error => {{
+                                    console.error('Error with Vinted YES button:', error);
+                                }});
+                            }} else {{
+                                console.log('User confirmed: wants to buy listing but no URL available');
+                            }}
+                        }},
+                        function() {{
+                            // Cancelled - just log
+                            console.log('User cancelled buying decision');
+                        }}
+                    );
                 }}
 
                 function buyNo() {{
-                    var urlElement = document.querySelector('.content-url');
-                    var url = urlElement ? urlElement.textContent.trim() : '';
-                    
-                    if (url && url !== 'No URL Available') {{
-                        console.log('User does not wish to buy listing: ' + url);
-                        
-                        // Send POST request to Flask backend (similar to Facebook buttons)
-                        fetch('/vinted-button-clicked', {{
-                            method: 'POST',
-                            headers: {{
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                            }},
-                            body: `url=${{encodeURIComponent(url)}}&action=buy_no`
-                        }})
-                        .then(response => {{
-                            if (response.ok) {{
-                                console.log('Vinted NO button clicked successfully');
+                    showConfirmation(
+                        'Are you sure you don\\'t want to buy this listing?',
+                        function() {{
+                            // Confirmed NO - proceed with original buyNo logic
+                            var urlElement = document.querySelector('.content-url');
+                            var url = urlElement ? urlElement.textContent.trim() : '';
+                            
+                            if (url && url !== 'No URL Available') {{
+                                console.log('User confirmed: does not want to buy listing: ' + url);
+                                
+                                // Send POST request to Flask backend
+                                fetch('/vinted-button-clicked', {{
+                                    method: 'POST',
+                                    headers: {{
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                    }},
+                                    body: `url=${{encodeURIComponent(url)}}&action=buy_no`
+                                }})
+                                .then(response => {{
+                                    if (response.ok) {{
+                                        console.log('Vinted NO button confirmed and sent successfully');
+                                    }} else {{
+                                        console.error('Failed to process Vinted NO button');
+                                    }}
+                                }})
+                                .catch(error => {{
+                                    console.error('Error with Vinted NO button:', error);
+                                }});
                             }} else {{
-                                console.error('Failed to process Vinted NO button');
+                                console.log('User confirmed: does not want to buy listing but no URL available');
                             }}
-                        }})
-                        .catch(error => {{
-                            console.error('Error with Vinted NO button:', error);
-                        }});
-                    }} else {{
-                        console.log('User does not wish to buy listing but no URL available');
-                    }}
+                        }},
+                        function() {{
+                            // Cancelled - just log
+                            console.log('User cancelled buying decision');
+                        }}
+                    );
                 }}
 
                 // Initialize display on page load
@@ -946,7 +1079,7 @@ def render_main_page():
                     </button>
                 </div>
                 
-                <!-- NEW: Buy decision buttons -->
+                <!-- Original Buy decision buttons -->
                 <div class="buy-decision-container">
                     <button class="buy-yes-button" onclick="buyYes()">
                         Yes - Buy now
@@ -954,6 +1087,21 @@ def render_main_page():
                     <button class="buy-no-button" onclick="buyNo()">
                         No - Do not purchase
                     </button>
+                </div>
+                
+                <!-- NEW: Confirmation dialog (initially hidden) -->
+                <div class="confirmation-container">
+                    <div class="confirmation-text">
+                        Are you sure?
+                    </div>
+                    <div class="confirmation-buttons">
+                        <button class="confirm-yes-button">
+                            Yes
+                        </button>
+                        <button class="confirm-no-button">
+                            No
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="details-row">
@@ -3835,7 +3983,7 @@ class VintedScraper:
                 url = test_purchase_url
                 print(f"TEST MODE - Using test URL {url}")
             # Navigate to listing URL
-            
+
             print(f"🔗 DRIVER {driver_num}: Navigating to listing")
             driver.get(url)
             
