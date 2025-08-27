@@ -1,4 +1,5 @@
 # Continuation from line 2201
+        # Store bounding boxes with more robust handling
         current_bounding_boxes = {
             'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
             'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
@@ -1542,8 +1543,14 @@ class VintedScraper:
 
     def handle_single_vinted_button_request_fast(self, url):
         """
-        ULTRA-FAST single request handler using tabs
+        ULTRA-FAST single request handler with button clicking functionality
         """
+        import time
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.common.exceptions import TimeoutException, NoSuchElementException
+        
         start_time = time.time()
         
         try:
@@ -1560,9 +1567,81 @@ class VintedScraper:
             # Navigate to URL
             self.persistent_buying_driver.get(url)
             
-            # Wait minimal time (you mentioned 3 seconds)
-            print("⏱️ FAST: Waiting 3 seconds...")
+            # Wait for page to load
+            print("⏱️ FAST: Waiting for page to load...")
             time.sleep(3)
+            
+            # Click the "Buy now" button
+            print("🔘 FAST: Looking for Buy now button...")
+            try:
+                buy_button = WebDriverWait(self.persistent_buying_driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]'))
+                )
+                buy_button.click()
+                print("✅ FAST: Buy now button clicked")
+                
+                # Wait for next page to load - look for "Ship to pick-up point"
+                print("🔍 FAST: Waiting for shipping page to load...")
+                try:
+                    pickup_point_header = WebDriverWait(self.persistent_buying_driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'))
+                    )
+                    print("✅ FAST: Shipping page loaded")
+                    
+                    # Record the time when the first click happens
+                    first_click_time = time.time()
+                    
+                    # Start the alternating clicking loop
+                    print("🔄 FAST: Starting alternating click sequence...")
+                    
+                    while True:
+                        # Check if bookmark_stopwatch_length time has elapsed
+                        if time.time() - first_click_time >= bookmark_stopwatch_length:
+                            print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
+                            break
+                        
+                        # Click "Ship to pick-up point"
+                        try:
+                            pickup_point = self.persistent_buying_driver.find_element(
+                                By.XPATH, 
+                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
+                            )
+                            pickup_point.click()
+                            print("📦 FAST: Clicked 'Ship to pick-up point'")
+                        except (NoSuchElementException, Exception) as e:
+                            print(f"⚠️ FAST: Could not click 'Ship to pick-up point': {e}")
+                        
+                        # Wait the specified time
+                        time.sleep(buying_driver_click_pay_wait_time)
+                        
+                        # Check time again before next click
+                        if time.time() - first_click_time >= bookmark_stopwatch_length:
+                            print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
+                            break
+                        
+                        # Click "Ship to home"
+                        try:
+                            ship_to_home = self.persistent_buying_driver.find_element(
+                                By.XPATH, 
+                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
+                            )
+                            ship_to_home.click()
+                            print("🏠 FAST: Clicked 'Ship to home'")
+                        except (NoSuchElementException, Exception) as e:
+                            print(f"⚠️ FAST: Could not click 'Ship to home': {e}")
+                        
+                        # Wait the specified time
+                        time.sleep(buying_driver_click_pay_wait_time)
+                    
+                except TimeoutException:
+                    print("⚠️ FAST: Timeout waiting for shipping page to load")
+                except Exception as e:
+                    print(f"❌ FAST: Error during shipping page interaction: {e}")
+            
+            except TimeoutException:
+                print("⚠️ FAST: Timeout waiting for Buy now button")
+            except Exception as e:
+                print(f"❌ FAST: Error clicking Buy now button: {e}")
             
             # Close the tab
             self.persistent_buying_driver.close()
@@ -1707,7 +1786,7 @@ class VintedScraper:
             chrome_opts.add_argument("--disable-gpu")
             chrome_opts.add_argument("--remote-debugging-port=0")
             chrome_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
-            chrome_opts.add_argument(f"--profile-directory=Profile 2")
+            chrome_opts.add_argument(f"--profile-directory=Default")
             
             self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
             
@@ -2120,82 +2199,3 @@ class VintedScraper:
             "description": details.get("description", "").lower(),
             "price": total_price,
             "seller_reviews": seller_reviews,
-            "url": url
-        }
-
-        # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
-        suitability_result = self.check_vinted_listing_suitability(listing_info)
-        print(f"DEBUG: Suitability result: '{suitability_result}'")
-
-        # Apply console keyword detection to detected objects
-        detected_console = self.detect_console_keywords_vinted(
-            details.get("title", ""),
-            details.get("description", "")
-        )
-        if detected_console:
-            # Set the detected console to 1 and ensure other mutually exclusive items are 0
-            mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
-            for item in mutually_exclusive_items:
-                detected_objects[item] = 1 if item == detected_console else 0
-
-        # Apply OLED title conversion
-        detected_objects = self.handle_oled_title_conversion_vinted(
-            detected_objects,
-            details.get("title", ""),
-            details.get("description", "")
-        )
-
-        # Calculate revenue with enhanced logic
-        total_revenue, expected_profit, profit_percentage, display_objects = self.calculate_vinted_revenue(
-            detected_objects, total_price, details.get("title", ""), details.get("description", "")
-        )
-
-        # Check profit suitability
-        profit_suitability = self.check_vinted_profit_suitability(total_price, profit_percentage)
-
-        # Game count suitability check (same as Facebook) - but don't return early if showing all
-        game_classes = [
-            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
-            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
-            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
-            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
-            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
-            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
-            'sword_p', 'tears_z', 'violet_p'
-        ]
-        game_count = sum(detected_objects.get(game, 0) for game in game_classes)
-        non_game_classes = [cls for cls in detected_objects.keys() if cls not in game_classes and detected_objects.get(cls, 0) > 0]
-
-        # Build comprehensive suitability reason
-        unsuitability_reasons = []
-
-        # Add basic suitability issues
-        if "Unsuitable" in suitability_result:
-            unsuitability_reasons.append(suitability_result.replace("Unsuitable: ", ""))
-
-        # Add game count issue
-        if 1 <= game_count <= 2 and not non_game_classes:
-            unsuitability_reasons.append("1-2 games with no additional non-game items")
-
-        # Add profit suitability issue
-        if not profit_suitability:
-            unsuitability_reasons.append(f"Profit £{expected_profit:.2f} ({profit_percentage:.2f}%) not suitable for price range")
-
-        # Determine final suitability
-        if unsuitability_reasons:
-            suitability_reason = "Unsuitable:\n---- " + "\n---- ".join(unsuitability_reasons)
-            is_suitable = False
-        else:
-            suitability_reason = f"Suitable: Profit £{expected_profit:.2f} ({profit_percentage:.2f}%)"
-            is_suitable = True
-
-        print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
-
-        # 🔖 MODIFIED BOOKMARK FUNCTIONALITY WITH SUCCESS TRACKING
-        bookmark_success = False
-        should_bookmark = False
-        
-        if bookmark_listings and is_suitable:
-            should_bookmark = True
-        elif bookmark_listings and VINTED_SHOW_ALL_LISTINGS:
-            should_bookmark = True

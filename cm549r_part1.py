@@ -50,10 +50,11 @@ from ultralytics import YOLO
 import random
 
 test_bookmark_function = False
-bookmark_listings = True
+bookmark_listings = False
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
 bookmark_stopwatch_length = 5  # 10 minutes in seconds
+buying_driver_click_pay_wait_time = 5
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
 # Config
@@ -2000,7 +2001,7 @@ class FacebookScraper:
         
         # Use a dedicated, isolated user data directory to prevent conflicts.
         chrome_options.add_argument(f"user-data-dir={SCRAPER_USER_DATA_DIR}")
-        chrome_options.add_argument("profile-directory=Profile 2")
+        chrome_options.add_argument("profile-directory=Default")
         #profile 10 is blue orchid
         #default = laptop
         #profile 2 = pc
@@ -2197,4 +2198,3 @@ class FacebookScraper:
                 except Exception as e:
                     print(f"Error copying image: {str(e)}")
         
-        # Store bounding boxes with more robust handling
