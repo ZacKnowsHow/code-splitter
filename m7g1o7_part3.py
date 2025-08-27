@@ -1,4 +1,7 @@
 # Continuation from line 4401
+                    except NoSuchElementException:
+                        # Try alternative selectors for username
+                        alternative_username_selectors = [
                             "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__amplified.web_ui__Text__bold[data-testid='profile-username']",
                             "span[data-testid='profile-username']",
                             "*[data-testid='profile-username']",
@@ -969,6 +972,7 @@
                     bookmark_user_data_dir = "C:\VintedScraper_Default_Bookmark"
                     chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
                     chrome_opts.add_argument("--profile-directory=Profile 4")
+                    #chrome_opts.add_argument("--headless")
                     chrome_opts.add_argument("--no-sandbox")
                     chrome_opts.add_argument("--disable-dev-shm-usage")
                     chrome_opts.add_argument("--disable-gpu")
@@ -1374,7 +1378,7 @@
         chrome_opts.add_argument("--disable-software-rasterizer")
         
         # Remove potentially problematic arguments
-        # chrome_opts.add_argument("--headless")  # Try without headless first
+        chrome_opts.add_argument("--headless")  # Try without headless first
         
         # Keep some logging for debugging
         chrome_opts.add_argument("--log-level=1")  # More detailed logging
