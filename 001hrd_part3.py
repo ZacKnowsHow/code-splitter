@@ -1,4 +1,5 @@
 # Continuation from line 4401
+            if not hasattr(self, '_cached_chromedriver_path'):
                 self._cached_chromedriver_path = ChromeDriverManager().install()
             
             service = Service(self._cached_chromedriver_path, log_path=os.devnull)
