@@ -3830,8 +3830,12 @@ class VintedScraper:
             driver.execute_script("window.open('');")
             new_tab = driver.window_handles[-1]
             driver.switch_to.window(new_tab)
-            
+
+            if test_purchase_not_true:
+                url = test_purchase_url
+                print(f"TEST MODE - Using test URL {url}")
             # Navigate to listing URL
+            
             print(f"🔗 DRIVER {driver_num}: Navigating to listing")
             driver.get(url)
             
@@ -4093,10 +4097,7 @@ class VintedScraper:
         try:
             # Verify driver is still alive
             self.persistent_buying_driver.current_url
-            
-            if test_purchase_not_true:
-                url = test_purchase_url
-                print(f"TEST MODE - Using test URL {url}")
+    
 
             print(f"🔥 FAST: Processing {url}")
             
