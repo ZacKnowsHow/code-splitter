@@ -149,7 +149,7 @@ recent_listings = {
     'current_index': 0
 }
 
-review_min = 3
+review_min = 1
 MAX_LISTINGS_TO_SCAN = 50
 REFRESH_AND_RESCAN = False  # Set to False to disable refresh functionality
 MAX_LISTINGS_VINTED_TO_SCAN = 6  # Maximum listings to scan before refresh
