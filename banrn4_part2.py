@@ -1,4 +1,5 @@
 # Continuation from line 2201
+            if suitable_listings:
                 listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
                 screen.blit(listing_counter, (10, 40))
 
@@ -1462,8 +1463,17 @@ class VintedScraper:
     def start_bookmark_stopwatch(self, listing_url):
         """
         Start a stopwatch for a successfully bookmarked listing
+        MODIFIED: Now tracks bookmark start time for wait_for_bookmark_stopwatch_to_buy functionality
         """
         print(f"⏱️ STOPWATCH: Starting timer for {listing_url}")
+        
+        # NEW: Track the start time for this listing
+        if not hasattr(self, 'bookmark_start_times'):
+            self.bookmark_start_times = {}
+        
+        # Record when the bookmark timer started
+        self.bookmark_start_times[listing_url] = time.time()
+        print(f"⏱️ RECORDED: Bookmark start time for {listing_url}")
         
         def stopwatch_timer():
             time.sleep(bookmark_stopwatch_length)
@@ -1472,6 +1482,10 @@ class VintedScraper:
             # Clean up the timer reference
             if listing_url in self.bookmark_timers:
                 del self.bookmark_timers[listing_url]
+                
+            # Clean up the start time reference
+            if hasattr(self, 'bookmark_start_times') and listing_url in self.bookmark_start_times:
+                del self.bookmark_start_times[listing_url]
         
         # Start the timer thread
         timer_thread = threading.Thread(target=stopwatch_timer)
@@ -2185,17 +2199,3 @@ class VintedScraper:
                     except TimeoutException:
                         print(f"⚠️ DRIVER {driver_num}: Timeout waiting for shipping page")
             else:
-                print(f"❌ DRIVER {driver_num}: Buy now button not found")
-            
-            # Close the processing tab (keep main tab open)
-            print(f"🗑️ DRIVER {driver_num}: Closing processing tab")
-            driver.close()
-            
-            # Switch back to main tab (vinted.co.uk)
-            if len(driver.window_handles) > 0:
-                driver.switch_to.window(driver.window_handles[0])
-                print(f"🏠 DRIVER {driver_num}: Back to main tab")
-            
-            elapsed = time.time() - start_time
-            print(f"✅ DRIVER {driver_num}: Completed processing in {elapsed:.2f} seconds")
-            

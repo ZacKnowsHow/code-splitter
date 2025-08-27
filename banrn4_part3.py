@@ -1,4 +1,18 @@
 # Continuation from line 4401
+                print(f"❌ DRIVER {driver_num}: Buy now button not found")
+            
+            # Close the processing tab (keep main tab open)
+            print(f"🗑️ DRIVER {driver_num}: Closing processing tab")
+            driver.close()
+            
+            # Switch back to main tab (vinted.co.uk)
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+                print(f"🏠 DRIVER {driver_num}: Back to main tab")
+            
+            elapsed = time.time() - start_time
+            print(f"✅ DRIVER {driver_num}: Completed processing in {elapsed:.2f} seconds")
+            
         except Exception as e:
             print(f"❌ DRIVER {driver_num}: Error processing {url}: {e}")
             
@@ -56,6 +70,7 @@
     def vinted_button_clicked_enhanced(self, url):
         """
         FIXED: Enhanced button click handler with better error handling and driver management
+        MODIFIED: Now checks wait_for_bookmark_stopwatch_to_buy variable and waits for bookmark timer
         """
         print(f"🔘 VINTED BUTTON: Processing {url}")
         
@@ -66,6 +81,39 @@
         
         # Mark as clicked immediately to prevent race conditions
         self.clicked_yes_listings.add(url)
+        
+        # NEW: Check wait_for_bookmark_stopwatch_to_buy variable
+        if wait_for_bookmark_stopwatch_to_buy:
+            print(f"⏰ WAITING: wait_for_bookmark_stopwatch_to_buy is TRUE")
+            
+            # Check if this listing has a bookmark timer
+            if url in self.bookmark_timers:
+                print(f"⏰ TIMER: Found active bookmark timer for {url}")
+                
+                # Calculate how long the listing has been bookmarked
+                # We need to track when bookmarking started for each listing
+                if not hasattr(self, 'bookmark_start_times'):
+                    self.bookmark_start_times = {}
+                
+                if url in self.bookmark_start_times:
+                    elapsed_time = time.time() - self.bookmark_start_times[url]
+                    remaining_time = bookmark_stopwatch_length - elapsed_time
+                    
+                    if remaining_time > 0:
+                        print(f"⏰ WAITING: Need to wait {remaining_time:.1f} more seconds for bookmark timer")
+                        print(f"⏰ STATUS: Listing has been bookmarked for {elapsed_time:.1f} seconds")
+                        
+                        # Wait for the remaining time
+                        time.sleep(remaining_time)
+                        print(f"⏰ COMPLETE: Bookmark timer reached {bookmark_stopwatch_length} seconds")
+                    else:
+                        print(f"⏰ READY: Bookmark timer already exceeded {bookmark_stopwatch_length} seconds")
+                else:
+                    print(f"⚠️ WARNING: No bookmark start time found for {url}, proceeding immediately")
+            else:
+                print(f"⚠️ WARNING: No bookmark timer found for {url}, proceeding immediately")
+        else:
+            print(f"🚀 IMMEDIATE: wait_for_bookmark_stopwatch_to_buy is FALSE, proceeding immediately")
         
         # FIXED: Better driver acquisition with retry logic
         max_retries = 3
@@ -1008,7 +1056,7 @@
 
         # SEPARATE logic for pygame and website
         should_add_to_website = False
-        should_add_to_pygame = True  # Always true for pygame to show suitable listings
+        should_add_to_pygame = False  # Always true for pygame to show suitable listings
         should_send_notification = False
 
         # Website logic (current behavior - only successful bookmarks when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False)
