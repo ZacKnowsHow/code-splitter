@@ -1,4 +1,152 @@
 # Continuation from line 4401
+                print("⚠️ FAST: Buy now button not found with any selector")
+                # DEBUGGING: Print page source snippet to help diagnose
+                try:
+                    page_source = self.persistent_buying_driver.page_source
+                    if 'Buy now' in page_source:
+                        print("🔍 FAST: 'Buy now' text found in page source")
+                        # Find the button element in page source
+                        import re
+                        button_pattern = r'<button[^>]*Buy now[^>]*</button>'
+                        matches = re.findall(button_pattern, page_source, re.IGNORECASE | re.DOTALL)
+                        for i, match in enumerate(matches[:3]):  # Show first 3 matches
+                            print(f"🔍 FAST: Button HTML {i+1}: {match[:200]}...")
+                    else:
+                        print("❌ FAST: 'Buy now' text not found in page source")
+                        
+                        # Check if page loaded properly
+                        if 'vinted' in self.persistent_buying_driver.current_url:
+                            print("✅ FAST: On Vinted page")
+                            print(f"🔍 FAST: Current URL: {self.persistent_buying_driver.current_url}")
+                            print(f"🔍 FAST: Page title: {self.persistent_buying_driver.title}")
+                        else:
+                            print("❌ FAST: Not on Vinted page")
+                            
+                except Exception as debug_e:
+                    print(f"❌ FAST: Debug info collection failed: {debug_e}")
+            
+            # Close the tab
+            self.persistent_buying_driver.close()
+            
+            # Switch back to main tab
+            self.persistent_buying_driver.switch_to.window(self.main_tab_handle)
+            
+            elapsed = time.time() - start_time
+            print(f"✅ FAST: Completed in {elapsed:.2f} seconds")
+            
+        except Exception as e:
+            print(f"❌ FAST: Error processing {url}: {e}")
+            
+            # Try to recover by switching back to main tab
+            try:
+                if self.main_tab_handle in self.persistent_buying_driver.window_handles:
+                    self.persistent_buying_driver.switch_to.window(self.main_tab_handle)
+            except:
+                pass
+
+    def cleanup_persistent_buying_driver(self):
+        """
+        Clean up the persistent buying driver when program exits
+        """
+        if self.persistent_buying_driver is not None:
+            try:
+                self.persistent_buying_driver.quit()
+                print("🔒 CLEANUP: Persistent buying driver closed")
+            except:
+                pass
+            finally:
+                self.persistent_buying_driver = None
+                self.main_tab_handle = None
+    
+    def setup_driver(self):
+        """
+        Enhanced Chrome driver setup with better stability and crash prevention
+        """
+        chrome_opts = Options()
+        
+        # Basic preferences
+        prefs = {
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.default_content_setting_values.popups": 0,
+            "download.prompt_for_download": False,
+        }
+        options = Options()
+        options.add_experimental_option("prefs", prefs)
+        options.add_argument("--headless")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--remote-debugging-port=0")
+        options.add_argument("--log-level=3")
+        options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+        options.add_argument(f"--profile-directory=Default")
+        try:
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull  # Suppress driver logs
+            )
+            
+            # Add service arguments for additional stability
+            service_args = [
+                '--verbose=false',
+                '--silent',
+                '--log-level=3'
+            ]
+            
+            print("🚀 Starting Chrome driver with enhanced stability settings...")
+            driver = webdriver.Chrome(service=service, options=options)
+            
+            # Set timeouts
+            driver.implicitly_wait(10)
+            driver.set_page_load_timeout(30)
+            driver.set_script_timeout(30)
+            
+            print("✅ Chrome driver initialized successfully")
+            return driver
+            
+        except Exception as e:
+            print(f"❌ CRITICAL: Chrome driver failed to start: {e}")
+            print("Troubleshooting steps:")
+            print("1. Ensure all Chrome instances are closed")
+            print("2. Check Chrome and ChromeDriver versions")
+            print("3. Verify user data directory permissions")
+            print("4. Try restarting the system")
+            
+            # Try fallback options
+            print("⏳ Attempting fallback configuration...")
+            
+            # Fallback: Remove problematic arguments
+            fallback_opts = Options()
+            fallback_opts.add_experimental_option("prefs", prefs)
+            fallback_opts.add_argument("--headless")
+            fallback_opts.add_argument("--no-sandbox")
+            fallback_opts.add_argument("--disable-dev-shm-usage")
+            fallback_opts.add_argument("--disable-gpu")
+            fallback_opts.add_argument("--remote-debugging-port=0")
+            fallback_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+            fallback_opts.add_argument(f"--profile-directory=Default")
+            #profile 2 = pc
+            #default = laptop
+            
+            try:
+                fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
+                print("✅ Fallback Chrome driver started successfully")
+                return fallback_driver
+            except Exception as fallback_error:
+                print(f"❌ Fallback also failed: {fallback_error}")
+                raise Exception(f"Could not start Chrome driver: {e}")
+            
+
+    def setup_buying_driver(self, driver_num):
+        """
+        FIXED: Setup a specific buying driver with better error handling and unique directories
+        """
+        try:
+            print(f"🚗 SETUP: Creating buying driver {driver_num}")
+            
+            # Ensure ChromeDriver is cached
             if not hasattr(self, '_cached_chromedriver_path'):
                 self._cached_chromedriver_path = ChromeDriverManager().install()
             
