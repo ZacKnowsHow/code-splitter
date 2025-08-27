@@ -1758,7 +1758,7 @@ class VintedScraper:
 
     def process_single_listing_with_driver(self, url, driver_num, driver):
         """
-        FIXED: Process a single listing using the specified driver with better error handling
+        MODIFIED: Process a single listing using the specified driver with actual purchasing capability
         """
         start_time = time.time()
         
@@ -1783,8 +1783,8 @@ class VintedScraper:
             if test_purchase_not_true:
                 url = test_purchase_url
                 print(f"TEST MODE - Using test URL {url}")
+            
             # Navigate to listing URL
-
             print(f"🔗 DRIVER {driver_num}: Navigating to listing")
             driver.get(url)
             
@@ -1837,61 +1837,180 @@ class VintedScraper:
                         print(f"❌ DRIVER {driver_num}: Failed to click Buy now button")
                         raise e2
                 
-                # Wait for shipping page and start alternating clicks
-                print(f"🚚 DRIVER {driver_num}: Waiting for shipping page")
-                try:
-                    pickup_point_header = WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.XPATH, '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'))
-                    )
-                    print(f"✅ DRIVER {driver_num}: Shipping page loaded")
+                # Check actually_purchase_listing setting
+                if actually_purchase_listing:
+                    print(f"💳 DRIVER {driver_num}: actually_purchase_listing is TRUE - starting purchase process")
                     
-                    # Record start time for alternating clicks
-                    first_click_time = time.time()
+                    # Wait for Pay button to appear
+                    print(f"💳 DRIVER {driver_num}: Waiting for Pay button to appear")
+                    pay_button_found = False
                     
-                    print(f"🔄 DRIVER {driver_num}: Starting {bookmark_stopwatch_length}s alternating click sequence")
+                    try:
+                        pay_button = WebDriverWait(driver, 15).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, 
+                                'button[data-testid="single-checkout-order-summary-purchase-button"]'
+                            ))
+                        )
+                        pay_button_found = True
+                        print(f"✅ DRIVER {driver_num}: Pay button found")
+                    except TimeoutException:
+                        print(f"❌ DRIVER {driver_num}: Pay button not found within timeout")
                     
-                    while True:
-                        # Check if time elapsed
-                        if time.time() - first_click_time >= bookmark_stopwatch_length:
-                            print(f"⏰ DRIVER {driver_num}: {bookmark_stopwatch_length} seconds elapsed, stopping")
-                            break
+                    if pay_button_found:
+                        # Start purchase attempt loop
+                        purchase_successful = False
+                        max_attempts = 250  # Prevent infinite loops
+                        attempt = 0
                         
-                        # Click "Ship to pick-up point"
-                        try:
-                            pickup_point = driver.find_element(
-                                By.XPATH, 
-                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
-                            )
-                            pickup_point.click()
-                            print(f"📦 DRIVER {driver_num}: Clicked 'Ship to pick-up point'")
-                        except Exception as e:
-                            print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to pick-up point': {e}")
+                        while not purchase_successful and attempt < max_attempts:
+                            attempt += 1
+                            print(f"💳 DRIVER {driver_num}: Purchase attempt {attempt}")
+                            
+                            # Click Pay button
+                            try:
+                                pay_button = driver.find_element(By.CSS_SELECTOR, 
+                                    'button[data-testid="single-checkout-order-summary-purchase-button"]'
+                                )
+                                pay_button.click()
+                                print(f"✅ DRIVER {driver_num}: Clicked Pay button (attempt {attempt})")
+                            except Exception as click_error:
+                                print(f"❌ DRIVER {driver_num}: Failed to click Pay button: {click_error}")
+                                break
+                            
+                            # Check for error message (appears quickly)
+                            error_found = False
+                            try:
+                                error_element = WebDriverWait(driver, 6).until(
+                                    EC.presence_of_element_located((By.XPATH, 
+                                        "//span[contains(@class, 'web_uiTexttext') and contains(@class, 'web_uiTextbody') and contains(@class, 'web_uiTextleft') and contains(text(), \"Sorry, we couldn't process your payment. Some of the items belong to another purchase that is in progress. Please try again. If the problem recurs, contact us.\")]"
+                                    ))
+                                )
+                                print(f"⚠️ DRIVER {driver_num}: Payment error detected")
+                                error_found = True
+                            except TimeoutException:
+                                print('TIMEOUT EXCEPTION')
+                                # No error message found, continue checking for success
+                                pass
+                            
+                            if error_found:
+                                # Handle error - wait, click OK, wait again, then retry
+                                print(f"⏳ DRIVER {driver_num}: Waiting {buying_driver_click_pay_wait_time}s before clicking OK")
+                                time.sleep(buying_driver_click_pay_wait_time)
+                                
+                                try:
+                                    ok_button = driver.find_element(By.XPATH, "//span[@class='web_uiButtonlabel' and text()='OK, close']")
+                                    ok_button.click()
+                                    print(f"✅ DRIVER {driver_num}: Clicked OK, close button")
+                                except Exception as ok_error:
+                                    print(f"❌ DRIVER {driver_num}: Failed to click OK button: {ok_error}")
+                                
+                                print(f"⏳ DRIVER {driver_num}: Waiting {buying_driver_click_pay_wait_time}s before retry")
+                                time.sleep(buying_driver_click_pay_wait_time)
+                                
+                                # Continue to next attempt
+                                continue
+                            
+                            else:
+                                # No error message, check for success message (takes longer)
+                                print(f"🔍 DRIVER {driver_num}: Checking for success message")
+                                
+                                # Calculate remaining time
+                                elapsed_time = time.time() - start_time
+                                remaining_time = bookmark_stopwatch_length - elapsed_time
+                                
+                                if remaining_time <= 0:
+                                    print(f"⏰ DRIVER {driver_num}: Timeout reached before success check")
+                                    break
+                                
+                                try:
+                                    success_element = WebDriverWait(driver, min(15, remaining_time)).until(
+                                        EC.presence_of_element_located((By.XPATH, 
+                                            "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft' and text()='Purchase successful']"
+                                        ))
+                                    )
+                                    print(f"🎉 DRIVER {driver_num}: Purchase successful!")
+                                    purchase_successful = True
+                                    
+                                    # Send Pushover notification
+                                    notification_title = "Vinted Purchase Successful"
+                                    notification_message = f"Purchase successful for listing {url}"
+                                    
+                                    try:
+                                        self.send_pushover_notification(
+                                            notification_title,
+                                            notification_message,
+                                            'aks3to8guqjye193w7ajnydk9jaxh5',
+                                            'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                                        )
+                                        print(f"📧 DRIVER {driver_num}: Purchase notification sent")
+                                    except Exception as notification_error:
+                                        print(f"⚠️ DRIVER {driver_num}: Failed to send notification: {notification_error}")
+                                    
+                                except TimeoutException:
+                                    print(f"⏰ DRIVER {driver_num}: Success message not found within timeout")
+                                    break
                         
-                        # Wait
-                        time.sleep(buying_driver_click_pay_wait_time)
+                        # Check final timeout
+                        total_elapsed = time.time() - start_time
+                        if total_elapsed >= bookmark_stopwatch_length and not purchase_successful:
+                            print(f"⏰ DRIVER {driver_num}: purchase failed for listing {url} - timed out")
                         
-                        # Check time again
-                        if time.time() - first_click_time >= bookmark_stopwatch_length:
-                            print(f"⏰ DRIVER {driver_num}: Time elapsed during wait, stopping")
-                            break
+                else:
+                    print(f"🚚 DRIVER {driver_num}: actually_purchase_listing is FALSE - using original shipping logic")
+                    
+                    # Original shipping logic
+                    try:
+                        pickup_point_header = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.XPATH, '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'))
+                        )
+                        print(f"✅ DRIVER {driver_num}: Shipping page loaded")
                         
-                        # Click "Ship to home"
-                        try:
-                            ship_to_home = driver.find_element(
-                                By.XPATH, 
-                                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
-                            )
-                            ship_to_home.click()
-                            print(f"🏠 DRIVER {driver_num}: Clicked 'Ship to home'")
-                        except Exception as e:
-                            print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to home': {e}")
+                        # Record start time for alternating clicks
+                        first_click_time = time.time()
                         
-                        # Wait
-                        time.sleep(buying_driver_click_pay_wait_time)
-                
-                except TimeoutException:
-                    print(f"⚠️ DRIVER {driver_num}: Timeout waiting for shipping page")
-                
+                        print(f"🔄 DRIVER {driver_num}: Starting {bookmark_stopwatch_length}s alternating click sequence")
+                        
+                        while True:
+                            # Check if time elapsed
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                print(f"⏰ DRIVER {driver_num}: {bookmark_stopwatch_length} seconds elapsed, stopping")
+                                break
+                            
+                            # Click "Ship to pick-up point"
+                            try:
+                                pickup_point = driver.find_element(
+                                    By.XPATH, 
+                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
+                                )
+                                pickup_point.click()
+                                print(f"📦 DRIVER {driver_num}: Clicked 'Ship to pick-up point'")
+                            except Exception as e:
+                                print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to pick-up point': {e}")
+                            
+                            # Wait
+                            time.sleep(buying_driver_click_pay_wait_time)
+                            
+                            # Check time again
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                print(f"⏰ DRIVER {driver_num}: Time elapsed during wait, stopping")
+                                break
+                            
+                            # Click "Ship to home"
+                            try:
+                                ship_to_home = driver.find_element(
+                                    By.XPATH, 
+                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
+                                )
+                                ship_to_home.click()
+                                print(f"🏠 DRIVER {driver_num}: Clicked 'Ship to home'")
+                            except Exception as e:
+                                print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to home': {e}")
+                            
+                            # Wait
+                            time.sleep(buying_driver_click_pay_wait_time)
+                    
+                    except TimeoutException:
+                        print(f"⚠️ DRIVER {driver_num}: Timeout waiting for shipping page")
             else:
                 print(f"❌ DRIVER {driver_num}: Buy now button not found")
             
@@ -2080,122 +2199,3 @@ class VintedScraper:
                 '//button[@data-testid="item-buy-button"]',
                 '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
                 '//span[text()="Buy now"]/ancestor::button'
-            ]
-            
-            buy_button = None
-            used_selector = None
-            
-            for selector in buy_selectors:
-                try:
-                    print(f"🔍 FAST: Trying selector: {selector}")
-                    
-                    if selector.startswith('//'):
-                        # XPath selector
-                        buy_button = WebDriverWait(self.persistent_buying_driver, 2).until(
-                            EC.element_to_be_clickable((By.XPATH, selector))
-                        )
-                    else:
-                        # CSS selector
-                        buy_button = WebDriverWait(self.persistent_buying_driver, 2).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                        )
-                    
-                    used_selector = selector
-                    print(f"✅ FAST: Found Buy now button with selector: {selector}")
-                    break
-                    
-                except TimeoutException:
-                    print(f"❌ FAST: Selector failed: {selector}")
-                    continue
-                except Exception as e:
-                    print(f"❌ FAST: Selector error: {selector} - {e}")
-                    continue
-            
-            if buy_button:
-                try:
-                    # Try multiple click methods
-                    print(f"🔘 FAST: Attempting to click Buy now button...")
-                    
-                    # Method 1: Standard click
-                    try:
-                        buy_button.click()
-                        print("✅ FAST: Standard click successful")
-                    except Exception as e:
-                        print(f"❌ FAST: Standard click failed: {e}")
-                        
-                        # Method 2: JavaScript click
-                        try:
-                            self.persistent_buying_driver.execute_script("arguments[0].click();", buy_button)
-                            print("✅ FAST: JavaScript click successful")
-                        except Exception as e:
-                            print(f"❌ FAST: JavaScript click failed: {e}")
-                            
-                            # Method 3: ActionChains click
-                            try:
-                                from selenium.webdriver.common.action_chains import ActionChains
-                                ActionChains(self.persistent_buying_driver).move_to_element(buy_button).click().perform()
-                                print("✅ FAST: ActionChains click successful")
-                            except Exception as e:
-                                print(f"❌ FAST: ActionChains click failed: {e}")
-                                raise Exception("All click methods failed")
-                    
-                    # Wait for next page to load - look for "Ship to pick-up point"
-                    print("🔍 FAST: Waiting for shipping page to load...")
-                    try:
-                        pickup_point_header = WebDriverWait(self.persistent_buying_driver, 10).until(
-                            EC.presence_of_element_located((By.XPATH, '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'))
-                        )
-                        print("✅ FAST: Shipping page loaded")
-                        
-                        # Record the time when the first click happens
-                        first_click_time = time.time()
-                        
-                        # Start the alternating clicking loop
-                        print("🔄 FAST: Starting alternating click sequence...")
-                        
-                        while True:
-                            # Check if bookmark_stopwatch_length time has elapsed
-                            if time.time() - first_click_time >= bookmark_stopwatch_length:
-                                print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
-                                break
-                            
-                            # Click "Ship to pick-up point"
-                            try:
-                                pickup_point = self.persistent_buying_driver.find_element(
-                                    By.XPATH, 
-                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
-                                )
-                                pickup_point.click()
-                                print("📦 FAST: Clicked 'Ship to pick-up point'")
-                            except (NoSuchElementException, Exception) as e:
-                                print(f"⚠️ FAST: Could not click 'Ship to pick-up point': {e}")
-                            
-                            # Wait the specified time
-                            time.sleep(buying_driver_click_pay_wait_time)
-                            
-                            # Check time again before next click
-                            if time.time() - first_click_time >= bookmark_stopwatch_length:
-                                print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
-                                break
-                            
-                            # Click "Ship to home"
-                            try:
-                                ship_to_home = self.persistent_buying_driver.find_element(
-                                    By.XPATH, 
-                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
-                                )
-                                ship_to_home.click()
-                                print("🏠 FAST: Clicked 'Ship to home'")
-                            except (NoSuchElementException, Exception) as e:
-                                print(f"⚠️ FAST: Could not click 'Ship to home': {e}")
-                            
-                            # Wait the specified time
-                            time.sleep(buying_driver_click_pay_wait_time)
-                    
-                    except TimeoutException:
-                        print("⚠️ FAST: Timeout waiting for shipping page to load")
-                    except Exception as e:
-                        print(f"❌ FAST: Error during shipping page interaction: {e}")
-                except Exception as click_e:
-                    print(f"❌ FAST: Error clicking Buy now button: {click_e}")
-            else:
