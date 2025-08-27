@@ -55,9 +55,9 @@ click_pay_button_final_check = False
 test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
 bookmark_stopwatch_length = 500
 buying_driver_click_pay_wait_time = 5
-actually_purchase_listing = False
-test_purchase_not_true = True #just tests the buying function using the url below
-test_purchase_url = "https://www.vinted.co.uk/items/6951780860-nintendo-switch-case?homepage_session_id=b5966afa-d833-4a5b-83b1-351ed8660796"
+actually_purchase_listing = True
+test_purchase_not_true = True #uses the url below rather than the one from the web page
+test_purchase_url = "https://www.vinted.co.uk/items/6952619780-nintendo-ds-lite-charger-cable-dsl?homepage_session_id=d6cf09db-4bff-4fcc-9dcf-e8bddb779916"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
 # Config
@@ -154,7 +154,7 @@ recent_listings = {
 
 review_min = 1
 MAX_LISTINGS_TO_SCAN = 50
-REFRESH_AND_RESCAN = False  # Set to False to disable refresh functionality
+REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
 MAX_LISTINGS_VINTED_TO_SCAN = 6  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 10  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"

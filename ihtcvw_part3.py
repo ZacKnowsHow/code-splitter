@@ -1,4 +1,123 @@
 # Continuation from line 4401
+            ]
+            
+            buy_button = None
+            used_selector = None
+            
+            for selector in buy_selectors:
+                try:
+                    print(f"🔍 FAST: Trying selector: {selector}")
+                    
+                    if selector.startswith('//'):
+                        # XPath selector
+                        buy_button = WebDriverWait(self.persistent_buying_driver, 2).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        # CSS selector
+                        buy_button = WebDriverWait(self.persistent_buying_driver, 2).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                    
+                    used_selector = selector
+                    print(f"✅ FAST: Found Buy now button with selector: {selector}")
+                    break
+                    
+                except TimeoutException:
+                    print(f"❌ FAST: Selector failed: {selector}")
+                    continue
+                except Exception as e:
+                    print(f"❌ FAST: Selector error: {selector} - {e}")
+                    continue
+            
+            if buy_button:
+                try:
+                    # Try multiple click methods
+                    print(f"🔘 FAST: Attempting to click Buy now button...")
+                    
+                    # Method 1: Standard click
+                    try:
+                        buy_button.click()
+                        print("✅ FAST: Standard click successful")
+                    except Exception as e:
+                        print(f"❌ FAST: Standard click failed: {e}")
+                        
+                        # Method 2: JavaScript click
+                        try:
+                            self.persistent_buying_driver.execute_script("arguments[0].click();", buy_button)
+                            print("✅ FAST: JavaScript click successful")
+                        except Exception as e:
+                            print(f"❌ FAST: JavaScript click failed: {e}")
+                            
+                            # Method 3: ActionChains click
+                            try:
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                ActionChains(self.persistent_buying_driver).move_to_element(buy_button).click().perform()
+                                print("✅ FAST: ActionChains click successful")
+                            except Exception as e:
+                                print(f"❌ FAST: ActionChains click failed: {e}")
+                                raise Exception("All click methods failed")
+                    
+                    # Wait for next page to load - look for "Ship to pick-up point"
+                    print("🔍 FAST: Waiting for shipping page to load...")
+                    try:
+                        pickup_point_header = WebDriverWait(self.persistent_buying_driver, 10).until(
+                            EC.presence_of_element_located((By.XPATH, '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'))
+                        )
+                        print("✅ FAST: Shipping page loaded")
+                        
+                        # Record the time when the first click happens
+                        first_click_time = time.time()
+                        
+                        # Start the alternating clicking loop
+                        print("🔄 FAST: Starting alternating click sequence...")
+                        
+                        while True:
+                            # Check if bookmark_stopwatch_length time has elapsed
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
+                                break
+                            
+                            # Click "Ship to pick-up point"
+                            try:
+                                pickup_point = self.persistent_buying_driver.find_element(
+                                    By.XPATH, 
+                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
+                                )
+                                pickup_point.click()
+                                print("📦 FAST: Clicked 'Ship to pick-up point'")
+                            except (NoSuchElementException, Exception) as e:
+                                print(f"⚠️ FAST: Could not click 'Ship to pick-up point': {e}")
+                            
+                            # Wait the specified time
+                            time.sleep(buying_driver_click_pay_wait_time)
+                            
+                            # Check time again before next click
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
+                                break
+                            
+                            # Click "Ship to home"
+                            try:
+                                ship_to_home = self.persistent_buying_driver.find_element(
+                                    By.XPATH, 
+                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
+                                )
+                                ship_to_home.click()
+                                print("🏠 FAST: Clicked 'Ship to home'")
+                            except (NoSuchElementException, Exception) as e:
+                                print(f"⚠️ FAST: Could not click 'Ship to home': {e}")
+                            
+                            # Wait the specified time
+                            time.sleep(buying_driver_click_pay_wait_time)
+                    
+                    except TimeoutException:
+                        print("⚠️ FAST: Timeout waiting for shipping page to load")
+                    except Exception as e:
+                        print(f"❌ FAST: Error during shipping page interaction: {e}")
+                except Exception as click_e:
+                    print(f"❌ FAST: Error clicking Buy now button: {click_e}")
+            else:
                 print("⚠️ FAST: Buy now button not found with any selector")
                 # DEBUGGING: Print page source snippet to help diagnose
                 try:
