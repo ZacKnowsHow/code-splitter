@@ -1,4 +1,74 @@
 # Continuation from line 4401
+        except Exception as e:
+            print(f"❌ DRIVER {driver_num}: Error processing {url}: {e}")
+            
+            # Try to recover by switching back to main tab
+            try:
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+            except:
+                print(f"⚠️ DRIVER {driver_num}: Could not recover to main tab")
+        
+        finally:
+            # CRITICAL FIX: Always release the driver when done
+            self.release_driver(driver_num)
+
+    def cleanup_all_buying_drivers(self):
+        """
+        FIXED: Clean up all buying drivers when program exits
+        """
+        print("🧹 CLEANUP: Closing all buying drivers")
+        
+        with self.driver_lock:
+            for driver_num in range(1, 6):
+                if self.buying_drivers[driver_num] is not None:
+                    try:
+                        print(f"🗑️ CLEANUP: Closing buying driver {driver_num}")
+                        self.buying_drivers[driver_num].quit()
+                        time.sleep(0.2)  # Brief pause between closures
+                        print(f"✅ CLEANUP: Closed buying driver {driver_num}")
+                    except Exception as e:
+                        print(f"⚠️ CLEANUP: Error closing driver {driver_num}: {e}")
+                    finally:
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'not_created'
+        
+        print("✅ CLEANUP: All buying drivers closed")
+
+    def check_all_drivers_health(self):
+        """
+        Check the health of all active drivers and recreate dead ones
+        Call this periodically if needed
+        """
+        with self.driver_lock:
+            for driver_num in range(1, 6):
+                if self.buying_drivers[driver_num] is not None and self.driver_status[driver_num] != 'busy':
+                    if self.is_driver_dead(driver_num):
+                        print(f"💀 HEALTH: Driver {driver_num} is dead, marking for recreation")
+                        try:
+                            self.buying_drivers[driver_num].quit()
+                        except:
+                            pass
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'not_created'
+
+
+    def vinted_button_clicked_enhanced(self, url):
+        """
+        FIXED: Enhanced button click handler with better error handling and driver management
+        """
+        print(f"🔘 VINTED BUTTON: Processing {url}")
+        
+        # Check if already clicked to prevent duplicates
+        if url in self.clicked_yes_listings:
+            print(f"🔄 VINTED BUTTON: Listing {url} already processed, ignoring")
+            return
+        
+        # Mark as clicked immediately to prevent race conditions
+        self.clicked_yes_listings.add(url)
+        
+        # FIXED: Better driver acquisition with retry logic
+        max_retries = 3
         retry_count = 0
         
         while retry_count < max_retries:
@@ -783,7 +853,7 @@
         """
         Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
         FIXED: Now passes username to bookmark_driver
-        MODIFIED: Only adds to pygame/website and sends notifications on successful bookmark when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False
+        MODIFIED: Separate logic for pygame and website display - pygame shows all suitable listings with bookmark failure notices
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -936,26 +1006,40 @@
             'seller_reviews': seller_reviews
         }
 
-        # MODIFIED: Add to suitable listings based on new logic
-        should_add_listing = False
+        # SEPARATE logic for pygame and website
+        should_add_to_website = False
+        should_add_to_pygame = True  # Always true for pygame to show suitable listings
         should_send_notification = False
-        # this here stops all of the non bookmarked listings from being added
+
+        # Website logic (current behavior - only successful bookmarks when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False)
         if bookmark_listings and not VINTED_SHOW_ALL_LISTINGS:
             # When bookmark_listings is ON and VINTED_SHOW_ALL_LISTINGS is OFF:
             # Only add/notify if bookmark was successful
             if bookmark_success:
-                should_add_listing = True
+                should_add_to_website = True
                 should_send_notification = True
-                print("✅ Adding listing because bookmark was successful")
+                print("✅ Adding to website because bookmark was successful")
             else:
-                print("❌ Not adding listing because bookmark was not successful")
+                print("❌ Not adding to website because bookmark was not successful")
         else:
             # Original logic for other combinations
             if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-                should_add_listing = True
+                should_add_to_website = True
                 should_send_notification = True
-        
-        if should_add_listing:
+
+        # NEW: Pygame logic (always show suitable listings + bookmark failure info)
+        if VINTED_SHOW_ALL_LISTINGS:
+            should_add_to_pygame = True
+        elif is_suitable:  # Show all suitable listings regardless of bookmark success
+            should_add_to_pygame = True
+
+        # Modify suitability_reason for pygame if bookmark failed
+        pygame_suitability_reason = suitability_reason
+        if should_add_to_pygame and bookmark_listings and is_suitable and not bookmark_success:
+            pygame_suitability_reason = suitability_reason + "\n⚠️ BOOKMARK FAILED"
+
+        # Add to website (existing logic)
+        if should_add_to_website:
             # Send Pushover notification
             if should_send_notification:
                 notification_title = f"New Vinted Listing: £{total_price:.2f}"
@@ -975,22 +1059,30 @@
                         'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
                     )
 
-            suitable_listings.append(final_listing_info)
-
             # Add to recent_listings for website navigation
             recent_listings['listings'].append(final_listing_info)
             # Always set to the last (most recent) listing for website display
             recent_listings['current_index'] = len(recent_listings['listings']) - 1
 
+        # Add to pygame (NEW separate logic)
+        if should_add_to_pygame:
+            # Create pygame-specific listing info with modified suitability
+            pygame_listing_info = final_listing_info.copy()
+            pygame_listing_info['suitability'] = pygame_suitability_reason
+            
+            suitable_listings.append(pygame_listing_info)
             current_listing_index = len(suitable_listings) - 1
-            self.update_listing_details(**final_listing_info)
+            self.update_listing_details(**pygame_listing_info)
 
-            if is_suitable:
-                print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
+            if is_suitable and not bookmark_success and bookmark_listings:
+                print(f"✅ Added suitable listing to pygame with bookmark failure notice: £{total_price:.2f}")
+            elif is_suitable:
+                print(f"✅ Added suitable listing to pygame: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
             else:
-                print(f"➕ Added unsuitable listing (SHOW_ALL mode or successful bookmark): £{total_price:.2f}")
-        else:
-            print(f"❌ Listing not added: {suitability_reason}")
+                print(f"➕ Added unsuitable listing to pygame (SHOW_ALL mode): £{total_price:.2f}")
+
+        if not should_add_to_pygame:
+            print(f"❌ Listing not added to pygame: {suitability_reason}")
 
 
     def check_vinted_profit_suitability(self, listing_price, profit_percentage):

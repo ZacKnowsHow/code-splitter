@@ -1,4 +1,74 @@
 # Continuation from line 2201
+                listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
+                screen.blit(listing_counter, (10, 40))
+
+            pygame.display.flip()
+            clock.tick(30)
+
+        self.save_rectangle_config(rectangles)
+        pygame.quit()
+
+    def setup_chrome_profile_driver(self):
+        # CRITICAL: Ensure NO Chrome instances are open before running
+        
+        # Comprehensive Chrome options
+        chrome_options = webdriver.ChromeOptions()
+        prefs = {
+            "profile.default_content_setting_values.notifications": 2,  # Disable notifications
+            "profile.default_content_setting_values.popups": 0,         # Block popups (default = 0)
+            "download.prompt_for_download": False,                      # Disable download prompt
+        }
+        chrome_options.add_experimental_option("prefs", prefs)
+        
+        # Use a dedicated, isolated user data directory to prevent conflicts.
+        chrome_options.add_argument(f"user-data-dir={SCRAPER_USER_DATA_DIR}")
+        chrome_options.add_argument("profile-directory=Default")
+        #profile 10 is blue orchid
+        #default = laptop
+        #profile 2 = pc
+        
+        # Additional safety options
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--log-level=3")
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        
+        try:
+            # Use specific Chrome driver path
+            service = Service(ChromeDriverManager().install(), log_path=os.devnull)
+            
+            # Create driver with robust error handling
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            
+            # Verify driver is functional
+            print("Scraper Chrome driver successfully initialized!")
+            
+            return driver
+        
+        except Exception as e:
+            print(f"CRITICAL CHROME DRIVER ERROR: {e}")
+            print("Possible solutions:")
+            print("1. Close all Chrome instances")
+            print("2. Verify Chrome profile exists")
+            print("3. Check Chrome and WebDriver versions")
+            sys.exit(1)
+
+
+    def setup_chrome_messaging_driver(self):
+        chrome_options = webdriver.ChromeOptions()
+        prefs = {
+            "profile.default_content_setting_values.notifications": 2,  # Disable notifications
+            "profile.default_content_setting_values.popups": 0,         # Block popups (default = 0)
+            "download.prompt_for_download": False,                      # Disable download prompt
+        }
+        chrome_options.add_experimental_option("prefs", prefs)
+        # Use a separate, dedicated user data directory for the second driver.
+        chrome_options.add_argument(f"user-data-dir={MESSAGING_USER_DATA_DIR}")
+        chrome_options.add_argument("profile-directory=Profile 11")
+        #profile 11 = pc
+        #profile 1 = laptop
+
 
         # Additional options to improve stability
         chrome_options.add_argument("--headless")
@@ -2129,73 +2199,3 @@ class VintedScraper:
             elapsed = time.time() - start_time
             print(f"✅ DRIVER {driver_num}: Completed processing in {elapsed:.2f} seconds")
             
-        except Exception as e:
-            print(f"❌ DRIVER {driver_num}: Error processing {url}: {e}")
-            
-            # Try to recover by switching back to main tab
-            try:
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                print(f"⚠️ DRIVER {driver_num}: Could not recover to main tab")
-        
-        finally:
-            # CRITICAL FIX: Always release the driver when done
-            self.release_driver(driver_num)
-
-    def cleanup_all_buying_drivers(self):
-        """
-        FIXED: Clean up all buying drivers when program exits
-        """
-        print("🧹 CLEANUP: Closing all buying drivers")
-        
-        with self.driver_lock:
-            for driver_num in range(1, 6):
-                if self.buying_drivers[driver_num] is not None:
-                    try:
-                        print(f"🗑️ CLEANUP: Closing buying driver {driver_num}")
-                        self.buying_drivers[driver_num].quit()
-                        time.sleep(0.2)  # Brief pause between closures
-                        print(f"✅ CLEANUP: Closed buying driver {driver_num}")
-                    except Exception as e:
-                        print(f"⚠️ CLEANUP: Error closing driver {driver_num}: {e}")
-                    finally:
-                        self.buying_drivers[driver_num] = None
-                        self.driver_status[driver_num] = 'not_created'
-        
-        print("✅ CLEANUP: All buying drivers closed")
-
-    def check_all_drivers_health(self):
-        """
-        Check the health of all active drivers and recreate dead ones
-        Call this periodically if needed
-        """
-        with self.driver_lock:
-            for driver_num in range(1, 6):
-                if self.buying_drivers[driver_num] is not None and self.driver_status[driver_num] != 'busy':
-                    if self.is_driver_dead(driver_num):
-                        print(f"💀 HEALTH: Driver {driver_num} is dead, marking for recreation")
-                        try:
-                            self.buying_drivers[driver_num].quit()
-                        except:
-                            pass
-                        self.buying_drivers[driver_num] = None
-                        self.driver_status[driver_num] = 'not_created'
-
-
-    def vinted_button_clicked_enhanced(self, url):
-        """
-        FIXED: Enhanced button click handler with better error handling and driver management
-        """
-        print(f"🔘 VINTED BUTTON: Processing {url}")
-        
-        # Check if already clicked to prevent duplicates
-        if url in self.clicked_yes_listings:
-            print(f"🔄 VINTED BUTTON: Listing {url} already processed, ignoring")
-            return
-        
-        # Mark as clicked immediately to prevent race conditions
-        self.clicked_yes_listings.add(url)
-        
-        # FIXED: Better driver acquisition with retry logic
-        max_retries = 3
