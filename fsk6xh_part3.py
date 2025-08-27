@@ -1,4 +1,107 @@
 # Continuation from line 4401
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            driver_num, driver = self.get_available_driver()
+            
+            if driver is not None:
+                # Successfully got a driver, process in separate thread
+                processing_thread = threading.Thread(
+                    target=self.process_single_listing_with_driver,
+                    args=(url, driver_num, driver)
+                )
+                processing_thread.daemon = True
+                processing_thread.start()
+                return
+            
+            # No driver available, wait and retry
+            retry_count += 1
+            print(f"❌ RETRY {retry_count}/{max_retries}: All drivers busy, waiting 2 seconds...")
+            time.sleep(2)
+        
+        # If we get here, all retries failed
+        print(f"❌ FAILED: Could not get available driver after {max_retries} retries")
+        # Remove from clicked list so they can try again later
+        self.clicked_yes_listings.discard(url)
+
+    def process_vinted_button_queue(self):
+        """
+        ULTRA-FAST queue processor using persistent driver with tabs
+        """
+        self.vinted_processing_active.set()
+        
+        # Ensure persistent driver is ready
+        if not self.setup_persistent_buying_driver():
+            print("❌ QUEUE: Cannot process - persistent driver setup failed")
+            self.vinted_processing_active.clear()
+            return
+        
+        print("🚀 QUEUE: Starting ultra-fast processing...")
+        
+        while not self.vinted_button_queue.empty():
+            try:
+                url = self.vinted_button_queue.get_nowait()
+                self.handle_single_vinted_button_request_fast(url)
+                self.vinted_button_queue.task_done()
+            except queue.Empty:
+                break
+            except Exception as e:
+                print(f"❌ QUEUE: Error processing request: {e}")
+                continue
+        
+        print("✅ QUEUE: All requests processed!")
+        self.vinted_processing_active.clear()
+
+    def handle_single_vinted_button_request_fast(self, url):
+        """
+        ULTRA-FAST single request handler with button clicking functionality
+        FIXED: Updated Buy now button selectors and added fallback methods
+        """
+        import time
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.common.exceptions import TimeoutException, NoSuchElementException
+        
+        start_time = time.time()
+        
+        try:
+            # Verify driver is still alive
+            self.persistent_buying_driver.current_url
+    
+
+            print(f"🔥 FAST: Processing {url}")
+            
+            # Open new tab
+            self.persistent_buying_driver.execute_script("window.open('');")
+            new_tab = self.persistent_buying_driver.window_handles[-1]
+            self.persistent_buying_driver.switch_to.window(new_tab)
+            
+            # Navigate to URL
+            self.persistent_buying_driver.get(url)
+            
+            # Wait for page to load
+            print("⏱️ FAST: Waiting for page to load...")
+            time.sleep(2)
+            
+            # FIXED: Updated Buy now button selectors
+            print("🔘 FAST: Looking for Buy now button...")
+            
+            # Try multiple selectors based on the HTML you provided
+            buy_selectors = [
+                # Your exact HTML structure
+                'button[data-testid="item-buy-button"]',
+                # Alternative selectors that match the class structure
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                'button.web_ui__Button__button[data-testid="item-buy-button"]',
+                # Broader selectors as fallbacks
+                'button[data-testid="item-buy-button"] span.web_ui__Button__label',
+                'button:has(span.web_ui__Button__label:contains("Buy now"))',
+                'button .web_ui__Button__label:contains("Buy now")',
+                # XPath selectors for more precise matching
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+                '//span[text()="Buy now"]/ancestor::button'
             ]
             
             buy_button = None
