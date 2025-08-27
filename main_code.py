@@ -4070,7 +4070,7 @@ class VintedScraper:
             chrome_opts.add_argument("--no-sandbox")
             chrome_opts.add_argument("--disable-dev-shm-usage")
             chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument(f"--user-data-dir={VINTED_BUYING_USER_DATA_DIR}")
+            chrome_opts.add_argument(f"--user-data-dir=C:\VintedBuyer")
             chrome_opts.add_argument(f"--profile-directory=Default")
             
             self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
