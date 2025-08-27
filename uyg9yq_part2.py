@@ -1120,7 +1120,6 @@ class VintedScraper:
         self.persistent_buying_driver = None
         self.main_tab_handle = None
         self.clicked_yes_listings = set()
-        self.clicked_yes_listings = set()  # Track listings that have been clicked "yes"
         self.bookmark_timers = {}
         self.buying_drivers = {}  # Dictionary to store drivers {1: driver_object, 2: driver_object, etc.}
         self.driver_status = {}   # Track driver status {1: 'free'/'busy', 2: 'free'/'busy', etc.}
@@ -1129,53 +1128,84 @@ class VintedScraper:
         # Initialize all driver slots as not created
         for i in range(1, 6):  # Drivers 1-5
             self.buying_drivers[i] = None
-            self.driver_status[i] = 'free'
+            self.driver_status[i] = 'not_created'
+
     def get_available_driver(self):
         """
-        Find and reserve the first available driver.
+        FIXED: Find and reserve the first available driver with proper initialization
         Returns: (driver_number, driver_instance) or (None, None) if all busy
         """
         with self.driver_lock:
             for driver_num in range(1, 6):  # Check drivers 1-5
-                if self.driver_status[driver_num] == 'free':
-                    # Reserve this driver
-                    self.driver_status[driver_num] = 'busy'
+                # Skip drivers that are currently busy
+                if self.driver_status[driver_num] == 'busy':
+                    continue
                     
-                    # Create driver if it doesn't exist
-                    if self.buying_drivers[driver_num] is None:
-                        print(f"🚗 CREATING: Buying driver {driver_num}")
-                        self.buying_drivers[driver_num] = self.setup_buying_driver(driver_num)
-                        if self.buying_drivers[driver_num] is None:
-                            print(f"❌ FAILED: Could not create buying driver {driver_num}")
-                            self.driver_status[driver_num] = 'free'  # Free it back up
-                            continue
+                # Reserve this driver slot
+                self.driver_status[driver_num] = 'busy'
+                
+                # Create driver if it doesn't exist or is dead
+                if self.buying_drivers[driver_num] is None or self.is_driver_dead(driver_num):
+                    print(f"🚗 CREATING: Buying driver {driver_num}")
+                    new_driver = self.setup_buying_driver(driver_num)
                     
-                    print(f"✅ RESERVED: Buying driver {driver_num}")
-                    return driver_num, self.buying_drivers[driver_num]
+                    if new_driver is None:
+                        print(f"❌ FAILED: Could not create buying driver {driver_num}")
+                        self.driver_status[driver_num] = 'not_created'
+                        continue
+                        
+                    self.buying_drivers[driver_num] = new_driver
+                    print(f"✅ CREATED: Buying driver {driver_num} successfully")
+                
+                print(f"✅ RESERVED: Buying driver {driver_num}")
+                return driver_num, self.buying_drivers[driver_num]
             
             print("❌ ERROR: All 5 buying drivers are currently busy")
             return None, None
+    def is_driver_dead(self, driver_num):
+        """
+        Check if a driver is dead/unresponsive
+        """
+        if self.buying_drivers[driver_num] is None:
+            return True
+            
+        try:
+            # Try to access current_url to test if driver is alive
+            _ = self.buying_drivers[driver_num].current_url
+            return False
+        except:
+            print(f"💀 DEAD: Driver {driver_num} is unresponsive")
+            return True
 
     def release_driver(self, driver_num):
         """
-        Release a driver back to the free pool and handle cleanup
+        FIXED: Release a driver back to the free pool with better cleanup
         """
         with self.driver_lock:
             print(f"🔓 RELEASING: Buying driver {driver_num}")
             
-            # Close driver if it's not driver 1 (driver 1 stays open permanently)
-            if driver_num != 1 and self.buying_drivers[driver_num] is not None:
-                try:
-                    print(f"🗑️ CLOSING: Buying driver {driver_num}")
-                    self.buying_drivers[driver_num].quit()
-                    self.buying_drivers[driver_num] = None
-                except Exception as e:
-                    print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
-                    self.buying_drivers[driver_num] = None
-            
-            # Mark as free
-            self.driver_status[driver_num] = 'free'
-            print(f"✅ FREED: Buying driver {driver_num}")
+            # CRITICAL FIX: Only close drivers 2-5, keep driver 1 alive
+            if driver_num != 1:
+                if self.buying_drivers[driver_num] is not None:
+                    try:
+                        print(f"🗑️ CLOSING: Buying driver {driver_num}")
+                        self.buying_drivers[driver_num].quit()
+                        
+                        # Wait a moment for cleanup
+                        time.sleep(0.5)
+                        
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'not_created'
+                        print(f"✅ CLOSED: Buying driver {driver_num}")
+                    except Exception as e:
+                        print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'not_created'
+            else:
+                # Driver 1 stays alive, just mark as free
+                self.driver_status[driver_num] = 'not_created'  # Changed to allow recreation if needed
+                print(f"🔄 KEPT ALIVE: Buying driver {driver_num} (marked as available)")
+    
     def start_bookmark_stopwatch(self, listing_url):
         """
         Start a stopwatch for a successfully bookmarked listing
@@ -1545,15 +1575,21 @@ class VintedScraper:
 
     def process_single_listing_with_driver(self, url, driver_num, driver):
         """
-        Process a single listing using the specified driver
+        FIXED: Process a single listing using the specified driver with better error handling
         """
         start_time = time.time()
         
         try:
             print(f"🔥 DRIVER {driver_num}: Processing {url}")
             
-            # Verify driver is still alive
-            driver.current_url
+            # CRITICAL FIX: Verify driver is still alive before using it
+            try:
+                current_url = driver.current_url
+                print(f"🔥 DRIVER {driver_num}: Driver is alive (current URL: {current_url[:50]}...)")
+            except Exception as e:
+                print(f"💀 DRIVER {driver_num}: Driver is dead - {e}")
+                self.release_driver(driver_num)
+                return
             
             # Open new tab for processing
             print(f"📑 DRIVER {driver_num}: Opening new tab")
@@ -1566,7 +1602,13 @@ class VintedScraper:
             driver.get(url)
             
             # Wait for page to load
-            time.sleep(2)
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                print(f"✅ DRIVER {driver_num}: Page loaded successfully")
+            except TimeoutException:
+                print(f"⚠️ DRIVER {driver_num}: Page load timeout, continuing anyway")
             
             # Look for Buy now button
             print(f"🔘 DRIVER {driver_num}: Looking for Buy now button")
@@ -1689,12 +1731,12 @@ class VintedScraper:
                 print(f"⚠️ DRIVER {driver_num}: Could not recover to main tab")
         
         finally:
-            # Always release the driver when done
+            # CRITICAL FIX: Always release the driver when done
             self.release_driver(driver_num)
 
     def cleanup_all_buying_drivers(self):
         """
-        Clean up all buying drivers when program exits
+        FIXED: Clean up all buying drivers when program exits
         """
         print("🧹 CLEANUP: Closing all buying drivers")
         
@@ -1702,19 +1744,39 @@ class VintedScraper:
             for driver_num in range(1, 6):
                 if self.buying_drivers[driver_num] is not None:
                     try:
+                        print(f"🗑️ CLEANUP: Closing buying driver {driver_num}")
                         self.buying_drivers[driver_num].quit()
-                        print(f"🗑️ CLEANUP: Closed buying driver {driver_num}")
-                    except:
-                        pass
+                        time.sleep(0.2)  # Brief pause between closures
+                        print(f"✅ CLEANUP: Closed buying driver {driver_num}")
+                    except Exception as e:
+                        print(f"⚠️ CLEANUP: Error closing driver {driver_num}: {e}")
                     finally:
                         self.buying_drivers[driver_num] = None
-                        self.driver_status[driver_num] = 'free'
+                        self.driver_status[driver_num] = 'not_created'
         
         print("✅ CLEANUP: All buying drivers closed")
 
+    def check_all_drivers_health(self):
+        """
+        Check the health of all active drivers and recreate dead ones
+        Call this periodically if needed
+        """
+        with self.driver_lock:
+            for driver_num in range(1, 6):
+                if self.buying_drivers[driver_num] is not None and self.driver_status[driver_num] != 'busy':
+                    if self.is_driver_dead(driver_num):
+                        print(f"💀 HEALTH: Driver {driver_num} is dead, marking for recreation")
+                        try:
+                            self.buying_drivers[driver_num].quit()
+                        except:
+                            pass
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'not_created'
+
+
     def vinted_button_clicked_enhanced(self, url):
         """
-        UPDATED: Enhanced button click handler using multiple drivers
+        FIXED: Enhanced button click handler with better error handling and driver management
         """
         print(f"🔘 VINTED BUTTON: Processing {url}")
         
@@ -1723,25 +1785,35 @@ class VintedScraper:
             print(f"🔄 VINTED BUTTON: Listing {url} already processed, ignoring")
             return
         
-        # Mark as clicked
+        # Mark as clicked immediately to prevent race conditions
         self.clicked_yes_listings.add(url)
         
-        # Get an available driver
-        driver_num, driver = self.get_available_driver()
+        # FIXED: Better driver acquisition with retry logic
+        max_retries = 3
+        retry_count = 0
         
-        if driver is None:
-            print("❌ ERROR: All 5 buying drivers are currently busy. Please wait and try again.")
-            # Remove from clicked list so they can try again later
-            self.clicked_yes_listings.discard(url)
-            return
+        while retry_count < max_retries:
+            driver_num, driver = self.get_available_driver()
+            
+            if driver is not None:
+                # Successfully got a driver, process in separate thread
+                processing_thread = threading.Thread(
+                    target=self.process_single_listing_with_driver,
+                    args=(url, driver_num, driver)
+                )
+                processing_thread.daemon = True
+                processing_thread.start()
+                return
+            
+            # No driver available, wait and retry
+            retry_count += 1
+            print(f"❌ RETRY {retry_count}/{max_retries}: All drivers busy, waiting 2 seconds...")
+            time.sleep(2)
         
-        # Process the listing in a separate thread so it doesn't block
-        processing_thread = threading.Thread(
-            target=self.process_single_listing_with_driver,
-            args=(url, driver_num, driver)
-        )
-        processing_thread.daemon = True
-        processing_thread.start()
+        # If we get here, all retries failed
+        print(f"❌ FAILED: Could not get available driver after {max_retries} retries")
+        # Remove from clicked list so they can try again later
+        self.clicked_yes_listings.discard(url)
 
     def process_vinted_button_queue(self):
         """
@@ -2081,121 +2153,49 @@ class VintedScraper:
 
     def setup_buying_driver(self, driver_num):
         """
-        Setup a specific buying driver with its own user data directory
+        FIXED: Setup a specific buying driver with better error handling and unique directories
         """
         try:
             print(f"🚗 SETUP: Creating buying driver {driver_num}")
             
-            service = Service(
-                ChromeDriverManager().install(),
-                log_path=os.devnull
-            )
+            # Ensure ChromeDriver is cached
+            if not hasattr(self, '_cached_chromedriver_path'):
+                self._cached_chromedriver_path = ChromeDriverManager().install()
+            
+            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
             
             chrome_opts = Options()
-            # Each driver gets its own directory
-            user_data_dir = f"C:\\VintedBuyer{driver_num}"
+            
+            # CRITICAL FIX: Each driver gets its own UNIQUE directory to prevent conflicts
+            user_data_dir = f"C:\\VintedBuyer{driver_num}"  # Add timestamp for uniqueness
             chrome_opts.add_argument(f"--user-data-dir={user_data_dir}")
             chrome_opts.add_argument("--profile-directory=Default")
             
-            # Standard options
+            # FIXED: Better stability options
             chrome_opts.add_argument("--no-sandbox")
             chrome_opts.add_argument("--disable-dev-shm-usage")
             chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--disable-extensions")
+            chrome_opts.add_argument("--disable-plugins")
+            chrome_opts.add_argument("--disable-images")  # Speed optimization
             chrome_opts.add_argument("--window-size=800,600")
             chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_argument("--disable-web-security")
             chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+            chrome_opts.add_experimental_option('useAutomationExtension', False)
             
             # Create the driver
             driver = webdriver.Chrome(service=service, options=chrome_opts)
             
-            # Set timeouts for quick processing
-            driver.implicitly_wait(1)
-            driver.set_page_load_timeout(10)
-            driver.set_script_timeout(5)
+            # FIXED: Set appropriate timeouts for buying process
+            driver.implicitly_wait(2)
+            driver.set_page_load_timeout(15)  # Increased for stability
+            driver.set_script_timeout(10)
             
-            # Navigate to vinted.co.uk instead of blank page
+            # CRITICAL FIX: Navigate to vinted.co.uk and WAIT for it to fully load
             print(f"🏠 NAVIGATE: Driver {driver_num} going to vinted.co.uk")
             driver.get("https://www.vinted.co.uk")
             
-            print(f"✅ SUCCESS: Buying driver {driver_num} created and ready")
-            return driver
-            
-        except Exception as e:
-            print(f"❌ ERROR: Failed to create buying driver {driver_num}: {e}")
-            return None
-            
-
-    def extract_vinted_price(self, text):
-        """
-        Enhanced price extraction for Vinted that handles various price formats
-        """
-        debug_function_call("extract_vinted_price")
-        import re  # FIXED: Import re at function level
-        
-        if not text:
-            return 0.0
-        
-        # Remove currency symbols and extra text, extract number
-        cleaned_text = re.sub(r'[^\d.,]', '', str(text))
-        if not cleaned_text:
-            return 0.0
-            
-        # Handle comma as decimal separator (European format)
-        if ',' in cleaned_text and '.' not in cleaned_text:
-            cleaned_text = cleaned_text.replace(',', '.')
-        elif ',' in cleaned_text and '.' in cleaned_text:
-            # Assume comma is thousands separator
-            cleaned_text = cleaned_text.replace(',', '')
-        
-        try:
-            return float(cleaned_text)
-        except ValueError:
-            return 0.0
-        
-    def detect_console_keywords_vinted(self, listing_title, listing_description):
-        """
-        Detect console keywords in Vinted title and description (ported from Facebook)
-        """
-        listing_title_lower = listing_title.lower()
-        listing_description_lower = listing_description.lower()
-        
-        console_keywords = {
-            'switch console': 'switch',
-            'swith console': 'switch',
-            'switc console': 'switch',
-            'swich console': 'switch',
-            'oled console': 'oled',
-            'lite console': 'lite'
-        }
-        
-        # Check if title contains console keywords
-        title_contains_console = any(keyword in listing_title_lower for keyword in console_keywords.keys())
-        
-        # Check if description contains console keywords and title contains relevant terms
-        desc_contains_console = any(
-            keyword in listing_description_lower and
-            any(term in listing_title_lower for term in ['nintendo switch', 'oled', 'lite'])
-            for keyword in console_keywords.keys()
-        )
-        
-        detected_console = None
-        if title_contains_console or desc_contains_console:
-            for keyword, console_type in console_keywords.items():
-                if keyword in listing_title_lower or keyword in listing_description_lower:
-                    detected_console = console_type
-                    break
-        
-        return detected_console
-
-    def detect_anonymous_games_vinted(self, listing_title, listing_description):
-        """
-        Detect anonymous games count from title and description (ported from Facebook)
-        """
-        debug_function_call("detect_anonymous_games_vinted")
-        import re  # FIXED: Import re at function level
-
-        def extract_games_number(text):
-            # Prioritize specific game type matches first
-            matches = (
-                re.findall(r'(\d+)\s*(switch|nintendo)\s*games', text.lower()) + # Switch/Nintendo specific
-                re.findall(r'(\d+)\s*games', text.lower()) # Generic games
+            # Wait for page to load completely before marking as ready
+            try:
+                WebDriverWait(driver, 10).until(

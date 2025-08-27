@@ -1,4 +1,91 @@
 # Continuation from line 4401
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                print(f"✅ SUCCESS: Buying driver {driver_num} fully loaded and ready")
+            except TimeoutException:
+                print(f"⚠️ WARNING: Driver {driver_num} loaded but page may not be fully ready")
+            
+            return driver
+            
+        except Exception as e:
+            print(f"❌ ERROR: Failed to create buying driver {driver_num}: {e}")
+            return None
+            
+
+    def extract_vinted_price(self, text):
+        """
+        Enhanced price extraction for Vinted that handles various price formats
+        """
+        debug_function_call("extract_vinted_price")
+        import re  # FIXED: Import re at function level
+        
+        if not text:
+            return 0.0
+        
+        # Remove currency symbols and extra text, extract number
+        cleaned_text = re.sub(r'[^\d.,]', '', str(text))
+        if not cleaned_text:
+            return 0.0
+            
+        # Handle comma as decimal separator (European format)
+        if ',' in cleaned_text and '.' not in cleaned_text:
+            cleaned_text = cleaned_text.replace(',', '.')
+        elif ',' in cleaned_text and '.' in cleaned_text:
+            # Assume comma is thousands separator
+            cleaned_text = cleaned_text.replace(',', '')
+        
+        try:
+            return float(cleaned_text)
+        except ValueError:
+            return 0.0
+        
+    def detect_console_keywords_vinted(self, listing_title, listing_description):
+        """
+        Detect console keywords in Vinted title and description (ported from Facebook)
+        """
+        listing_title_lower = listing_title.lower()
+        listing_description_lower = listing_description.lower()
+        
+        console_keywords = {
+            'switch console': 'switch',
+            'swith console': 'switch',
+            'switc console': 'switch',
+            'swich console': 'switch',
+            'oled console': 'oled',
+            'lite console': 'lite'
+        }
+        
+        # Check if title contains console keywords
+        title_contains_console = any(keyword in listing_title_lower for keyword in console_keywords.keys())
+        
+        # Check if description contains console keywords and title contains relevant terms
+        desc_contains_console = any(
+            keyword in listing_description_lower and
+            any(term in listing_title_lower for term in ['nintendo switch', 'oled', 'lite'])
+            for keyword in console_keywords.keys()
+        )
+        
+        detected_console = None
+        if title_contains_console or desc_contains_console:
+            for keyword, console_type in console_keywords.items():
+                if keyword in listing_title_lower or keyword in listing_description_lower:
+                    detected_console = console_type
+                    break
+        
+        return detected_console
+
+    def detect_anonymous_games_vinted(self, listing_title, listing_description):
+        """
+        Detect anonymous games count from title and description (ported from Facebook)
+        """
+        debug_function_call("detect_anonymous_games_vinted")
+        import re  # FIXED: Import re at function level
+
+        def extract_games_number(text):
+            # Prioritize specific game type matches first
+            matches = (
+                re.findall(r'(\d+)\s*(switch|nintendo)\s*games', text.lower()) + # Switch/Nintendo specific
+                re.findall(r'(\d+)\s*games', text.lower()) # Generic games
             )
             # Convert matches to integers and find the maximum
             numeric_matches = [int(match[0]) if isinstance(match, tuple) else int(match) for match in matches]
