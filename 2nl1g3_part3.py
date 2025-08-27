@@ -1,4 +1,9 @@
 # Continuation from line 4401
+                self._cached_chromedriver_path = ChromeDriverManager().install()
+            
+            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
+            
+            chrome_opts = Options()
             
             # CRITICAL FIX: Each driver gets its own UNIQUE directory to prevent conflicts
             user_data_dir = f"C:\\VintedBuyer{driver_num}"  # Add timestamp for uniqueness

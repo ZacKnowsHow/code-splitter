@@ -1,4 +1,5 @@
 # Continuation from line 2201
+                    print(f"Error copying image: {str(e)}")
         
         # Store bounding boxes with more robust handling
         current_bounding_boxes = {
@@ -1894,6 +1895,10 @@ class VintedScraper:
             # Verify driver is still alive
             self.persistent_buying_driver.current_url
             
+            if test_purchase_not_true:
+                url = test_purchase_url
+                print(f"TEST MODE - Using test URL {url}")
+
             print(f"🔥 FAST: Processing {url}")
             
             # Open new tab
@@ -2194,8 +2199,3 @@ class VintedScraper:
             
             # Ensure ChromeDriver is cached
             if not hasattr(self, '_cached_chromedriver_path'):
-                self._cached_chromedriver_path = ChromeDriverManager().install()
-            
-            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
-            
-            chrome_opts = Options()

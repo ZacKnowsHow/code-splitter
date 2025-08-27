@@ -56,6 +56,7 @@ test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
 bookmark_stopwatch_length = 500
 buying_driver_click_pay_wait_time = 5
 actually_purchase_listing = False
+test_purchase_not_true = True
 test_purchase_url = "https://www.vinted.co.uk/items/6951780860-nintendo-switch-case?homepage_session_id=b5966afa-d833-4a5b-83b1-351ed8660796"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
@@ -2197,4 +2198,3 @@ class FacebookScraper:
                     img_copy = img.copy()  # Create a fresh copy
                     current_listing_images.append(img_copy)
                 except Exception as e:
-                    print(f"Error copying image: {str(e)}")
