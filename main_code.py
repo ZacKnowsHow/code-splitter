@@ -48,10 +48,11 @@ from datetime import datetime
 import logging
 from ultralytics import YOLO
 import random
+import torch
 
-VINTED_SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = True
 test_bookmark_function = False
-bookmark_listings = True
+bookmark_listings = False
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 bookmark_stopwatch_length = 540
@@ -158,7 +159,7 @@ review_min = 3
 MAX_LISTINGS_TO_SCAN = 50
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
 MAX_LISTINGS_VINTED_TO_SCAN = 50  # Maximum listings to scan before refresh
-wait_after_max_reached_vinted = 1  # Seconds to wait between refresh cycles (5 minutes)
+wait_after_max_reached_vinted = 0  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
 REPEAT_LISTINGS = True
@@ -3545,7 +3546,18 @@ class VintedScraper:
         self.buying_drivers = {}  # Dictionary to store drivers {1: driver_object, 2: driver_object, etc.}
         self.driver_status = {}   # Track driver status {1: 'free'/'busy', 2: 'free'/'busy', etc.}
         self.driver_lock = threading.Lock()  # Thread safety for driver management
-        
+        # Check if CUDA is available
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
+
+        # Load model with explicit GPU usage
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
         # Initialize all driver slots as not created
         for i in range(1, 6):  # Drivers 1-5
             self.buying_drivers[i] = None
@@ -4811,7 +4823,7 @@ class VintedScraper:
         }
         options = Options()
         options.add_experimental_option("prefs", prefs)
-        options.add_argument("--headless")
+        #options.add_argument("--headless")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
@@ -4859,7 +4871,7 @@ class VintedScraper:
             # Fallback: Remove problematic arguments
             fallback_opts = Options()
             fallback_opts.add_experimental_option("prefs", prefs)
-            fallback_opts.add_argument("--headless")
+            #fallback_opts.add_argument("--headless")
             fallback_opts.add_argument("--no-sandbox")
             fallback_opts.add_argument("--disable-dev-shm-usage")
             fallback_opts.add_argument("--disable-gpu")
@@ -5725,12 +5737,18 @@ class VintedScraper:
 
 
     def download_images_for_listing(self, driver, listing_dir):
-        # Wait for the page to fully load
+        """OPTIMIZED: Faster image download with concurrent downloading and intelligent filtering"""
+        import concurrent.futures
+        import requests
+        from PIL import Image
+        from io import BytesIO
+        import os
+        
+        # Wait for the page to fully load - REDUCED timeout
         try:
-            WebDriverWait(driver, 15).until(
+            WebDriverWait(driver, 8).until(  # REDUCED from 15 to 8 seconds
                 EC.presence_of_element_located((By.TAG_NAME, "img"))
             )
-            # Additional wait for dynamic content
         except TimeoutException:
             print("  ▶ Timeout waiting for images to load")
             return []
@@ -5761,8 +5779,8 @@ class VintedScraper:
             return []
         
         # Filter images more strictly to avoid profile pictures and small icons
-        valid_imgs = []
-        for img in imgs:
+        valid_urls = []
+        for img in imgs[:8]:  # REDUCED from unlimited to 8 max images
             src = img.get_attribute("src")
             parent_classes = ""
             
@@ -5801,68 +5819,83 @@ class VintedScraper:
                     # And don't have small size indicators
                     not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
                 ):
-                    valid_imgs.append(img)
-        
-        if not valid_imgs:
+                    valid_urls.append(src)
+
+        if not valid_urls:
             print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
-            # Debug: print what we found for troubleshooting
-            for i, img in enumerate(imgs[:5]):  # Show first 5 for debugging
-                src = img.get_attribute("src")
-                alt = img.get_attribute("alt")
-                try:
-                    parent = img.find_element(By.XPATH, "..")
-                    parent_classes = parent.get_attribute("class") or ""
-                except:
-                    parent_classes = "unknown"
-                print(f"    Image {i+1}: src='{src[:80]}...', alt='{alt}', parent_classes='{parent_classes}'")
             return []
 
         os.makedirs(listing_dir, exist_ok=True)
-        downloaded_paths = []
-        seen_urls = set()
-        image_index = 1
-
-        print(f"  ▶ Attempting to download {len(valid_imgs)} product images")
         
-        for img_el in valid_imgs[:10]:  # Limit to first 10 images
-            src = img_el.get_attribute("src")
-            if not src or src in seen_urls:
-                continue
-
-            seen_urls.add(src)
-
+        # OPTIMIZATION: Concurrent image downloading with optimized headers
+        def download_single_image(args):
+            """Download a single image with optimized settings"""
+            url, index = args
+            
+            # OPTIMIZED headers for faster downloads
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',  # Reuse connections
+                'Cache-Control': 'no-cache',
+                'Referer': driver.current_url
+            }
+            
             try:
-                # Add headers to mimic browser request
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Referer': driver.current_url
-                }
-                
-                resp = requests.get(src, timeout=15, headers=headers)
+                # REDUCED timeout for faster failure detection
+                resp = requests.get(url, timeout=8, headers=headers)  # REDUCED from 15 to 8
                 resp.raise_for_status()
                 
-                # Verify it's actually an image
+                # OPTIMIZED: Process image in memory without saving intermediate files
                 img = Image.open(BytesIO(resp.content))
                 
                 # Skip very small images (likely icons or profile pics that got through)
                 if img.width < 200 or img.height < 200:
                     print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
-                    continue
+                    return None
                 
-                save_path = os.path.join(listing_dir, f"{image_index}.png")
-                img.save(save_path, format="PNG")
-                downloaded_paths.append(save_path)
-                image_index += 1
-                print(f"    ✅ Downloaded product image {image_index-1}: {img.width}x{img.height}")
-
+                # OPTIMIZATION: Resize image immediately to reduce memory usage
+                # Target size for YOLO detection - smaller = much faster processing
+                MAX_SIZE = (800, 800)  # Reduced from original size
+                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
+                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
+                    print(f"    📏 Resized image to: {img.width}x{img.height}")
+                
+                # Convert to RGB if needed (prevents issues with CMYK, P mode, etc.)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Save the optimized image
+                save_path = os.path.join(listing_dir, f"{index}.png")
+                img.save(save_path, format="PNG", optimize=True)  # Added optimize=True
+                
+                print(f"    ✅ Downloaded and optimized image {index}: {img.width}x{img.height}")
+                return save_path
+                
             except Exception as e:
-                print(f"    ❌ Failed to download image from {src[:50]}...: {str(e)}")
-                continue
+                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
+                return None
+        
+        print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
+        
+        # MAJOR OPTIMIZATION: Download images concurrently instead of one-by-one
+        downloaded_paths = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:  # 4 concurrent downloads
+            # Prepare arguments for concurrent download
+            download_args = [(url, i+1) for i, url in enumerate(valid_urls)]
+            
+            # Submit all download jobs
+            future_to_url = {executor.submit(download_single_image, args): args[0] for args in download_args}
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_url):
+                result = future.result()
+                if result:  # Only add successful downloads
+                    downloaded_paths.append(result)
 
-        print(f"  ▶ Successfully downloaded {len(downloaded_paths)} product images")
+        print(f"  ▶ Successfully downloaded {len(downloaded_paths)} optimized images")
         return downloaded_paths
 
     
@@ -5975,15 +6008,23 @@ class VintedScraper:
 
         # Load YOLO Model Once
         print("🧠 Loading object detection model...")
-        model = None
         if not os.path.exists(MODEL_WEIGHTS):
             print(f"❌ Critical Error: Model weights not found at '{MODEL_WEIGHTS}'. Detection will be skipped.")
         else:
             try:
-                model = YOLO(MODEL_WEIGHTS)
                 print("✅ Model loaded successfully.")
             except Exception as e:
                 print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
+
+        # Load model with explicit GPU usage
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
 
         # Initial page setup
         params = {
@@ -6649,7 +6690,7 @@ class VintedScraper:
         chrome_opts.add_argument("--disable-software-rasterizer")
         
         # Remove potentially problematic arguments
-        chrome_opts.add_argument("--headless")  # Try without headless first
+        #chrome_opts.add_argument("--headless")  # Try without headless first
         
         # Keep some logging for debugging
         chrome_opts.add_argument("--log-level=1")  # More detailed logging
@@ -6687,6 +6728,7 @@ class VintedScraper:
             return None
 
     def setup_persistent_buying_driver(self):
+        
         """
         Set up the persistent buying driver that stays open throughout the program
         """
@@ -6764,6 +6806,7 @@ class VintedScraper:
         
         # Initialize pygame display with default valuess
         self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
+        
         
         # Start Flask app in separate thread.
         flask_thread = threading.Thread(target=self.run_flask_app)
