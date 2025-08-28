@@ -5737,16 +5737,17 @@ class VintedScraper:
 
 
     def download_images_for_listing(self, driver, listing_dir):
-        """OPTIMIZED: Faster image download with concurrent downloading and intelligent filtering"""
+        """FIXED: Download ALL listing images without limits and prevent duplicates"""
         import concurrent.futures
         import requests
         from PIL import Image
         from io import BytesIO
         import os
+        import hashlib
         
-        # Wait for the page to fully load - REDUCED timeout
+        # Wait for the page to fully load
         try:
-            WebDriverWait(driver, 8).until(  # REDUCED from 15 to 8 seconds
+            WebDriverWait(driver, 10).until(  # Increased timeout for better reliability
                 EC.presence_of_element_located((By.TAG_NAME, "img"))
             )
         except TimeoutException:
@@ -5760,7 +5761,7 @@ class VintedScraper:
             "img[data-testid^='item-photo-']",
             # Target images within containers that suggest product photos
             "div.web_ui__Image__cover img.web_ui__Image__content",
-            "div.web_ui__Image__scaled img.web_ui__Image__content",
+            "div.web_ui__Image__scaled img.web_ui__Image__content", 
             "div.web_ui__Image__rounded img.web_ui__Image__content",
             # Broader selectors but still avoiding profile images
             "div.feed-grid img",
@@ -5778,9 +5779,13 @@ class VintedScraper:
             print("  ▶ No images found with any selector")
             return []
         
-        # Filter images more strictly to avoid profile pictures and small icons
+        # FIXED: Remove the [:8] limit - process ALL images found
         valid_urls = []
-        for img in imgs[:8]:  # REDUCED from unlimited to 8 max images
+        seen_urls = set()  # Track URLs to prevent duplicates
+        
+        print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
+        
+        for img in imgs:  # REMOVED [:8] limit here
             src = img.get_attribute("src")
             parent_classes = ""
             
@@ -5793,6 +5798,16 @@ class VintedScraper:
             
             # Check if this is a valid product image
             if src and src.startswith('http'):
+                # FIXED: Better duplicate detection using URL normalization
+                # Remove query parameters and fragments for duplicate detection
+                normalized_url = src.split('?')[0].split('#')[0]
+                
+                if normalized_url in seen_urls:
+                    print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
+                    continue
+                
+                seen_urls.add(normalized_url)
+                
                 # Exclude profile pictures and small icons based on URL patterns
                 if (
                     # Skip small profile pictures (50x50, 75x75, etc.)
@@ -5806,6 +5821,7 @@ class VintedScraper:
                     # Skip very obviously small images by checking dimensions in URL
                     any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
                 ):
+                    print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
                     continue
                 
                 # Only include images that look like product photos
@@ -5820,35 +5836,44 @@ class VintedScraper:
                     not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
                 ):
                     valid_urls.append(src)
+                    print(f"    ✅ Added valid image URL: {src[:50]}...")
 
         if not valid_urls:
             print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
             return []
 
+        print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
+        
         os.makedirs(listing_dir, exist_ok=True)
         
-        # OPTIMIZATION: Concurrent image downloading with optimized headers
+        # FIXED: Enhanced duplicate detection using content hashes
         def download_single_image(args):
-            """Download a single image with optimized settings"""
+            """Download a single image with enhanced duplicate detection"""
             url, index = args
             
-            # OPTIMIZED headers for faster downloads
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',  # Reuse connections
+                'Connection': 'keep-alive',
                 'Cache-Control': 'no-cache',
                 'Referer': driver.current_url
             }
             
             try:
-                # REDUCED timeout for faster failure detection
-                resp = requests.get(url, timeout=8, headers=headers)  # REDUCED from 15 to 8
+                resp = requests.get(url, timeout=10, headers=headers)
                 resp.raise_for_status()
                 
-                # OPTIMIZED: Process image in memory without saving intermediate files
+                # FIXED: Use content hash to detect identical images with different URLs
+                content_hash = hashlib.md5(resp.content).hexdigest()
+                
+                # Check if we've already downloaded this exact image content
+                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
+                if os.path.exists(hash_file):
+                    print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
+                    return None
+                
                 img = Image.open(BytesIO(resp.content))
                 
                 # Skip very small images (likely icons or profile pics that got through)
@@ -5856,22 +5881,25 @@ class VintedScraper:
                     print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
                     return None
                 
-                # OPTIMIZATION: Resize image immediately to reduce memory usage
-                # Target size for YOLO detection - smaller = much faster processing
-                MAX_SIZE = (800, 800)  # Reduced from original size
+                # Resize image for YOLO detection optimization
+                MAX_SIZE = (1000, 1000)  # Slightly larger for better detection
                 if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
                     img.thumbnail(MAX_SIZE, Image.LANCZOS)
                     print(f"    📏 Resized image to: {img.width}x{img.height}")
                 
-                # Convert to RGB if needed (prevents issues with CMYK, P mode, etc.)
+                # Convert to RGB if needed
                 if img.mode != 'RGB':
                     img = img.convert('RGB')
                 
-                # Save the optimized image
+                # Save the image
                 save_path = os.path.join(listing_dir, f"{index}.png")
-                img.save(save_path, format="PNG", optimize=True)  # Added optimize=True
+                img.save(save_path, format="PNG", optimize=True)
                 
-                print(f"    ✅ Downloaded and optimized image {index}: {img.width}x{img.height}")
+                # Create hash marker file to prevent future duplicates
+                with open(hash_file, 'w') as f:
+                    f.write(f"Downloaded from: {url}")
+                
+                print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
                 return save_path
                 
             except Exception as e:
@@ -5880,9 +5908,15 @@ class VintedScraper:
         
         print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
         
-        # MAJOR OPTIMIZATION: Download images concurrently instead of one-by-one
+        # FIXED: Dynamic batch size based on actual image count
+        batch_size = len(valid_urls)  # Each "batch" equals the number of listing images
+        max_workers = min(6, batch_size)  # Use appropriate number of workers
+        
+        print(f"  ▶ Batch size set to: {batch_size} (= number of listing images)")
+        print(f"  ▶ Using {max_workers} concurrent workers")
+        
         downloaded_paths = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:  # 4 concurrent downloads
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Prepare arguments for concurrent download
             download_args = [(url, i+1) for i, url in enumerate(valid_urls)]
             
@@ -5895,8 +5929,64 @@ class VintedScraper:
                 if result:  # Only add successful downloads
                     downloaded_paths.append(result)
 
-        print(f"  ▶ Successfully downloaded {len(downloaded_paths)} optimized images")
+        print(f"  ▶ Successfully downloaded {len(downloaded_paths)} unique images (from {len(valid_urls)} URLs)")
+        
+        # Clean up hash files (optional - you might want to keep them for faster future runs)
+        # Uncomment the next 6 lines if you want to clean up hash files after each listing
+        # try:
+        #     for file in os.listdir(listing_dir):
+        #         if file.startswith('.hash_'):
+        #             os.remove(os.path.join(listing_dir, file))
+        # except:
+        #     pass
+        
         return downloaded_paths
+
+
+    def download_and_process_images_vinted(self, image_urls):
+        """FIXED: Process images without arbitrary limits and with better deduplication"""
+        processed_images = []
+        seen_hashes = set()  # Track content hashes to prevent duplicates
+        
+        print(f"🖼️  Processing {len(image_urls)} image URLs (NO LIMIT)")
+        
+        for i, url in enumerate(image_urls):  # REMOVED [:8] limit here
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    # FIXED: Use content hash for duplicate detection
+                    content_hash = hashlib.md5(response.content).hexdigest()
+                    
+                    if content_hash in seen_hashes:
+                        print(f"🖼️  Skipping duplicate image {i+1} (hash: {content_hash[:8]}...)")
+                        continue
+                    
+                    seen_hashes.add(content_hash)
+                    
+                    img = Image.open(io.BytesIO(response.content))
+                    
+                    # Skip very small images
+                    if img.width < 200 or img.height < 200:
+                        print(f"🖼️  Skipping small image {i+1}: {img.width}x{img.height}")
+                        continue
+                    
+                    img = img.convert("RGB")
+                    
+                    # FIXED: Create proper copy to prevent memory issues
+                    img_copy = img.copy()
+                    processed_images.append(img_copy)
+                    img.close()  # Close original to free memory
+                    
+                    print(f"🖼️  Processed unique image {i+1}: {img_copy.width}x{img_copy.height}")
+                    
+                else:
+                    print(f"🖼️  Failed to download image {i+1}. Status code: {response.status_code}")
+            except Exception as e:
+                print(f"🖼️  Error processing image {i+1}: {str(e)}")
+        
+        print(f"🖼️  Final result: {len(processed_images)} unique processed images")
+        return processed_images
+
 
     
     def extract_vinted_listing_id(self, url):
