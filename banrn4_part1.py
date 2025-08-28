@@ -50,13 +50,14 @@ from ultralytics import YOLO
 import random
 
 test_bookmark_function = False
-bookmark_listings = False
-click_pay_button_final_check = False
+bookmark_listings = True
+click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
-bookmark_stopwatch_length = 500
-buying_driver_click_pay_wait_time = 5
+bookmark_stopwatch_length = 540
+buying_driver_click_pay_wait_time = 7.5
 actually_purchase_listing = True
-test_purchase_not_true = True #uses the url below rather than the one from the web page
+wait_for_bookmark_stopwatch_to_buy = True
+test_purchase_not_true = False #uses the url below rather than the one from the web page
 test_purchase_url = "https://www.vinted.co.uk/items/6955075707-denim-shorts?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 
@@ -152,18 +153,18 @@ recent_listings = {
     'current_index': 0
 }
 
-review_min = 1
+review_min = 3
 MAX_LISTINGS_TO_SCAN = 50
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
-MAX_LISTINGS_VINTED_TO_SCAN = 6  # Maximum listings to scan before refresh
+MAX_LISTINGS_VINTED_TO_SCAN = 50  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 10  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
 REPEAT_LISTINGS = True
 WAIT_TIME_AFTER_REFRESH = 125
 LOCK_POSITION = True
-SHOW_ALL_LISTINGS = True
-VINTED_SHOW_ALL_LISTINGS = True
+SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = False
 SHOW_PARTIALLY_SUITABLE = False
 setup_website = False
 send_message = True
@@ -2197,4 +2198,3 @@ class FacebookScraper:
 
             screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
 
-            if suitable_listings:
