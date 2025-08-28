@@ -1,4 +1,16 @@
 # Continuation from line 4401
+                                )
+                                pickup_point.click()
+                                print(f"📦 DRIVER {driver_num}: Clicked 'Ship to pick-up point'")
+                            except Exception as e:
+                                print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to pick-up point': {e}")
+                            
+                            # Wait
+                            time.sleep(buying_driver_click_pay_wait_time)
+                            
+                            # Check time again
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                print(f"⏰ DRIVER {driver_num}: Time elapsed during wait, stopping")
                                 break
                             
                             # Click "Ship to home"
@@ -1813,7 +1825,6 @@
                 print(f"📄 Processing page {page} with {len(urls)} listings")
 
                 for idx, url in enumerate(urls, start=1):
-                    overall_listing_counter += 1
                     cycle_listing_counter += 1
                     
                     print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
@@ -1833,6 +1844,8 @@
                         print(f"📊 Reached MAX_LISTINGS_VINTED_TO_SCAN ({MAX_LISTINGS_VINTED_TO_SCAN})")
                         print(f"🔄 Initiating refresh cycle...")
                         break
+
+                    overall_listing_counter += 1
 
                     # Process the listing (same as original logic)
                     driver.execute_script("window.open();")
@@ -2016,7 +2029,7 @@
                 bookmark_user_data_dir = "C:\VintedScraper_Default_Bookmark"
                 chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
                 chrome_opts.add_argument("--profile-directory=Profile 4")
-                #chrome_opts.add_argument("--headless")
+                chrome_opts.add_argument("--headless")
                 chrome_opts.add_argument("--no-sandbox")
                 chrome_opts.add_argument("--disable-dev-shm-usage")
                 chrome_opts.add_argument("--disable-gpu")
@@ -2082,7 +2095,7 @@
                 first_buy_clicked = False
                 for selector in buy_selectors:
                     try:
-                        buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
+                        buy_button = WebDriverWait(self.persistent_bookmark_driver, 5).until(
                             EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                         )
                         
@@ -2153,7 +2166,7 @@
                     second_buy_button_found = False
                     for selector in buy_selectors:
                         try:
-                            buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
+                            buy_button = WebDriverWait(self.persistent_bookmark_driver, 15).until(
                                 EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                             )
                             
@@ -2435,7 +2448,7 @@
         chrome_opts.add_argument("--disable-software-rasterizer")
         
         # Remove potentially problematic arguments
-        #chrome_opts.add_argument("--headless")  # Try without headless first
+        chrome_opts.add_argument("--headless")  # Try without headless first
         
         # Keep some logging for debugging
         chrome_opts.add_argument("--log-level=1")  # More detailed logging
@@ -2491,7 +2504,7 @@
             )
             
             chrome_opts = Options()
-            #chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--headless")
             chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer1")
             chrome_opts.add_argument("--profile-directory=Default")
             chrome_opts.add_argument("--no-sandbox")
