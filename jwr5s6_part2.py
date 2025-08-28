@@ -1,4 +1,5 @@
 # Continuation from line 2201
+
             if suitable_listings:
                 listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
                 screen.blit(listing_counter, (10, 40))
@@ -1346,7 +1347,18 @@ class VintedScraper:
         self.buying_drivers = {}  # Dictionary to store drivers {1: driver_object, 2: driver_object, etc.}
         self.driver_status = {}   # Track driver status {1: 'free'/'busy', 2: 'free'/'busy', etc.}
         self.driver_lock = threading.Lock()  # Thread safety for driver management
-        
+        # Check if CUDA is available
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
+
+        # Load model with explicit GPU usage
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
         # Initialize all driver slots as not created
         for i in range(1, 6):  # Drivers 1-5
             self.buying_drivers[i] = None
@@ -2187,15 +2199,3 @@ class VintedScraper:
                                 ship_to_home = driver.find_element(
                                     By.XPATH, 
                                     '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
-                                )
-                                ship_to_home.click()
-                                print(f"🏠 DRIVER {driver_num}: Clicked 'Ship to home'")
-                            except Exception as e:
-                                print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to home': {e}")
-                            
-                            # Wait
-                            time.sleep(buying_driver_click_pay_wait_time)
-                    
-                    except TimeoutException:
-                        print(f"⚠️ DRIVER {driver_num}: Timeout waiting for shipping page")
-            else:

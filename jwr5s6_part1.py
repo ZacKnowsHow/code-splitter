@@ -48,10 +48,11 @@ from datetime import datetime
 import logging
 from ultralytics import YOLO
 import random
+import torch
 
-VINTED_SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = True
 test_bookmark_function = False
-bookmark_listings = True
+bookmark_listings = False
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 bookmark_stopwatch_length = 540
@@ -158,7 +159,7 @@ review_min = 3
 MAX_LISTINGS_TO_SCAN = 50
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
 MAX_LISTINGS_VINTED_TO_SCAN = 50  # Maximum listings to scan before refresh
-wait_after_max_reached_vinted = 1  # Seconds to wait between refresh cycles (5 minutes)
+wait_after_max_reached_vinted = 0  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
 REPEAT_LISTINGS = True
@@ -2197,4 +2198,3 @@ class FacebookScraper:
 
 
             screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
-
