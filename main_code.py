@@ -51,8 +51,10 @@ import random
 import torch
 
 VINTED_SHOW_ALL_LISTINGS = True
+print_debug = False
+print_images_backend_info = False
 test_bookmark_function = False
-bookmark_listings = False
+bookmark_listings = True
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 bookmark_stopwatch_length = 540
@@ -62,6 +64,7 @@ wait_for_bookmark_stopwatch_to_buy = True
 test_purchase_not_true = False #uses the url below rather than the one from the web page
 test_purchase_url = "https://www.vinted.co.uk/items/6955075707-denim-shorts?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
+should_send_fail_bookmark_notification = True
 
 # Config
 PROFILE_DIR = "Default"
@@ -141,7 +144,7 @@ max_price = 500
 element_exractor_timeout = 0.85
 price_mulitplier = 1
 visible_listings_scanned = 0
-SD_card_price = 5
+SD_card_price = 0
 
 app.secret_key = "facebook1967"
 PIN_CODE = 14346
@@ -304,7 +307,8 @@ vinted_banned_prices = {59.00, 49.00, 17.00}
 
 def debug_function_call(func_name, line_number=None):
     """Debug function to track where errors occur"""
-    print(f"DEBUG: Entering function {func_name}" + (f" at line {line_number}" if line_number else ""))
+    if print_debug:
+        print(f"DEBUG: Entering function {func_name}" + (f" at line {line_number}" if line_number else ""))
 
 # Vinted profit suitability ranges (same structure as Facebook but independent variables)
 def check_vinted_profit_suitability(listing_price, profit_percentage):
@@ -375,7 +379,8 @@ def logout():
 
 @app.route('/button-clicked', methods=['POST'])
 def button_clicked():
-    print("DEBUG: Received a button-click POST request")
+    if print_debug:
+        print("DEBUG: Received a button-click POST request")
     global messaging_driver, website_static_price
     url = request.form.get('url')
     website_static_price_str = request.form.get('website_price')
@@ -442,7 +447,8 @@ def change_listing():
 @app.route('/vinted-button-clicked', methods=['POST'])
 def vinted_button_clicked():
     """Handle Vinted scraper button clicks with enhanced functionality"""
-    print("DEBUG: Received a Vinted button-click POST request")
+    if print_debug:
+        print("DEBUG: Received a Vinted button-click POST request")
     
     # Get the listing URL and action from the form data
     url = request.form.get('url')
@@ -488,11 +494,11 @@ def render_main_page():
         global current_listing_title, current_listing_price, current_listing_description
         global current_listing_join_date, current_detected_items, current_profit
         global current_listing_images, current_listing_url, recent_listings
-
-        print("DEBUG: render_main_page called")
-        print(f"DEBUG: recent_listings has {len(recent_listings.get('listings', []))} listings")
-        print(f"DEBUG: current_listing_title = {current_listing_title}")
-        print(f"DEBUG: current_listing_price = {current_listing_price}")
+        if print_debug:
+            print("DEBUG: render_main_page called")
+            print(f"DEBUG: recent_listings has {len(recent_listings.get('listings', []))} listings")
+            print(f"DEBUG: current_listing_title = {current_listing_title}")
+            print(f"DEBUG: current_listing_price = {current_listing_price}")
 
         # Ensure default values if variables are None or empty
         title = str(current_listing_title or 'No Title Available')
@@ -530,7 +536,8 @@ def render_main_page():
                         'suitability': str(listing.get('suitability', 'Unknown'))
                     })
                 all_listings_json = json.dumps(listings_data)
-                print(f"DEBUG: Created JSON for {len(listings_data)} listings")
+                if print_debug:
+                    print(f"DEBUG: Created JSON for {len(listings_data)} listings")
             except Exception as json_error:
                 print(f"ERROR creating listings JSON: {json_error}")
                 all_listings_json = "[]"
@@ -4823,7 +4830,7 @@ class VintedScraper:
         }
         options = Options()
         options.add_experimental_option("prefs", prefs)
-        #options.add_argument("--headless")
+        options.add_argument("--headless")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
@@ -4871,7 +4878,7 @@ class VintedScraper:
             # Fallback: Remove problematic arguments
             fallback_opts = Options()
             fallback_opts.add_experimental_option("prefs", prefs)
-            #fallback_opts.add_argument("--headless")
+            fallback_opts.add_argument("--headless")
             fallback_opts.add_argument("--no-sandbox")
             fallback_opts.add_argument("--disable-dev-shm-usage")
             fallback_opts.add_argument("--disable-gpu")
@@ -5119,7 +5126,8 @@ class VintedScraper:
             reviews_text = str(seller_reviews).strip()
             
             # Debug print to see what we're getting
-            print(f"DEBUG: Raw seller_reviews value: '{reviews_text}'")
+            if print_debug:
+                print(f"DEBUG: Raw seller_reviews value: '{reviews_text}'")
             
             # Try multiple extraction methods
             if reviews_text.startswith("Reviews: "):
@@ -5139,8 +5147,8 @@ class VintedScraper:
                 else:
                     reviews_count = 0
         
-        # Debug print to see final extracted count
-        print(f"DEBUG: Extracted reviews_count: {reviews_count} (review_min: {review_min})")
+        if print_debug:# Debug print to see final extracted count
+            print(f"DEBUG: Extracted reviews_count: {reviews_count} (review_min: {review_min})")
         
         checks = [
             (lambda: reviews_count < review_min,
@@ -5212,12 +5220,14 @@ class VintedScraper:
                                 # Look for text that contains digits (likely review count)
                                 if text and (text.isdigit() or "review" in text.lower() or re.search(r'\d+', text)):
                                     reviews_text = text
-                                    print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
+                                    if print_debug:
+                                        print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
                                     break
                             if reviews_text:
                                 break
                         except Exception as e:
-                            print(f"DEBUG: Selector '{review_sel}' failed: {e}")
+                            if print_debug:
+                                print(f"DEBUG: Selector '{review_sel}' failed: {e}")
                             continue
                     
                     # Process the found reviews text
@@ -5227,18 +5237,21 @@ class VintedScraper:
                         elif reviews_text.isdigit():
                             # Just a number like "123"
                             data[key] = reviews_text  # Keep as string for consistency
-                            print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
+                            if print_debug:
+                                print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
                         else:
                             # Try to extract number from text like "123 reviews" or "(123)"
                             match = re.search(r'(\d+)', reviews_text)
                             if match:
                                 data[key] = match.group(1)  # Just the number as string
-                                print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
+                                if print_debug:
+                                    print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
                             else:
                                 data[key] = "No reviews yet"
                     else:
                         data[key] = "No reviews yet"
-                        print("DEBUG: No seller reviews found with any selector")
+                        if print_debug:
+                            print("DEBUG: No seller reviews found with any selector")
                         
                 elif key == "username":
                     # NEW: Handle username extraction with careful error handling
@@ -5247,10 +5260,12 @@ class VintedScraper:
                         username_text = username_element.text.strip()
                         if username_text:
                             data[key] = username_text
-                            print(f"DEBUG: Found username: '{username_text}'")
+                            if print_debug:
+                                print(f"DEBUG: Found username: '{username_text}'")
                         else:
                             data[key] = "Username not found"
-                            print("DEBUG: Username element found but no text")
+                            if print_debug:
+                                print("DEBUG: Username element found but no text")
                     except NoSuchElementException:
                         # Try alternative selectors for username
                         alternative_username_selectors = [
@@ -5275,7 +5290,8 @@ class VintedScraper:
                         
                         if not username_found:
                             data[key] = "Username not found"
-                            print("DEBUG: Username not found with any selector")
+                            if print_debug:
+                                print("DEBUG: Username not found with any selector")
                             
                 else:
                     # Handle all other fields normally
@@ -5284,10 +5300,12 @@ class VintedScraper:
             except NoSuchElementException:
                 if key == "seller_reviews":
                     data[key] = "No reviews yet"
-                    print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
+                    if print_debug:
+                        print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
                 elif key == "username":
                     data[key] = "Username not found"
-                    print("DEBUG: NoSuchElementException - set username to 'Username not found'")
+                    if print_debug:
+                        print("DEBUG: NoSuchElementException - set username to 'Username not found'")
                 else:
                     data[key] = None
 
@@ -5296,9 +5314,10 @@ class VintedScraper:
             data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
 
         # DEBUG: Print final scraped data for seller_reviews and username
-        print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
-        print(f"DEBUG: Final scraped username: '{data.get('username')}'")
-        
+        if print_debug:
+            print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
+            print(f"DEBUG: Final scraped username: '{data.get('username')}'")
+            
         return data
 
     def clear_download_folder(self):
@@ -5318,9 +5337,8 @@ class VintedScraper:
 
         # Extract username from details - THIS WAS MISSING!
         username = details.get("username", None)
-        if username and username != "Username not found":
-            print(f"🔖 USERNAME EXTRACTED: {username}")
-        else:
+
+        if not username or username == "Username not found":
             username = None
             print("🔖 USERNAME: Not available for this listing")
 
@@ -5332,7 +5350,8 @@ class VintedScraper:
 
         # Get seller reviews
         seller_reviews = details.get("seller_reviews", "No reviews yet")
-        print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
+        if print_debug:    
+            print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
 
         # Create basic listing info for suitability checking
         listing_info = {
@@ -5345,7 +5364,8 @@ class VintedScraper:
 
         # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
         suitability_result = self.check_vinted_listing_suitability(listing_info)
-        print(f"DEBUG: Suitability result: '{suitability_result}'")
+        if print_debug:    
+            print(f"DEBUG: Suitability result: '{suitability_result}'")
 
         # Apply console keyword detection to detected objects
         detected_console = self.detect_console_keywords_vinted(
@@ -5409,7 +5429,8 @@ class VintedScraper:
             suitability_reason = f"Suitable: Profit £{expected_profit:.2f} ({profit_percentage:.2f}%)"
             is_suitable = True
 
-        print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
+        if print_debug:    
+            print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
 
         # 🔖 MODIFIED BOOKMARK FUNCTIONALITY WITH SUCCESS TRACKING
         bookmark_success = False
@@ -5470,6 +5491,7 @@ class VintedScraper:
         should_add_to_pygame = False  # Always true for pygame to show suitable listings
         should_send_notification = False
 
+
         # Website logic (current behavior - only successful bookmarks when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False)
         if bookmark_listings and not VINTED_SHOW_ALL_LISTINGS:
             # When bookmark_listings is ON and VINTED_SHOW_ALL_LISTINGS is OFF:
@@ -5492,12 +5514,30 @@ class VintedScraper:
         elif is_suitable:  # Show all suitable listings regardless of bookmark success
             should_add_to_pygame = True
 
+
         # Modify suitability_reason for pygame if bookmark failed
         pygame_suitability_reason = suitability_reason
         if should_add_to_pygame and bookmark_listings and is_suitable and not bookmark_success:
             pygame_suitability_reason = suitability_reason + "\n⚠️ BOOKMARK FAILED"
-
-        # Add to website (existing logic)
+        
+        if is_suitable and should_send_fail_bookmark_notification and not should_add_to_website:
+            notification_title = f"Listing Failed Bookmark: £{total_price:.2f}"
+            notification_message = (
+                f"Title: {details.get('title', 'No title')}\n"
+                f"Price: £{total_price:.2f}\n"
+                f"Expected Profit: £{expected_profit:.2f}\n"
+                f"Profit %: {profit_percentage:.2f}%\n"
+            )
+            
+            # Use the Pushover tokens exactly as Facebook does
+            if send_notification:
+                self.send_pushover_notification(
+                    notification_title,
+                    notification_message,
+                    'aks3to8guqjye193w7ajnydk9jaxh5',
+                    'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                )
+    # Add to website (existing logic)
         if should_add_to_website:
             # Send Pushover notification
             if should_send_notification:
@@ -5606,9 +5646,6 @@ class VintedScraper:
 
         # Detect SD card and add revenue
         total_revenue = misc_games_revenue
-        if self.detect_sd_card_vinted(title, description):
-            total_revenue += 5 # Same SD card revenue as Facebook
-            print(f"SD Card detected: Added £5 to revenue")
 
         # Calculate revenue from detected objects
         for item, count in detected_objects.items():
@@ -5627,7 +5664,6 @@ class VintedScraper:
         expected_profit = total_revenue - listing_price
         profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
 
-        print(f"\nVinted Revenue Breakdown:")
         print(f"Listing Price: £{listing_price:.2f}")
         print(f"Total Expected Revenue: £{total_revenue:.2f}")
         print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
@@ -5772,7 +5808,8 @@ class VintedScraper:
         for selector in img_selectors:
             imgs = driver.find_elements(By.CSS_SELECTOR, selector)
             if imgs:
-                print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
+                if print_images_backend_info:
+                    print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
                 break
         
         if not imgs:
@@ -5783,7 +5820,8 @@ class VintedScraper:
         valid_urls = []
         seen_urls = set()  # Track URLs to prevent duplicates
         
-        print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
+        if print_images_backend_info:
+            print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
         
         for img in imgs:  # REMOVED [:8] limit here
             src = img.get_attribute("src")
@@ -5803,7 +5841,8 @@ class VintedScraper:
                 normalized_url = src.split('?')[0].split('#')[0]
                 
                 if normalized_url in seen_urls:
-                    print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
                     continue
                 
                 seen_urls.add(normalized_url)
@@ -5836,13 +5875,15 @@ class VintedScraper:
                     not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
                 ):
                     valid_urls.append(src)
-                    print(f"    ✅ Added valid image URL: {src[:50]}...")
+                    if print_images_backend_info:
+                        print(f"    ✅ Added valid image URL: {src[:50]}...")
 
         if not valid_urls:
             print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
             return []
 
-        print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
+        if print_images_backend_info:
+            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
         
         os.makedirs(listing_dir, exist_ok=True)
         
@@ -5871,7 +5912,8 @@ class VintedScraper:
                 # Check if we've already downloaded this exact image content
                 hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
                 if os.path.exists(hash_file):
-                    print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
                     return None
                 
                 img = Image.open(BytesIO(resp.content))
@@ -5898,22 +5940,23 @@ class VintedScraper:
                 # Create hash marker file to prevent future duplicates
                 with open(hash_file, 'w') as f:
                     f.write(f"Downloaded from: {url}")
-                
-                print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
+                if print_images_backend_info:
+                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
                 return save_path
                 
             except Exception as e:
                 print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
                 return None
-        
-        print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
+        if print_images_backend_info:
+            print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
         
         # FIXED: Dynamic batch size based on actual image count
         batch_size = len(valid_urls)  # Each "batch" equals the number of listing images
         max_workers = min(6, batch_size)  # Use appropriate number of workers
         
-        print(f"  ▶ Batch size set to: {batch_size} (= number of listing images)")
-        print(f"  ▶ Using {max_workers} concurrent workers")
+        if print_images_backend_info:
+            print(f"  ▶ Batch size set to: {batch_size} (= number of listing images)")
+            print(f"  ▶ Using {max_workers} concurrent workers")
         
         downloaded_paths = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -5958,7 +6001,8 @@ class VintedScraper:
                     content_hash = hashlib.md5(response.content).hexdigest()
                     
                     if content_hash in seen_hashes:
-                        print(f"🖼️  Skipping duplicate image {i+1} (hash: {content_hash[:8]}...)")
+                        if print_images_backend_info:
+                            print(f"🖼️  Skipping duplicate image {i+1} (hash: {content_hash[:8]}...)")
                         continue
                     
                     seen_hashes.add(content_hash)
@@ -6195,6 +6239,7 @@ class VintedScraper:
                     driver.get(url)
 
                     try:
+                        listing_start_time = time.time()
                         details = self.scrape_item_details(driver)
                         second_price = self.extract_price(details["second_price"])
                         postage = self.extract_price(details["postage"])
@@ -6235,6 +6280,10 @@ class VintedScraper:
                             print(f"✅ Saved listing ID: {listing_id}")
 
                         print("-" * 40)
+                        listing_end_time = time.time()
+                        elapsed_time = listing_end_time - listing_start_time
+                        print(f"⏱️ Listing {overall_listing_counter} processing completed in {elapsed_time:.2f} seconds")
+
                         
                     except Exception as e:
                         print(f"  ❌ ERROR scraping listing: {e}")
@@ -6347,6 +6396,7 @@ class VintedScraper:
         print(f"🔖 Looking at listing {actual_url} posted by {username if username else 'unknown user'}")
         
         try:
+            bookmark_start_time = time.time()
             print(f"🔖 STARTING BOOKMARK: {actual_url}")
             
             # Initialize persistent driver if it doesn't exist
@@ -6448,7 +6498,7 @@ class VintedScraper:
                     
                     try:
                         # Look for pay button
-                        pay_button = WebDriverWait(self.persistent_bookmark_driver, 5).until(
+                        pay_button = WebDriverWait(self.persistent_bookmark_driver, 10).until(
                             EC.element_to_be_clickable((By.CSS_SELECTOR, 
                                 'button[data-testid="single-checkout-order-summary-purchase-button"]'
                             ))
@@ -6471,7 +6521,11 @@ class VintedScraper:
                         
                         print("🔖 FIRST SEQUENCE: Closing tab...")
                         self.persistent_bookmark_driver.close()
-                        
+
+                        bookmark_end_time = time.time()
+                        total_elapsed_time = bookmark_end_time - bookmark_start_time
+                        print(f"bookmarking completed in {total_elapsed_time:.2f} seconds")
+
                         # Switch back to main tab
                         if len(self.persistent_bookmark_driver.window_handles) > 0:
                             self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
