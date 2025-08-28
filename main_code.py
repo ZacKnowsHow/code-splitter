@@ -49,10 +49,11 @@ import logging
 from ultralytics import YOLO
 import random
 
+VINTED_SHOW_ALL_LISTINGS = False
 test_bookmark_function = False
 bookmark_listings = True
 click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/6900159208-laptop-case"
+test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 bookmark_stopwatch_length = 540
 buying_driver_click_pay_wait_time = 7.5
 actually_purchase_listing = True
@@ -157,14 +158,13 @@ review_min = 3
 MAX_LISTINGS_TO_SCAN = 50
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
 MAX_LISTINGS_VINTED_TO_SCAN = 50  # Maximum listings to scan before refresh
-wait_after_max_reached_vinted = 10  # Seconds to wait between refresh cycles (5 minutes)
+wait_after_max_reached_vinted = 1  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
 REPEAT_LISTINGS = True
 WAIT_TIME_AFTER_REFRESH = 125
 LOCK_POSITION = True
 SHOW_ALL_LISTINGS = False
-VINTED_SHOW_ALL_LISTINGS = False
 SHOW_PARTIALLY_SUITABLE = False
 setup_website = False
 send_message = True
@@ -6192,376 +6192,385 @@ class VintedScraper:
             traceback.print_exc()
 
     def bookmark_driver(self, listing_url, username=None):  # ADD username parameter
-            print('entering bookmark_driver')
-            """
-            ULTRA-FAST bookmark driver - uses single persistent driver with tabs
-            MODIFIED: Now looks for username and bookmarks/buys accordingly
-            FIXED: Now accepts username as parameter from process_vinted_listing
-            """
-            # TEST MODE: If test_bookmark_function is True, use test_bookmark_link instead
-            if test_bookmark_function:
-                actual_url = test_bookmark_link
-                print(f"🔖 TEST MODE: Using test URL instead of actual listing URL")
-                print(f"🔖 TEST URL: {actual_url}")
-            else:
-                print('else')
-                actual_url = listing_url
-                print(f"🔖 NORMAL MODE: Using actual listing URL")
+        print('entering bookmark_driver')
+        """
+        ULTRA-FAST bookmark driver - uses single persistent driver with tabs
+        MODIFIED: Now looks for username and bookmarks/buys accordingly
+        FIXED: Now accepts username as parameter from process_vinted_listing
+        """
+        # TEST MODE: If test_bookmark_function is True, use test_bookmark_link instead
+        if test_bookmark_function:
+            actual_url = test_bookmark_link
+            print(f"🔖 TEST MODE: Using test URL instead of actual listing URL")
+            print(f"🔖 TEST URL: {actual_url}")
+        else:
+            print('else')
+            actual_url = listing_url
+            print(f"🔖 NORMAL MODE: Using actual listing URL")
+        
+        # USERNAME IS NOW PASSED AS PARAMETER - NO NEED TO EXTRACT FROM DRIVER
+        if not username:
+            print("⚠️ Could not extract username, possible unable to detect false buy, exiting.")
+            sys.exit(0)
+        
+        print(f"🔖 Looking at listing {actual_url} posted by {username if username else 'unknown user'}")
+        
+        try:
+            print(f"🔖 STARTING BOOKMARK: {actual_url}")
             
-            # USERNAME IS NOW PASSED AS PARAMETER - NO NEED TO EXTRACT FROM DRIVER
-            if not username:
-                print("⚠️ Could not extract username, possible unable to detect false buy, exiting.")
-                sys.exit(0)
-            
-            print(f"🔖 Looking at listing {actual_url} posted by {username if username else 'unknown user'}")
-            
-            try:
-                print(f"🔖 STARTING BOOKMARK: {actual_url}")
-                
-                # Initialize persistent driver if it doesn't exist
-                # In your bookmark_driver function, replace the driver initialization section with this:
+            # Initialize persistent driver if it doesn't exist
+            # In your bookmark_driver function, replace the driver initialization section with this:
 
-                # Initialize persistent driver if it doesn't exist
-                if not hasattr(self, 'persistent_bookmark_driver') or self.persistent_bookmark_driver is None:
-                    print("🔖 INITIALIZING: Creating persistent bookmark driver...")
-                    
-                    # SPEED OPTIMIZATION 1: Pre-cached service
-                    if not hasattr(self, '_cached_chromedriver_path'):
-                        self._cached_chromedriver_path = ChromeDriverManager().install()
-                    
-                    # SPEED OPTIMIZATION 2: Minimal Chrome options
-                    chrome_opts = Options()
-                    bookmark_user_data_dir = "C:\VintedScraper_Default_Bookmark"
-                    chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
-                    chrome_opts.add_argument("--profile-directory=Profile 4")
-                    #chrome_opts.add_argument("--headless")
-                    chrome_opts.add_argument("--no-sandbox")
-                    chrome_opts.add_argument("--disable-dev-shm-usage")
-                    chrome_opts.add_argument("--disable-gpu")
-                    chrome_opts.add_argument("--window-size=800,600")
-                    chrome_opts.add_argument("--log-level=3")
-                    chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-                    
-                    service = Service(self._cached_chromedriver_path, log_path=os.devnull)
-                    print("🔖 SERVICE: Using cached ChromeDriver")
-                    
-                    print("🔖 DRIVER: Creating persistent driver...")
-                    self.persistent_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
-                    print("🔖 DRIVER: Persistent driver created!")
-                    
-                    # BALANCED timeouts - fast but not too aggressive
-                    self.persistent_bookmark_driver.implicitly_wait(1)
-                    self.persistent_bookmark_driver.set_page_load_timeout(8)
-                    self.persistent_bookmark_driver.set_script_timeout(3)
-                    
-                    # NEW: Navigate to Vinted homepage on the main tab
+            # Initialize persistent driver if it doesn't exist
+            if not hasattr(self, 'persistent_bookmark_driver') or self.persistent_bookmark_driver is None:
+                print("🔖 INITIALIZING: Creating persistent bookmark driver...")
+                
+                # SPEED OPTIMIZATION 1: Pre-cached service
+                if not hasattr(self, '_cached_chromedriver_path'):
+                    self._cached_chromedriver_path = ChromeDriverManager().install()
+                
+                # SPEED OPTIMIZATION 2: Minimal Chrome options
+                chrome_opts = Options()
+                bookmark_user_data_dir = "C:\VintedScraper_Default_Bookmark"
+                chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
+                chrome_opts.add_argument("--profile-directory=Profile 4")
+                #chrome_opts.add_argument("--headless")
+                chrome_opts.add_argument("--no-sandbox")
+                chrome_opts.add_argument("--disable-dev-shm-usage")
+                chrome_opts.add_argument("--disable-gpu")
+                chrome_opts.add_argument("--window-size=800,600")
+                chrome_opts.add_argument("--log-level=3")
+                chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+                
+                service = Service(self._cached_chromedriver_path, log_path=os.devnull)
+                print("🔖 SERVICE: Using cached ChromeDriver")
+                
+                print("🔖 DRIVER: Creating persistent driver...")
+                self.persistent_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
+                print("🔖 DRIVER: Persistent driver created!")
+                
+                # BALANCED timeouts - fast but not too aggressive
+                self.persistent_bookmark_driver.implicitly_wait(1)
+                self.persistent_bookmark_driver.set_page_load_timeout(8)
+                self.persistent_bookmark_driver.set_script_timeout(3)
+                
+                # NEW: Navigate to Vinted homepage on the main tab
+                try:
+                    print("🔖 HOMEPAGE: Navigating to vinted.co.uk...")
+                    self.persistent_bookmark_driver.get("https://www.vinted.co.uk")
+                    print("🔖 HOMEPAGE: Successfully loaded vinted.co.uk")
+                except Exception as homepage_error:
+                    print(f"🔖 HOMEPAGE: Failed to load vinted.co.uk - {homepage_error}")
+                    # Don't fail the whole process if homepage load fails
+                    pass
+            try:
+                self.persistent_bookmark_driver.current_url  # Test if driver is alive
+                print("🔖 DRIVER: Using existing persistent driver")
+            except:
+                print("🔖 DRIVER: Existing driver is dead, creating new one...")
+                # Driver is dead, create a new one
+                self.persistent_bookmark_driver = None
+                return self.bookmark_driver(listing_url, username)  # Recursive call to recreate with username
+            
+            # Open new tab for this listing
+            print("🔖 TAB: Opening new tab...")
+            self.persistent_bookmark_driver.execute_script("window.open('');")
+            
+            # Switch to the new tab
+            new_tab = self.persistent_bookmark_driver.window_handles[-1]
+            self.persistent_bookmark_driver.switch_to.window(new_tab)
+            print(f"🔖 TAB: Switched to new tab (total tabs: {len(self.persistent_bookmark_driver.window_handles)})")
+            
+            # Navigate to the listing URL
+            print(f"🔖 NAVIGATING...")
+            try:
+                self.persistent_bookmark_driver.get(actual_url)
+                print("🔖 NAVIGATION: Complete")
+                
+                # NEW: FIRST BUY NOW + PAY SEQUENCE (before messages)
+                print("🔖 FIRST SEQUENCE: Looking for Buy now button...")
+                
+                buy_selectors = [
+                    "button[data-testid='item-buy-button']",
+                    "button.web_ui__Button__primary[data-testid='item-buy-button']",
+                    "button:contains('Buy now')",
+                    ".web_ui__Button__primary .web_ui__Button__label:contains('Buy now')",
+                ]
+                
+                first_buy_clicked = False
+                for selector in buy_selectors:
                     try:
-                        print("🔖 HOMEPAGE: Navigating to vinted.co.uk...")
-                        self.persistent_bookmark_driver.get("https://www.vinted.co.uk")
-                        print("🔖 HOMEPAGE: Successfully loaded vinted.co.uk")
-                    except Exception as homepage_error:
-                        print(f"🔖 HOMEPAGE: Failed to load vinted.co.uk - {homepage_error}")
-                        # Don't fail the whole process if homepage load fails
-                        pass
-                try:
-                    self.persistent_bookmark_driver.current_url  # Test if driver is alive
-                    print("🔖 DRIVER: Using existing persistent driver")
-                except:
-                    print("🔖 DRIVER: Existing driver is dead, creating new one...")
-                    # Driver is dead, create a new one
-                    self.persistent_bookmark_driver = None
-                    return self.bookmark_driver(listing_url, username)  # Recursive call to recreate with username
+                        buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                        
+                        print(f"🔖 FIRST SEQUENCE: Buy button found, clicking...")
+                        buy_button.click()
+                        first_buy_clicked = True
+                        break
+                        
+                    except:
+                        continue
                 
-                # Open new tab for this listing
-                print("🔖 TAB: Opening new tab...")
-                self.persistent_bookmark_driver.execute_script("window.open('');")
-                
-                # Switch to the new tab
-                new_tab = self.persistent_bookmark_driver.window_handles[-1]
-                self.persistent_bookmark_driver.switch_to.window(new_tab)
-                print(f"🔖 TAB: Switched to new tab (total tabs: {len(self.persistent_bookmark_driver.window_handles)})")
-                
-                # Navigate to the listing URL
-                print(f"🔖 NAVIGATING...")
-                try:
+                if first_buy_clicked:
+                    print("🔖 FIRST SEQUENCE: Buy button clicked, looking for Pay button...")
+                    
+                    try:
+                        # Look for pay button
+                        pay_button = WebDriverWait(self.persistent_bookmark_driver, 5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, 
+                                'button[data-testid="single-checkout-order-summary-purchase-button"]'
+                            ))
+                        )
+                        
+                        print("🔖 FIRST SEQUENCE: Pay button found, clicking...")
+                        try:
+                            pay_button.click()
+                            print("🔖 FIRST SEQUENCE: Standard click attempted")
+                        except Exception as e:
+                            print(f"🔖 FIRST SEQUENCE: Standard click failed: {e}, trying JavaScript click")
+                            try:
+                                self.persistent_bookmark_driver.execute_script("arguments[0].click();", pay_button)
+                                print("🔖 FIRST SEQUENCE: JavaScript click attempted")
+                            except Exception as e2:
+                                print(f"🔖 FIRST SEQUENCE: JavaScript click also failed: {e2}")
+
+                        print("🔖 FIRST SEQUENCE: Waiting 0.25 seconds...")
+                        time.sleep(0.25)
+                        
+                        print("🔖 FIRST SEQUENCE: Closing tab...")
+                        self.persistent_bookmark_driver.close()
+                        
+                        # Switch back to main tab
+                        if len(self.persistent_bookmark_driver.window_handles) > 0:
+                            self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
+                        
+                        print("🔖 FIRST SEQUENCE: Complete. Opening new tab for second sequence...")
+                        
+                    except:
+                        print("🔖 FIRST SEQUENCE: Pay button not found, closing tab...")
+                        self.persistent_bookmark_driver.close()
+                        if len(self.persistent_bookmark_driver.window_handles) > 0:
+                            self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
+                    # Navigate to listing URL again (second time)
+                    print("🔖 SECOND SEQUENCE: Opening new tab and navigating to listing...")
+                    self.persistent_bookmark_driver.execute_script("window.open('');")
+                    second_tab = self.persistent_bookmark_driver.window_handles[-1]
+                    self.persistent_bookmark_driver.switch_to.window(second_tab)
+                    
                     self.persistent_bookmark_driver.get(actual_url)
-                    print("🔖 NAVIGATION: Complete")
+                    print("🔖 SECOND SEQUENCE: Navigation complete")
                     
-                    # NEW: FIRST BUY NOW + PAY SEQUENCE (before messages)
-                    print("🔖 FIRST SEQUENCE: Looking for Buy now button...")
+                    # Look for buy button AGAIN
+                    print("🔖 SECOND SEQUENCE: Looking for Buy now button...")
                     
-                    buy_selectors = [
-                        "button[data-testid='item-buy-button']",
-                        "button.web_ui__Button__primary[data-testid='item-buy-button']",
-                        "button:contains('Buy now')",
-                        ".web_ui__Button__primary .web_ui__Button__label:contains('Buy now')",
-                    ]
-                    
-                    first_buy_clicked = False
+                    second_buy_button_found = False
                     for selector in buy_selectors:
                         try:
                             buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
                                 EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                             )
                             
-                            print(f"🔖 FIRST SEQUENCE: Buy button found, clicking...")
+                            print(f"🔖 SECOND SEQUENCE: Buy button found with selector: {selector}")
                             buy_button.click()
-                            first_buy_clicked = True
+                            second_buy_button_found = True
                             break
                             
                         except:
                             continue
                     
-                    if first_buy_clicked:
-                        print("🔖 FIRST SEQUENCE: Buy button clicked, looking for Pay button...")
+                    if second_buy_button_found:
+                        print("🔖 SECOND SEQUENCE: Buy button clicked, waiting for loading...")
                         
+                        # Wait for loading and look for processing payment message
                         try:
-                            # Look for pay button
-                            pay_button = WebDriverWait(self.persistent_bookmark_driver, 10).until(
-                                EC.element_to_be_clickable((By.CSS_SELECTOR, 
-                                    'button[data-testid="single-checkout-order-summary-purchase-button"]'
-                                ))
-                            )
-                            
-                            print("🔖 FIRST SEQUENCE: Pay button found, clicking...")
-                            pay_button.click()
-                            
-                            print("🔖 FIRST SEQUENCE: Waiting 0.25 seconds...")
-                            time.sleep(0.25)
-                            
-                            print("🔖 FIRST SEQUENCE: Closing tab...")
-                            self.persistent_bookmark_driver.close()
-                            
-                            # Switch back to main tab
-                            if len(self.persistent_bookmark_driver.window_handles) > 0:
-                                self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
-                            
-                            print("🔖 FIRST SEQUENCE: Complete. Opening new tab for second sequence...")
-                            
-                        except:
-                            print("🔖 FIRST SEQUENCE: Pay button not found, closing tab...")
-                            self.persistent_bookmark_driver.close()
-                            if len(self.persistent_bookmark_driver.window_handles) > 0:
-                                self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
-                        # Navigate to listing URL again (second time)
-                        print("🔖 SECOND SEQUENCE: Opening new tab and navigating to listing...")
-                        self.persistent_bookmark_driver.execute_script("window.open('');")
-                        second_tab = self.persistent_bookmark_driver.window_handles[-1]
-                        self.persistent_bookmark_driver.switch_to.window(second_tab)
-                        
-                        self.persistent_bookmark_driver.get(actual_url)
-                        print("🔖 SECOND SEQUENCE: Navigation complete")
-                        
-                        # Look for buy button AGAIN
-                        print("🔖 SECOND SEQUENCE: Looking for Buy now button...")
-                        
-                        second_buy_button_found = False
-                        for selector in buy_selectors:
-                            try:
-                                buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
-                                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                                )
+                            # Use the exact HTML structure you provided
+                            processing_selectors = [
+                                # Exact selector for the h2 "Processing payment" element
+                                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
                                 
-                                print(f"🔖 SECOND SEQUENCE: Buy button found with selector: {selector}")
-                                buy_button.click()
-                                second_buy_button_found = True
-                                break
+                                # Alternative: look for the reservation message span
+                                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format' and contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
                                 
-                            except:
-                                continue
-                        
-                        if second_buy_button_found:
-                            print("🔖 SECOND SEQUENCE: Buy button clicked, waiting for loading...")
+                                # Fallback: broader selectors
+                                "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
+                                "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]"
+                            ]
                             
-                            # Wait for loading and look for processing payment message
-                            try:
-                                # Use the exact HTML structure you provided
-                                processing_selectors = [
-                                    # Exact selector for the h2 "Processing payment" element
-                                    "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
+                            processing_found = False
+                            
+                            for i, selector in enumerate(processing_selectors, 1):
+                                try:
+                                    print(f"🔖 SECOND SEQUENCE: Trying selector {i}...")
                                     
-                                    # Alternative: look for the reservation message span
-                                    "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format' and contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+                                    processing_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
+                                        EC.presence_of_element_located((By.XPATH, selector))
+                                    )
                                     
-                                    # Fallback: broader selectors
-                                    "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
-                                    "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]"
-                                ]
-                                
-                                processing_found = False
-                                
-                                for i, selector in enumerate(processing_selectors, 1):
-                                    try:
-                                        print(f"🔖 SECOND SEQUENCE: Trying selector {i}...")
-                                        
-                                        processing_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
-                                            EC.presence_of_element_located((By.XPATH, selector))
-                                        )
-                                        
-                                        element_text = processing_element.text.strip()
-                                        print(f"🔖 SECOND SEQUENCE: Found element with text: '{element_text}'")
-                                        print('SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
-                                        processing_found = True
-                                        break
-                                        
-                                    except TimeoutException:
-                                        continue
-                                    except Exception as e:
-                                        print(f"🔖 SECOND SEQUENCE: Selector {i} error: {e}")
-                                        continue
-                                
-                                if not processing_found:
-                                    print('listing likely bookmarked by another')
+                                    element_text = processing_element.text.strip()
+                                    print(f"🔖 SECOND SEQUENCE: Found element with text: '{element_text}'")
+                                    print('SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+                                    processing_found = True
+                                    break
                                     
-                            except Exception as detection_error:
-                                print(f'🔖 SECOND SEQUENCE: Error during processing payment detection: {detection_error}')
+                                except TimeoutException:
+                                    continue
+                                except Exception as e:
+                                    print(f"🔖 SECOND SEQUENCE: Selector {i} error: {e}")
+                                    continue
+                            
+                            if not processing_found:
                                 print('listing likely bookmarked by another')
-                            
-                            # Close tab and return (do NOT continue with messages)
-                            print("🔖 SECOND SEQUENCE: Closing tab...")
-                            self.persistent_bookmark_driver.close()
-                            if len(self.persistent_bookmark_driver.window_handles) > 0:
-                                self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
-                            
-                            return True
+                                
+                        except Exception as detection_error:
+                            print(f'🔖 SECOND SEQUENCE: Error during processing payment detection: {detection_error}')
+                            print('listing likely bookmarked by another')
                         
-                        else:
-                            print("🔖 SECOND SEQUENCE: Buy button not found, proceeding with messages...")
-                            
-                            # Continue with existing messages functionality
-                            print("📧 MESSAGES: Opening new tab to check messages...")
-                            self.persistent_bookmark_driver.execute_script("window.open('');")
-                            
-                            # Switch to the new messages tab
-                            messages_tab = self.persistent_bookmark_driver.window_handles[-1]
-                            self.persistent_bookmark_driver.switch_to.window(messages_tab)
-                            print(f"📧 MESSAGES: Switched to messages tab (total tabs: {len(self.persistent_bookmark_driver.window_handles)})")
-                            
-                            try:
-                                # Navigate to the same URL first
-                                print(f"📧 MESSAGES: Navigating to {actual_url}...")
-                                self.persistent_bookmark_driver.get(actual_url)
-                                print("📧 MESSAGES: Navigation complete")
-                                
-                                # Look for the messages button with multiple selectors
-                                print("📧 MESSAGES: Looking for messages button...")
-                                
-                                messages_selectors = [
-                                    "a[data-testid='header-conversations-button']",
-                                    "a[href='/inbox'][data-testid='header-conversations-button']",
-                                    "a[href='/inbox'].web_ui__Button__button",
-                                    "a[aria-label*='message'][href='/inbox']",
-                                    "a[href='/inbox']",
-                                ]
-                                
-                                messages_button_found = False
-                                for selector in messages_selectors:
-                                    try:
-                                        messages_button = WebDriverWait(self.persistent_bookmark_driver, 1).until(
-                                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                                        )
-                                        
-                                        aria_label = messages_button.get_attribute("aria-label") or "messages"
-                                        print(f"📧 MESSAGES: Found messages button with selector: {selector}")
-                                        print(f"📧 MESSAGES: Button label: {aria_label}")
-                                        
-                                        try:
-                                            messages_button.click()
-                                            print("📧 MESSAGES: Standard click successful")
-                                        except:
-                                            try:
-                                                self.persistent_bookmark_driver.execute_script("arguments[0].click();", messages_button)
-                                                print("📧 MESSAGES: JavaScript click successful")
-                                            except:
-                                                try:
-                                                    ActionChains(self.persistent_bookmark_driver).move_to_element(messages_button).click().perform()
-                                                    print("📧 MESSAGES: ActionChains click successful")
-                                                except:
-                                                    print("📧 MESSAGES: All click methods failed")
-                                                    continue
-                                        
-                                        messages_button_found = True
-                                        break
-                                        
-                                    except:
-                                        continue
-                                
-                                if messages_button_found:
-                                    print("📧 MESSAGES: Button clicked successfully")
-                                    
-                                    # Search for username functionality
-                                    if username:
-                                        print(f"📧 SEARCHING: Looking for username '{username}' on messages page...")
-                                        
-                                        time.sleep(2)
-                                        
-                                        try:
-                                            
-                                            username_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
-                                                EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
-                                            )
-                                            
-                                            print(f"📧 FOUND: Username '{username}' on messages page!")
-                                            
-                                            try:
-                                                username_element.click()
-                                                print(f"📧 CLICKED: Username '{username}' clicked successfully")
-                                            except:
-                                                try:
-                                                    self.persistent_bookmark_driver.execute_script("arguments[0].click();", username_element)
-                                                    print(f"📧 CLICKED: Username '{username}' clicked with JavaScript")
-                                                except:
-                                                    try:
-                                                        ActionChains(self.persistent_bookmark_driver).move_to_element(username_element).click().perform()
-                                                        print(f"📧 CLICKED: Username '{username}' clicked with ActionChains")
-                                                    except:
-                                                        print(f"📧 CLICK FAILED: Could not click username '{username}'")
-                                            
-                                            print("USERNAME FOUND, POSSIBLE ACCIDENTAL PURCHASE, ABORT")
-                                            time.sleep(3)
-                                            sys.exit(0)
-                                            
-                                        except TimeoutException:
-                                            print(f"📧 NOT FOUND: Username '{username}' not found on messages page")
-                                            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
-                                        except Exception as search_error:                        
-                                            print(f"📧 SEARCH ERROR: Error searching for username '{username}': {search_error}")
-                                            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
-                                            
-                                    else:
-                                        print("📧 NO USERNAME: No username available for search, waiting 3 seconds...")
-                                        time.sleep(3)
-                                        
-                                else:
-                                    print("📧 MESSAGES: Messages button not found")
-                                    
-                            except Exception as messages_error:
-                                print(f"📧 MESSAGES: Error during messages check - {messages_error}")
-                            
-                            # Close the messages tab
-                            print("📧 MESSAGES: Closing messages tab...")
-                            self.persistent_bookmark_driver.close()
-                            
-                            # Switch back to the main tab
-                            if len(self.persistent_bookmark_driver.window_handles) > 0:
-                                self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
-                                print(f"📧 MESSAGES: Back to main tab (remaining tabs: {len(self.persistent_bookmark_driver.window_handles)})")
-                            
-                            print("🔖 SUCCESS: Bookmark and messages check completed!")
-                            return True
-                    else:
-                        print("🔖 FIRST SEQUENCE: Buy button not found, closing tab...")
-                        print('this means ALREADY SOLD!!!')
+                        # Close tab and return (do NOT continue with messages)
+                        print("🔖 SECOND SEQUENCE: Closing tab...")
                         self.persistent_bookmark_driver.close()
                         if len(self.persistent_bookmark_driver.window_handles) > 0:
                             self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
+                        
+                        return True
+                    
+                    else:
+                        print("🔖 SECOND SEQUENCE: Buy button not found, proceeding with messages...")
+                        
+                        # Continue with existing messages functionality
+                        print("📧 MESSAGES: Opening new tab to check messages...")
+                        self.persistent_bookmark_driver.execute_script("window.open('');")
+                        
+                        # Switch to the new messages tab
+                        messages_tab = self.persistent_bookmark_driver.window_handles[-1]
+                        self.persistent_bookmark_driver.switch_to.window(messages_tab)
+                        print(f"📧 MESSAGES: Switched to messages tab (total tabs: {len(self.persistent_bookmark_driver.window_handles)})")
+                        
+                        try:
+                            # Navigate to the same URL first
+                            print(f"📧 MESSAGES: Navigating to {actual_url}...")
+                            self.persistent_bookmark_driver.get(actual_url)
+                            print("📧 MESSAGES: Navigation complete")
                             
-                except Exception as nav_error:
-                    print(f"🔖 NAVIGATION: Error - {nav_error}")
-                
-            except Exception as e:
-                print(f"🔖 FAST ERROR: {e}")
-                return False
+                            # Look for the messages button with multiple selectors
+                            print("📧 MESSAGES: Looking for messages button...")
+                            
+                            messages_selectors = [
+                                "a[data-testid='header-conversations-button']",
+                                "a[href='/inbox'][data-testid='header-conversations-button']",
+                                "a[href='/inbox'].web_ui__Button__button",
+                                "a[aria-label*='message'][href='/inbox']",
+                                "a[href='/inbox']",
+                            ]
+                            
+                            messages_button_found = False
+                            for selector in messages_selectors:
+                                try:
+                                    messages_button = WebDriverWait(self.persistent_bookmark_driver, 1).until(
+                                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                                    )
+                                    
+                                    aria_label = messages_button.get_attribute("aria-label") or "messages"
+                                    print(f"📧 MESSAGES: Found messages button with selector: {selector}")
+                                    print(f"📧 MESSAGES: Button label: {aria_label}")
+                                    
+                                    try:
+                                        messages_button.click()
+                                        print("📧 MESSAGES: Standard click successful")
+                                    except:
+                                        try:
+                                            self.persistent_bookmark_driver.execute_script("arguments[0].click();", messages_button)
+                                            print("📧 MESSAGES: JavaScript click successful")
+                                        except:
+                                            try:
+                                                ActionChains(self.persistent_bookmark_driver).move_to_element(messages_button).click().perform()
+                                                print("📧 MESSAGES: ActionChains click successful")
+                                            except:
+                                                print("📧 MESSAGES: All click methods failed")
+                                                continue
+                                    
+                                    messages_button_found = True
+                                    break
+                                    
+                                except:
+                                    continue
+                            
+                            if messages_button_found:
+                                print("📧 MESSAGES: Button clicked successfully")
+                                
+                                # Search for username functionality
+                                if username:
+                                    print(f"📧 SEARCHING: Looking for username '{username}' on messages page...")
+                                    
+                                    time.sleep(2)
+                                    
+                                    try:
+                                        
+                                        username_element = WebDriverWait(self.persistent_bookmark_driver, 3).until(
+                                            EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
+                                        )
+                                        
+                                        print(f"📧 FOUND: Username '{username}' on messages page!")
+                                        
+                                        try:
+                                            username_element.click()
+                                            print(f"📧 CLICKED: Username '{username}' clicked successfully")
+                                        except:
+                                            try:
+                                                self.persistent_bookmark_driver.execute_script("arguments[0].click();", username_element)
+                                                print(f"📧 CLICKED: Username '{username}' clicked with JavaScript")
+                                            except:
+                                                try:
+                                                    ActionChains(self.persistent_bookmark_driver).move_to_element(username_element).click().perform()
+                                                    print(f"📧 CLICKED: Username '{username}' clicked with ActionChains")
+                                                except:
+                                                    print(f"📧 CLICK FAILED: Could not click username '{username}'")
+                                        
+                                        print("USERNAME FOUND, POSSIBLE ACCIDENTAL PURCHASE, ABORT")
+                                        time.sleep(3)
+                                        sys.exit(0)
+                                        
+                                    except TimeoutException:
+                                        print(f"📧 NOT FOUND: Username '{username}' not found on messages page")
+                                        print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
+                                    except Exception as search_error:                        
+                                        print(f"📧 SEARCH ERROR: Error searching for username '{username}': {search_error}")
+                                        print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
+                                        
+                                else:
+                                    print("📧 NO USERNAME: No username available for search, waiting 3 seconds...")
+                                    time.sleep(3)
+                                    
+                            else:
+                                print("📧 MESSAGES: Messages button not found")
+                                
+                        except Exception as messages_error:
+                            print(f"📧 MESSAGES: Error during messages check - {messages_error}")
+                        
+                        # Close the messages tab
+                        print("📧 MESSAGES: Closing messages tab...")
+                        self.persistent_bookmark_driver.close()
+                        
+                        # Switch back to the main tab
+                        if len(self.persistent_bookmark_driver.window_handles) > 0:
+                            self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
+                            print(f"📧 MESSAGES: Back to main tab (remaining tabs: {len(self.persistent_bookmark_driver.window_handles)})")
+                        
+                        print("🔖 SUCCESS: Bookmark and messages check completed!")
+                        return True
+                else:
+                    print("🔖 FIRST SEQUENCE: Buy button not found, closing tab...")
+                    print('this means ALREADY SOLD!!!')
+                    self.persistent_bookmark_driver.close()
+                    if len(self.persistent_bookmark_driver.window_handles) > 0:
+                        self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
+                        
+            except Exception as nav_error:
+                print(f"🔖 NAVIGATION: Error - {nav_error}")
+            
+        except Exception as e:
+            print(f"🔖 FAST ERROR: {e}")
+            return False
 
     def cleanup_persistent_bookmark_driver(self):
         """
