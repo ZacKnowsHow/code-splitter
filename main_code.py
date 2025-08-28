@@ -50,7 +50,7 @@ from ultralytics import YOLO
 import random
 import torch
 
-VINTED_SHOW_ALL_LISTINGS = True
+VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
 print_images_backend_info = False
 test_bookmark_function = False
@@ -62,7 +62,7 @@ buying_driver_click_pay_wait_time = 7.5
 actually_purchase_listing = True
 wait_for_bookmark_stopwatch_to_buy = True
 test_purchase_not_true = False #uses the url below rather than the one from the web page
-test_purchase_url = "https://www.vinted.co.uk/items/6955075707-denim-shorts?referrer=catalog"
+test_purchase_url = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 should_send_fail_bookmark_notification = True
 
@@ -4114,11 +4114,11 @@ class VintedScraper:
             for selector in buy_selectors:
                 try:
                     if selector.startswith('//'):
-                        buy_button = WebDriverWait(driver, 2).until(
+                        buy_button = WebDriverWait(driver, 10).until(
                             EC.element_to_be_clickable((By.XPATH, selector))
                         )
                     else:
-                        buy_button = WebDriverWait(driver, 2).until(
+                        buy_button = WebDriverWait(driver, 10).until(
                             EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                         )
                     print(f"✅ DRIVER {driver_num}: Found Buy now button")
@@ -4142,6 +4142,18 @@ class VintedScraper:
                 # Check actually_purchase_listing setting
                 if actually_purchase_listing:
                     print(f"💳 DRIVER {driver_num}: actually_purchase_listing is TRUE - starting purchase process")
+                    
+                    # NEW: CLICK "SHIP TO HOME" BEFORE LOOKING FOR PAY BUTTON
+                    print(f"🏠 DRIVER {driver_num}: Looking for 'Ship to home' option")
+                    try:
+                        ship_to_home = WebDriverWait(driver, 15).until(
+                            EC.element_to_be_clickable((By.XPATH, '//h2[@class="web_uiTexttext web_uiTexttitle web_uiTextleft" and text()="Ship to home"]'))
+                        )
+                        ship_to_home.click()
+                        print(f"✅ DRIVER {driver_num}: Clicked 'Ship to home'")
+                        time.sleep(2)  # Wait a couple seconds as requested
+                    except Exception as e:
+                        print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to home': {e}")
                     
                     # Wait for Pay button to appear
                     print(f"💳 DRIVER {driver_num}: Waiting for Pay button to appear")
@@ -4205,7 +4217,7 @@ class VintedScraper:
                                 
                                 for selector in error_selectors:
                                     try:
-                                        error_element = WebDriverWait(driver, 6).until(
+                                        error_element = WebDriverWait(driver, 10).until(
                                             EC.presence_of_element_located((By.XPATH, selector))
                                         )
                                         used_selector = selector
@@ -6212,7 +6224,6 @@ class VintedScraper:
                 print(f"📄 Processing page {page} with {len(urls)} listings")
 
                 for idx, url in enumerate(urls, start=1):
-                    overall_listing_counter += 1
                     cycle_listing_counter += 1
                     
                     print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
@@ -6232,6 +6243,8 @@ class VintedScraper:
                         print(f"📊 Reached MAX_LISTINGS_VINTED_TO_SCAN ({MAX_LISTINGS_VINTED_TO_SCAN})")
                         print(f"🔄 Initiating refresh cycle...")
                         break
+
+                    overall_listing_counter += 1
 
                     # Process the listing (same as original logic)
                     driver.execute_script("window.open();")
@@ -6415,7 +6428,7 @@ class VintedScraper:
                 bookmark_user_data_dir = "C:\VintedScraper_Default_Bookmark"
                 chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
                 chrome_opts.add_argument("--profile-directory=Profile 4")
-                #chrome_opts.add_argument("--headless")
+                chrome_opts.add_argument("--headless")
                 chrome_opts.add_argument("--no-sandbox")
                 chrome_opts.add_argument("--disable-dev-shm-usage")
                 chrome_opts.add_argument("--disable-gpu")
@@ -6481,7 +6494,7 @@ class VintedScraper:
                 first_buy_clicked = False
                 for selector in buy_selectors:
                     try:
-                        buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
+                        buy_button = WebDriverWait(self.persistent_bookmark_driver, 5).until(
                             EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                         )
                         
@@ -6552,7 +6565,7 @@ class VintedScraper:
                     second_buy_button_found = False
                     for selector in buy_selectors:
                         try:
-                            buy_button = WebDriverWait(self.persistent_bookmark_driver, 0.5).until(
+                            buy_button = WebDriverWait(self.persistent_bookmark_driver, 15).until(
                                 EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                             )
                             
@@ -6834,7 +6847,7 @@ class VintedScraper:
         chrome_opts.add_argument("--disable-software-rasterizer")
         
         # Remove potentially problematic arguments
-        #chrome_opts.add_argument("--headless")  # Try without headless first
+        chrome_opts.add_argument("--headless")  # Try without headless first
         
         # Keep some logging for debugging
         chrome_opts.add_argument("--log-level=1")  # More detailed logging
@@ -6890,7 +6903,7 @@ class VintedScraper:
             )
             
             chrome_opts = Options()
-            #chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--headless")
             chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer1")
             chrome_opts.add_argument("--profile-directory=Default")
             chrome_opts.add_argument("--no-sandbox")
