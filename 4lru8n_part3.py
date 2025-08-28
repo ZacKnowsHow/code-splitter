@@ -1,4 +1,11 @@
 # Continuation from line 4401
+                                break
+                            
+                            # Click "Ship to home"
+                            try:
+                                ship_to_home = driver.find_element(
+                                    By.XPATH, 
+                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
                                 )
                                 ship_to_home.click()
                                 print(f"🏠 DRIVER {driver_num}: Clicked 'Ship to home'")
@@ -424,7 +431,7 @@
         }
         options = Options()
         options.add_experimental_option("prefs", prefs)
-        #options.add_argument("--headless")
+        options.add_argument("--headless")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
@@ -472,7 +479,7 @@
             # Fallback: Remove problematic arguments
             fallback_opts = Options()
             fallback_opts.add_experimental_option("prefs", prefs)
-            #fallback_opts.add_argument("--headless")
+            fallback_opts.add_argument("--headless")
             fallback_opts.add_argument("--no-sandbox")
             fallback_opts.add_argument("--disable-dev-shm-usage")
             fallback_opts.add_argument("--disable-gpu")
@@ -720,7 +727,8 @@
             reviews_text = str(seller_reviews).strip()
             
             # Debug print to see what we're getting
-            print(f"DEBUG: Raw seller_reviews value: '{reviews_text}'")
+            if print_debug:
+                print(f"DEBUG: Raw seller_reviews value: '{reviews_text}'")
             
             # Try multiple extraction methods
             if reviews_text.startswith("Reviews: "):
@@ -740,8 +748,8 @@
                 else:
                     reviews_count = 0
         
-        # Debug print to see final extracted count
-        print(f"DEBUG: Extracted reviews_count: {reviews_count} (review_min: {review_min})")
+        if print_debug:# Debug print to see final extracted count
+            print(f"DEBUG: Extracted reviews_count: {reviews_count} (review_min: {review_min})")
         
         checks = [
             (lambda: reviews_count < review_min,
@@ -813,12 +821,14 @@
                                 # Look for text that contains digits (likely review count)
                                 if text and (text.isdigit() or "review" in text.lower() or re.search(r'\d+', text)):
                                     reviews_text = text
-                                    print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
+                                    if print_debug:
+                                        print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
                                     break
                             if reviews_text:
                                 break
                         except Exception as e:
-                            print(f"DEBUG: Selector '{review_sel}' failed: {e}")
+                            if print_debug:
+                                print(f"DEBUG: Selector '{review_sel}' failed: {e}")
                             continue
                     
                     # Process the found reviews text
@@ -828,18 +838,21 @@
                         elif reviews_text.isdigit():
                             # Just a number like "123"
                             data[key] = reviews_text  # Keep as string for consistency
-                            print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
+                            if print_debug:
+                                print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
                         else:
                             # Try to extract number from text like "123 reviews" or "(123)"
                             match = re.search(r'(\d+)', reviews_text)
                             if match:
                                 data[key] = match.group(1)  # Just the number as string
-                                print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
+                                if print_debug:
+                                    print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
                             else:
                                 data[key] = "No reviews yet"
                     else:
                         data[key] = "No reviews yet"
-                        print("DEBUG: No seller reviews found with any selector")
+                        if print_debug:
+                            print("DEBUG: No seller reviews found with any selector")
                         
                 elif key == "username":
                     # NEW: Handle username extraction with careful error handling
@@ -848,10 +861,12 @@
                         username_text = username_element.text.strip()
                         if username_text:
                             data[key] = username_text
-                            print(f"DEBUG: Found username: '{username_text}'")
+                            if print_debug:
+                                print(f"DEBUG: Found username: '{username_text}'")
                         else:
                             data[key] = "Username not found"
-                            print("DEBUG: Username element found but no text")
+                            if print_debug:
+                                print("DEBUG: Username element found but no text")
                     except NoSuchElementException:
                         # Try alternative selectors for username
                         alternative_username_selectors = [
@@ -876,7 +891,8 @@
                         
                         if not username_found:
                             data[key] = "Username not found"
-                            print("DEBUG: Username not found with any selector")
+                            if print_debug:
+                                print("DEBUG: Username not found with any selector")
                             
                 else:
                     # Handle all other fields normally
@@ -885,10 +901,12 @@
             except NoSuchElementException:
                 if key == "seller_reviews":
                     data[key] = "No reviews yet"
-                    print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
+                    if print_debug:
+                        print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
                 elif key == "username":
                     data[key] = "Username not found"
-                    print("DEBUG: NoSuchElementException - set username to 'Username not found'")
+                    if print_debug:
+                        print("DEBUG: NoSuchElementException - set username to 'Username not found'")
                 else:
                     data[key] = None
 
@@ -897,9 +915,10 @@
             data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
 
         # DEBUG: Print final scraped data for seller_reviews and username
-        print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
-        print(f"DEBUG: Final scraped username: '{data.get('username')}'")
-        
+        if print_debug:
+            print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
+            print(f"DEBUG: Final scraped username: '{data.get('username')}'")
+            
         return data
 
     def clear_download_folder(self):
@@ -919,9 +938,8 @@
 
         # Extract username from details - THIS WAS MISSING!
         username = details.get("username", None)
-        if username and username != "Username not found":
-            print(f"🔖 USERNAME EXTRACTED: {username}")
-        else:
+
+        if not username or username == "Username not found":
             username = None
             print("🔖 USERNAME: Not available for this listing")
 
@@ -933,7 +951,8 @@
 
         # Get seller reviews
         seller_reviews = details.get("seller_reviews", "No reviews yet")
-        print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
+        if print_debug:    
+            print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
 
         # Create basic listing info for suitability checking
         listing_info = {
@@ -946,7 +965,8 @@
 
         # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
         suitability_result = self.check_vinted_listing_suitability(listing_info)
-        print(f"DEBUG: Suitability result: '{suitability_result}'")
+        if print_debug:    
+            print(f"DEBUG: Suitability result: '{suitability_result}'")
 
         # Apply console keyword detection to detected objects
         detected_console = self.detect_console_keywords_vinted(
@@ -1010,7 +1030,8 @@
             suitability_reason = f"Suitable: Profit £{expected_profit:.2f} ({profit_percentage:.2f}%)"
             is_suitable = True
 
-        print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
+        if print_debug:    
+            print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
 
         # 🔖 MODIFIED BOOKMARK FUNCTIONALITY WITH SUCCESS TRACKING
         bookmark_success = False
@@ -1071,6 +1092,7 @@
         should_add_to_pygame = False  # Always true for pygame to show suitable listings
         should_send_notification = False
 
+
         # Website logic (current behavior - only successful bookmarks when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False)
         if bookmark_listings and not VINTED_SHOW_ALL_LISTINGS:
             # When bookmark_listings is ON and VINTED_SHOW_ALL_LISTINGS is OFF:
@@ -1093,12 +1115,30 @@
         elif is_suitable:  # Show all suitable listings regardless of bookmark success
             should_add_to_pygame = True
 
+
         # Modify suitability_reason for pygame if bookmark failed
         pygame_suitability_reason = suitability_reason
         if should_add_to_pygame and bookmark_listings and is_suitable and not bookmark_success:
             pygame_suitability_reason = suitability_reason + "\n⚠️ BOOKMARK FAILED"
-
-        # Add to website (existing logic)
+        
+        if is_suitable and should_send_fail_bookmark_notification and not should_add_to_website:
+            notification_title = f"Listing Failed Bookmark: £{total_price:.2f}"
+            notification_message = (
+                f"Title: {details.get('title', 'No title')}\n"
+                f"Price: £{total_price:.2f}\n"
+                f"Expected Profit: £{expected_profit:.2f}\n"
+                f"Profit %: {profit_percentage:.2f}%\n"
+            )
+            
+            # Use the Pushover tokens exactly as Facebook does
+            if send_notification:
+                self.send_pushover_notification(
+                    notification_title,
+                    notification_message,
+                    'aks3to8guqjye193w7ajnydk9jaxh5',
+                    'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                )
+    # Add to website (existing logic)
         if should_add_to_website:
             # Send Pushover notification
             if should_send_notification:
@@ -1207,9 +1247,6 @@
 
         # Detect SD card and add revenue
         total_revenue = misc_games_revenue
-        if self.detect_sd_card_vinted(title, description):
-            total_revenue += 5 # Same SD card revenue as Facebook
-            print(f"SD Card detected: Added £5 to revenue")
 
         # Calculate revenue from detected objects
         for item, count in detected_objects.items():
@@ -1228,7 +1265,6 @@
         expected_profit = total_revenue - listing_price
         profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
 
-        print(f"\nVinted Revenue Breakdown:")
         print(f"Listing Price: £{listing_price:.2f}")
         print(f"Total Expected Revenue: £{total_revenue:.2f}")
         print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
@@ -1373,7 +1409,8 @@
         for selector in img_selectors:
             imgs = driver.find_elements(By.CSS_SELECTOR, selector)
             if imgs:
-                print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
+                if print_images_backend_info:
+                    print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
                 break
         
         if not imgs:
@@ -1384,7 +1421,8 @@
         valid_urls = []
         seen_urls = set()  # Track URLs to prevent duplicates
         
-        print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
+        if print_images_backend_info:
+            print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
         
         for img in imgs:  # REMOVED [:8] limit here
             src = img.get_attribute("src")
@@ -1404,7 +1442,8 @@
                 normalized_url = src.split('?')[0].split('#')[0]
                 
                 if normalized_url in seen_urls:
-                    print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
                     continue
                 
                 seen_urls.add(normalized_url)
@@ -1437,13 +1476,15 @@
                     not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
                 ):
                     valid_urls.append(src)
-                    print(f"    ✅ Added valid image URL: {src[:50]}...")
+                    if print_images_backend_info:
+                        print(f"    ✅ Added valid image URL: {src[:50]}...")
 
         if not valid_urls:
             print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
             return []
 
-        print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
+        if print_images_backend_info:
+            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
         
         os.makedirs(listing_dir, exist_ok=True)
         
@@ -1472,7 +1513,8 @@
                 # Check if we've already downloaded this exact image content
                 hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
                 if os.path.exists(hash_file):
-                    print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
                     return None
                 
                 img = Image.open(BytesIO(resp.content))
@@ -1499,22 +1541,23 @@
                 # Create hash marker file to prevent future duplicates
                 with open(hash_file, 'w') as f:
                     f.write(f"Downloaded from: {url}")
-                
-                print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
+                if print_images_backend_info:
+                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
                 return save_path
                 
             except Exception as e:
                 print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
                 return None
-        
-        print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
+        if print_images_backend_info:
+            print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
         
         # FIXED: Dynamic batch size based on actual image count
         batch_size = len(valid_urls)  # Each "batch" equals the number of listing images
         max_workers = min(6, batch_size)  # Use appropriate number of workers
         
-        print(f"  ▶ Batch size set to: {batch_size} (= number of listing images)")
-        print(f"  ▶ Using {max_workers} concurrent workers")
+        if print_images_backend_info:
+            print(f"  ▶ Batch size set to: {batch_size} (= number of listing images)")
+            print(f"  ▶ Using {max_workers} concurrent workers")
         
         downloaded_paths = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -1559,7 +1602,8 @@
                     content_hash = hashlib.md5(response.content).hexdigest()
                     
                     if content_hash in seen_hashes:
-                        print(f"🖼️  Skipping duplicate image {i+1} (hash: {content_hash[:8]}...)")
+                        if print_images_backend_info:
+                            print(f"🖼️  Skipping duplicate image {i+1} (hash: {content_hash[:8]}...)")
                         continue
                     
                     seen_hashes.add(content_hash)
@@ -1796,6 +1840,7 @@
                     driver.get(url)
 
                     try:
+                        listing_start_time = time.time()
                         details = self.scrape_item_details(driver)
                         second_price = self.extract_price(details["second_price"])
                         postage = self.extract_price(details["postage"])
@@ -1836,6 +1881,10 @@
                             print(f"✅ Saved listing ID: {listing_id}")
 
                         print("-" * 40)
+                        listing_end_time = time.time()
+                        elapsed_time = listing_end_time - listing_start_time
+                        print(f"⏱️ Listing {overall_listing_counter} processing completed in {elapsed_time:.2f} seconds")
+
                         
                     except Exception as e:
                         print(f"  ❌ ERROR scraping listing: {e}")
@@ -1948,6 +1997,7 @@
         print(f"🔖 Looking at listing {actual_url} posted by {username if username else 'unknown user'}")
         
         try:
+            bookmark_start_time = time.time()
             print(f"🔖 STARTING BOOKMARK: {actual_url}")
             
             # Initialize persistent driver if it doesn't exist
@@ -2049,7 +2099,7 @@
                     
                     try:
                         # Look for pay button
-                        pay_button = WebDriverWait(self.persistent_bookmark_driver, 5).until(
+                        pay_button = WebDriverWait(self.persistent_bookmark_driver, 10).until(
                             EC.element_to_be_clickable((By.CSS_SELECTOR, 
                                 'button[data-testid="single-checkout-order-summary-purchase-button"]'
                             ))
@@ -2072,7 +2122,11 @@
                         
                         print("🔖 FIRST SEQUENCE: Closing tab...")
                         self.persistent_bookmark_driver.close()
-                        
+
+                        bookmark_end_time = time.time()
+                        total_elapsed_time = bookmark_end_time - bookmark_start_time
+                        print(f"bookmarking completed in {total_elapsed_time:.2f} seconds")
+
                         # Switch back to main tab
                         if len(self.persistent_bookmark_driver.window_handles) > 0:
                             self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])

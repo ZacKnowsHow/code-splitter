@@ -1,4 +1,11 @@
 # Continuation from line 2201
+                    click_text = "CLICK TO OPEN LISTING IN CHROME"
+                    self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
+                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
+                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+
+
+            screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
 
             if suitable_listings:
                 listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
@@ -2192,10 +2199,3 @@ class VintedScraper:
                             # Check time again
                             if time.time() - first_click_time >= bookmark_stopwatch_length:
                                 print(f"⏰ DRIVER {driver_num}: Time elapsed during wait, stopping")
-                                break
-                            
-                            # Click "Ship to home"
-                            try:
-                                ship_to_home = driver.find_element(
-                                    By.XPATH, 
-                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'

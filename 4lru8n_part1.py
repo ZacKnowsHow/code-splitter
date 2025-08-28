@@ -51,8 +51,10 @@ import random
 import torch
 
 VINTED_SHOW_ALL_LISTINGS = True
+print_debug = False
+print_images_backend_info = False
 test_bookmark_function = False
-bookmark_listings = False
+bookmark_listings = True
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 bookmark_stopwatch_length = 540
@@ -62,6 +64,7 @@ wait_for_bookmark_stopwatch_to_buy = True
 test_purchase_not_true = False #uses the url below rather than the one from the web page
 test_purchase_url = "https://www.vinted.co.uk/items/6955075707-denim-shorts?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
+should_send_fail_bookmark_notification = True
 
 # Config
 PROFILE_DIR = "Default"
@@ -141,7 +144,7 @@ max_price = 500
 element_exractor_timeout = 0.85
 price_mulitplier = 1
 visible_listings_scanned = 0
-SD_card_price = 5
+SD_card_price = 0
 
 app.secret_key = "facebook1967"
 PIN_CODE = 14346
@@ -304,7 +307,8 @@ vinted_banned_prices = {59.00, 49.00, 17.00}
 
 def debug_function_call(func_name, line_number=None):
     """Debug function to track where errors occur"""
-    print(f"DEBUG: Entering function {func_name}" + (f" at line {line_number}" if line_number else ""))
+    if print_debug:
+        print(f"DEBUG: Entering function {func_name}" + (f" at line {line_number}" if line_number else ""))
 
 # Vinted profit suitability ranges (same structure as Facebook but independent variables)
 def check_vinted_profit_suitability(listing_price, profit_percentage):
@@ -375,7 +379,8 @@ def logout():
 
 @app.route('/button-clicked', methods=['POST'])
 def button_clicked():
-    print("DEBUG: Received a button-click POST request")
+    if print_debug:
+        print("DEBUG: Received a button-click POST request")
     global messaging_driver, website_static_price
     url = request.form.get('url')
     website_static_price_str = request.form.get('website_price')
@@ -442,7 +447,8 @@ def change_listing():
 @app.route('/vinted-button-clicked', methods=['POST'])
 def vinted_button_clicked():
     """Handle Vinted scraper button clicks with enhanced functionality"""
-    print("DEBUG: Received a Vinted button-click POST request")
+    if print_debug:
+        print("DEBUG: Received a Vinted button-click POST request")
     
     # Get the listing URL and action from the form data
     url = request.form.get('url')
@@ -488,11 +494,11 @@ def render_main_page():
         global current_listing_title, current_listing_price, current_listing_description
         global current_listing_join_date, current_detected_items, current_profit
         global current_listing_images, current_listing_url, recent_listings
-
-        print("DEBUG: render_main_page called")
-        print(f"DEBUG: recent_listings has {len(recent_listings.get('listings', []))} listings")
-        print(f"DEBUG: current_listing_title = {current_listing_title}")
-        print(f"DEBUG: current_listing_price = {current_listing_price}")
+        if print_debug:
+            print("DEBUG: render_main_page called")
+            print(f"DEBUG: recent_listings has {len(recent_listings.get('listings', []))} listings")
+            print(f"DEBUG: current_listing_title = {current_listing_title}")
+            print(f"DEBUG: current_listing_price = {current_listing_price}")
 
         # Ensure default values if variables are None or empty
         title = str(current_listing_title or 'No Title Available')
@@ -530,7 +536,8 @@ def render_main_page():
                         'suitability': str(listing.get('suitability', 'Unknown'))
                     })
                 all_listings_json = json.dumps(listings_data)
-                print(f"DEBUG: Created JSON for {len(listings_data)} listings")
+                if print_debug:
+                    print(f"DEBUG: Created JSON for {len(listings_data)} listings")
             except Exception as json_error:
                 print(f"ERROR creating listings JSON: {json_error}")
                 all_listings_json = "[]"
@@ -2191,10 +2198,3 @@ class FacebookScraper:
                 elif i == 10:  # Rectangle 11 (index 10) - Images
                     self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
                 elif i == 3:  # Rectangle 4 (index 3) - Click to open
-                    click_text = "CLICK TO OPEN LISTING IN CHROME"
-                    self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
-                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
-                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
-
-
-            screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
