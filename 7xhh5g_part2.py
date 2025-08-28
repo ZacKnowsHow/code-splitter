@@ -1915,11 +1915,11 @@ class VintedScraper:
             for selector in buy_selectors:
                 try:
                     if selector.startswith('//'):
-                        buy_button = WebDriverWait(driver, 2).until(
+                        buy_button = WebDriverWait(driver, 10).until(
                             EC.element_to_be_clickable((By.XPATH, selector))
                         )
                     else:
-                        buy_button = WebDriverWait(driver, 2).until(
+                        buy_button = WebDriverWait(driver, 10).until(
                             EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                         )
                     print(f"✅ DRIVER {driver_num}: Found Buy now button")
@@ -1943,6 +1943,18 @@ class VintedScraper:
                 # Check actually_purchase_listing setting
                 if actually_purchase_listing:
                     print(f"💳 DRIVER {driver_num}: actually_purchase_listing is TRUE - starting purchase process")
+                    
+                    # NEW: CLICK "SHIP TO HOME" BEFORE LOOKING FOR PAY BUTTON
+                    print(f"🏠 DRIVER {driver_num}: Looking for 'Ship to home' option")
+                    try:
+                        ship_to_home = WebDriverWait(driver, 15).until(
+                            EC.element_to_be_clickable((By.XPATH, '//h2[@class="web_uiTexttext web_uiTexttitle web_uiTextleft" and text()="Ship to home"]'))
+                        )
+                        ship_to_home.click()
+                        print(f"✅ DRIVER {driver_num}: Clicked 'Ship to home'")
+                        time.sleep(2)  # Wait a couple seconds as requested
+                    except Exception as e:
+                        print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to home': {e}")
                     
                     # Wait for Pay button to appear
                     print(f"💳 DRIVER {driver_num}: Waiting for Pay button to appear")
@@ -2006,7 +2018,7 @@ class VintedScraper:
                                 
                                 for selector in error_selectors:
                                     try:
-                                        error_element = WebDriverWait(driver, 6).until(
+                                        error_element = WebDriverWait(driver, 10).until(
                                             EC.presence_of_element_located((By.XPATH, selector))
                                         )
                                         used_selector = selector
@@ -2187,15 +2199,3 @@ class VintedScraper:
                                 pickup_point = driver.find_element(
                                     By.XPATH, 
                                     '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
-                                )
-                                pickup_point.click()
-                                print(f"📦 DRIVER {driver_num}: Clicked 'Ship to pick-up point'")
-                            except Exception as e:
-                                print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to pick-up point': {e}")
-                            
-                            # Wait
-                            time.sleep(buying_driver_click_pay_wait_time)
-                            
-                            # Check time again
-                            if time.time() - first_click_time >= bookmark_stopwatch_length:
-                                print(f"⏰ DRIVER {driver_num}: Time elapsed during wait, stopping")
