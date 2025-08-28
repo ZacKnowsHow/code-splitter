@@ -50,10 +50,10 @@ from ultralytics import YOLO
 import random
 import torch
 
-VINTED_SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = True
 print_debug = False
 print_images_backend_info = False
-test_bookmark_function = False
+test_bookmark_function = True
 bookmark_listings = True
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
