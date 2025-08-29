@@ -54,11 +54,11 @@ BOOKMARK_TEST_MODE = False
 BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
-BUYING_TEST_MODE = True
+BUYING_TEST_MODE = False
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 
-TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+TEST_BOOKMARK_BUYING_FUNCTIONALITY = True
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6963839775-nintendo-switch-joy-con-controllers-pastel-pink-yellow-brand-new?referrer=catalog"
 
 VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False

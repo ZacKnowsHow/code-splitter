@@ -101,7 +101,7 @@
                     chrome_opts.add_argument("--no-sandbox")
                     chrome_opts.add_argument("--disable-dev-shm-usage")
                     chrome_opts.add_argument("--disable-gpu")
-                    chrome_opts.add_argument("--window-size=800,600")
+                    chrome_opts.add_argument("--window-size=600,800")
                     chrome_opts.add_argument("--log-level=3")
                     chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
                     
@@ -623,6 +623,62 @@
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
         global current_listing_images, current_listing_url, current_suitability, current_expected_revenue
         
+        # NEW: TEST_BOOKMARK_BUYING_FUNCTIONALITY implementation
+        if TEST_BOOKMARK_BUYING_FUNCTIONALITY:
+            print("🔖💳 TEST_BOOKMARK_BUYING_FUNCTIONALITY ENABLED")
+            print(f"🔗 URL: {TEST_BOOKMARK_BUYING_URL}")
+            
+            # Skip all driver initialization, pygame, flask, etc.
+            # Only run bookmark + buying process on the test URL
+            try:
+                print("🔖 STEP 1: Starting bookmark process...")
+                
+                # First, run the bookmark function
+                # Extract username from the URL if possible or use a test username
+                test_username = "test_user"  # You might want to make this configurable
+                
+                bookmark_success = self.bookmark_driver(TEST_BOOKMARK_BUYING_URL, test_username)
+                
+                if bookmark_success:
+                    print("✅ BOOKMARK: Successfully bookmarked the item")
+                    print(f"⏱️ WAITING: Waiting {bookmark_stopwatch_length} seconds for bookmark timer...")
+                    
+                    # Wait for the full bookmark stopwatch duration
+                    time.sleep(bookmark_stopwatch_length)
+                    
+                    print("✅ WAIT COMPLETE: Bookmark timer finished, starting buying process...")
+                    
+                    # Now start the buying process using process_single_listing_with_driver
+                    driver_num, driver = self.get_available_driver()
+                    
+                    if driver is not None:
+                        print(f"✅ BUYING: Got driver {driver_num}")
+                        print("💳 STARTING: Buying process...")
+                        
+                        # Execute the purchase process
+                        self.process_single_listing_with_driver(TEST_BOOKMARK_BUYING_URL, driver_num, driver)
+                        
+                        print("✅ TEST COMPLETE: Bookmark + Buying process finished")
+                    else:
+                        print("❌ BUYING ERROR: Could not get available driver")
+                        
+                else:
+                    print("❌ BOOKMARK FAILED: Could not bookmark the item, skipping buying process")
+                    
+            except Exception as e:
+                print(f"❌ TEST ERROR: {e}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                # Clean up all drivers
+                self.cleanup_all_buying_drivers()
+                self.cleanup_persistent_buying_driver()
+                self.cleanup_persistent_bookmark_driver()
+            
+            # Exit immediately after test
+            print("🔖💳 TEST_BOOKMARK_BUYING_FUNCTIONALITY COMPLETE - EXITING")
+            sys.exit(0)
+        
         if BOOKMARK_TEST_MODE:
             print("🧪 BOOKMARK TEST MODE ENABLED")
             print(f"🔗 URL: {BOOKMARK_TEST_URL}")
@@ -695,7 +751,7 @@
         current_listing_url = ""
         current_suitability = "Suitability unknown"
         
-        # Initialize pygame display with default valuess
+        # Initialize pygame display with default values
         self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
         
         
@@ -704,11 +760,11 @@
         flask_thread.daemon = True
         flask_thread.start()
         
-        # Start pygame window in separate threadu
+        # Start pygame window in separate thread
         pygame_thread = threading.Thread(target=self.run_pygame_window)
         pygame_thread.start()
         
-        # Clear download folder and start scrapingu
+        # Clear download folder and start scraping
         self.clear_download_folder()
         driver = self.setup_driver()
         self.setup_persistent_buying_driver()
