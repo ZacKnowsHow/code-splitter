@@ -96,12 +96,12 @@
                     chrome_opts = Options()
                     bookmark_user_data_dir = "C:\VintedScraper_Default_Bookmark"
                     chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
-                    chrome_opts.add_argument("--profile-directory=Profile 4")
+                    chrome_opts.add_argument("--profile-directory=Profile 17")
                     #chrome_opts.add_argument("--headless")
                     chrome_opts.add_argument("--no-sandbox")
                     chrome_opts.add_argument("--disable-dev-shm-usage")
                     chrome_opts.add_argument("--disable-gpu")
-                    chrome_opts.add_argument("--window-size=600,800")
+                    chrome_opts.add_argument("--window-size=800,600")
                     chrome_opts.add_argument("--log-level=3")
                     chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
                     
@@ -194,29 +194,75 @@
                 
                 if pay_element:
                     log_step("pay_button_found", True, f"Used: {pay_selector[:30]}...")
-                    
                     # CRITICAL SEQUENCE - This is the part that CANNOT be touched!
                     try:
-                        # Try multiple click methods for pay button
+                        # FIXED: Force-click the pay button using multiple aggressive methods
                         pay_clicked = False
-                        for click_method in ['standard', 'javascript']:
+                        
+                        # Method 1: Click the inner span (Pay text) directly - this bypasses disabled button issues
+                        try:
+                            pay_span = self.persistent_bookmark_driver.find_element(By.XPATH, "//button[@data-testid='single-checkout-order-summary-purchase-button']//span[text()='Pay']")
+                            pay_span.click()
+                            log_step("pay_button_click_span", True, "Clicked Pay span directly")
+                            pay_clicked = True
+                        except Exception as span_error:
+                            log_step("pay_button_click_span", False, str(span_error))
+                        
+                        # Method 2: If span click failed, try aggressive JavaScript on button
+                        if not pay_clicked:
                             try:
-                                if click_method == 'standard':
-                                    pay_element.click()
-                                else:
-                                    self.persistent_bookmark_driver.execute_script("arguments[0].click();", pay_element)
-                                
-                                log_step(f"pay_button_click_{click_method}", True)
+                                # Force enable button and click it
+                                self.persistent_bookmark_driver.execute_script("""
+                                    var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
+                                    if (button) {
+                                        button.disabled = false;
+                                        button.setAttribute('aria-disabled', 'false');
+                                        button.click();
+                                    }
+                                """)
+                                log_step("pay_button_click_force_js", True, "Force-enabled and clicked via JS")
                                 pay_clicked = True
-                                break
-                            except Exception as click_error:
-                                log_step(f"pay_button_click_{click_method}", False, str(click_error))
-                                continue
+                            except Exception as js_error:
+                                log_step("pay_button_click_force_js", False, str(js_error))
+                        
+                        # Method 3: If still failed, try dispatching click event directly
+                        if not pay_clicked:
+                            try:
+                                self.persistent_bookmark_driver.execute_script("""
+                                    var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
+                                    if (button) {
+                                        var event = new MouseEvent('click', {
+                                            view: window,
+                                            bubbles: true,
+                                            cancelable: true
+                                        });
+                                        button.dispatchEvent(event);
+                                    }
+                                """)
+                                log_step("pay_button_click_dispatch_event", True, "Dispatched click event directly")
+                                pay_clicked = True
+                            except Exception as dispatch_error:
+                                log_step("pay_button_click_dispatch_event", False, str(dispatch_error))
+                        
+                        # Method 4: Last resort - try form submission
+                        if not pay_clicked:
+                            try:
+                                self.persistent_bookmark_driver.execute_script("""
+                                    var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
+                                    var form = button ? button.closest('form') : null;
+                                    if (form) {
+                                        form.submit();
+                                    }
+                                """)
+                                log_step("pay_button_form_submit", True, "Submitted form directly")
+                                pay_clicked = True
+                            except Exception as form_error:
+                                log_step("pay_button_form_submit", False, str(form_error))
                         
                         if pay_clicked:
                             # ⚠️ CRITICAL: Exact 0.25 second wait - DO NOT MODIFY! ⚠️
                             print("🔖 CRITICAL: Waiting exactly 0.25 seconds...")
-                            time.sleep(0.25)
+                            time.sleep(1.25)
                             
                             # ⚠️ CRITICAL: Immediate tab close - DO NOT MODIFY! ⚠️
                             print("🔖 CRITICAL: Closing tab immediately...")
@@ -225,7 +271,7 @@
                             step_log['critical_sequence_completed'] = True
                             log_step("critical_sequence_completed", True, "0.25s wait + tab close")
                             
-                            # Calculate timing for the critical sequence
+                            # Continue with timing and tab management...
                             bookmark_end_time = time.time()
                             total_elapsed_time = bookmark_end_time - bookmark_start_time
                             log_step("first_sequence_timing", True, f"Completed in {total_elapsed_time:.2f}s")
@@ -237,7 +283,7 @@
                             
                             log_step("first_sequence_complete", True)
                         else:
-                            log_step("pay_button_click_all_failed", False, "All click methods failed")
+                            log_step("pay_button_click_all_failed", False, "All 4 aggressive methods failed")
                             self.persistent_bookmark_driver.close()
                             if len(self.persistent_bookmark_driver.window_handles) > 0:
                                 self.persistent_bookmark_driver.switch_to.window(self.persistent_bookmark_driver.window_handles[0])
