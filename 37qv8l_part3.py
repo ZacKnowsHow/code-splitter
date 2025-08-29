@@ -1,62 +1,187 @@
 # Continuation from line 4401
-                                )
-                                pickup_point.click()
-                                print(f"📦 DRIVER {driver_num}: Clicked 'Ship to pick-up point'")
-                            except Exception as e:
-                                print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to pick-up point': {e}")
-                            
-                            # Wait
-                            time.sleep(buying_driver_click_pay_wait_time)
-                            
-                            # Check time again
+                        except Exception as click_error:
+                            log_step(f"pay_click_attempt_{attempt}_{click_method}", False, str(click_error))
+                            continue
+                    
+                    if not pay_clicked:
+                        log_step(f"pay_click_failed_attempt_{attempt}", False, "All click methods failed")
+                        break
+                    
+                    # CHECK FOR ERROR OR SUCCESS
+                    # First check for quick error (appears fast)
+                    error_found = False
+                    error_element, error_selector = try_selectors_fast_fail(
+                        driver, 'error_modal', operation='find', timeout=10
+                    )
+                    
+                    if error_element:
+                        log_step(f"payment_error_detected_attempt_{attempt}", True, f"Using: {error_selector[:30]}...")
+                        error_found = True
+                        
+                        # Wait before clicking OK
+                        if print_debug:
+                            print(f"⏳ DRIVER {driver_num}: Waiting {buying_driver_click_pay_wait_time}s before clicking OK")
+                        time.sleep(buying_driver_click_pay_wait_time)
+                        
+                        # CLICK OK BUTTON
+                        ok_element, ok_selector = try_selectors_fast_fail(
+                            driver, 'ok_button', operation='click', timeout=5, click_method='all'
+                        )
+                        
+                        if ok_element:
+                            log_step(f"ok_button_clicked_attempt_{attempt}", True)
+                        else:
+                            log_step(f"ok_button_not_found_attempt_{attempt}", False, "Could not dismiss error")
+                        
+                        # Wait before retry
+                        time.sleep(buying_driver_click_pay_wait_time)
+                        continue
+                    
+                    # If no error, check for success (takes longer)
+                    remaining_time = bookmark_stopwatch_length - (time.time() - start_time)
+                    if remaining_time <= 0:
+                        log_step("success_check_timeout", False, "No time remaining for success check")
+                        break
+                    
+                    success_timeout = min(15, remaining_time)
+                    success_element, success_selector = try_selectors_fast_fail(
+                        driver, 'success_message', operation='find', timeout=success_timeout
+                    )
+                    
+                    if success_element:
+                        log_step("purchase_successful", True, f"Using: {success_selector[:30]}...")
+                        purchase_successful = True
+                        process_log['success'] = True
+                        process_log['critical_operations'].append("purchase_completed")
+                        
+                        # Send notification
+                        notification_title = "Vinted Purchase Successful"
+                        notification_message = f"Successfully purchased: {url}"
+                        
+                        try:
+                            self.send_pushover_notification(
+                                notification_title,
+                                notification_message,
+                                'aks3to8guqjye193w7ajnydk9jaxh5',
+                                'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                            )
+                            log_step("success_notification_sent", True)
+                        except Exception as notification_error:
+                            log_step("success_notification_failed", False, str(notification_error))
+                        
+                        break
+                    else:
+                        log_step(f"success_not_found_attempt_{attempt}", False, f"Timeout after {success_timeout}s")
+                        break
+                
+                # Final purchase result
+                total_elapsed = time.time() - start_time
+                if purchase_successful:
+                    log_step("purchase_flow_completed", True, f"Success after {attempt} attempts in {total_elapsed:.2f}s")
+                else:
+                    log_step("purchase_flow_failed", False, f"Failed after {attempt} attempts in {total_elapsed:.2f}s")
+
+            else:
+                log_step("legacy_shipping_mode", True, "Using original shipping alternation logic")
+                
+                # LEGACY SHIPPING FLOW - Original alternating click logic
+                try:
+                    pickup_element, pickup_selector = try_selectors_fast_fail(
+                        driver, 'ship_to_pickup', operation='find', timeout=10
+                    )
+                    
+                    if pickup_element:
+                        log_step("shipping_page_loaded", True)
+                        first_click_time = time.time()
+                        
+                        log_step("alternating_clicks_started", True, f"Duration: {bookmark_stopwatch_length}s")
+                        
+                        while True:
                             if time.time() - first_click_time >= bookmark_stopwatch_length:
-                                print(f"⏰ DRIVER {driver_num}: Time elapsed during wait, stopping")
+                                log_step("alternating_clicks_timeout", True, "Time limit reached")
                                 break
                             
-                            # Click "Ship to home"
-                            try:
-                                ship_to_home = driver.find_element(
-                                    By.XPATH, 
-                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
-                                )
-                                ship_to_home.click()
-                                print(f"🏠 DRIVER {driver_num}: Clicked 'Ship to home'")
-                            except Exception as e:
-                                print(f"⚠️ DRIVER {driver_num}: Could not click 'Ship to home': {e}")
+                            # Click pickup point
+                            pickup_clicked, _ = try_selectors_fast_fail(
+                                driver, 'ship_to_pickup', operation='click', timeout=2, click_method='standard'
+                            )
                             
-                            # Wait
+                            if pickup_clicked:
+                                log_step("pickup_point_clicked", True)
+                            else:
+                                log_step("pickup_point_click_failed", False, "Could not click pickup point")
+                            
                             time.sleep(buying_driver_click_pay_wait_time)
-                    
-                    except TimeoutException:
-                        print(f"⚠️ DRIVER {driver_num}: Timeout waiting for shipping page")
-            else:
-                print(f"❌ DRIVER {driver_num}: Buy now button not found")
+                            
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                break
+                            
+                            # Click ship to home
+                            home_clicked, _ = try_selectors_fast_fail(
+                                driver, 'ship_to_home', operation='click', timeout=2, click_method='standard'
+                            )
+                            
+                            if home_clicked:
+                                log_step("ship_to_home_clicked", True)
+                            else:
+                                log_step("ship_to_home_click_failed", False, "Could not click ship to home")
+                            
+                            time.sleep(buying_driver_click_pay_wait_time)
+                        
+                        log_step("legacy_shipping_completed", True)
+                        process_log['success'] = True
+                        
+                    else:
+                        log_step("shipping_page_not_loaded", False, "Could not find shipping options")
+                        
+                except Exception as shipping_error:
+                    log_step("legacy_shipping_error", False, str(shipping_error))
+
+        except Exception as critical_error:
+            log_step("critical_processing_error", False, str(critical_error))
+            import traceback
+            if print_debug:
+                print(f"🔥 DRIVER {driver_num}: Critical error traceback:")
+                traceback.print_exc()
+
+        finally:
+            # CLEANUP - Always clean up tab and release driver
+            cleanup_start = time.time()
             
-            # Close the processing tab (keep main tab open)
-            print(f"🗑️ DRIVER {driver_num}: Closing processing tab")
-            driver.close()
-            
-            # Switch back to main tab (vinted.co.uk)
-            if len(driver.window_handles) > 0:
-                driver.switch_to.window(driver.window_handles[0])
-                print(f"🏠 DRIVER {driver_num}: Back to main tab")
-            
-            elapsed = time.time() - start_time
-            print(f"✅ DRIVER {driver_num}: Completed processing in {elapsed:.2f} seconds")
-            
-        except Exception as e:
-            print(f"❌ DRIVER {driver_num}: Error processing {url}: {e}")
-            
-            # Try to recover by switching back to main tab
             try:
+                # Close processing tab
+                driver.close()
+                log_step("processing_tab_closed", True)
+                
+                # Return to main tab
                 if len(driver.window_handles) > 0:
                     driver.switch_to.window(driver.window_handles[0])
-            except:
-                print(f"⚠️ DRIVER {driver_num}: Could not recover to main tab")
-        
-        finally:
-            # CRITICAL FIX: Always release the driver when done
+                    log_step("returned_to_main_tab", True)
+                
+            except Exception as cleanup_error:
+                log_step("cleanup_error", False, str(cleanup_error))
+            
+            # Calculate final timing
+            total_time = time.time() - start_time
+            cleanup_time = time.time() - cleanup_start
+            
+            log_step("processing_completed", True, f"Total: {total_time:.2f}s, Cleanup: {cleanup_time:.2f}s")
+            
+            # Log comprehensive results
+            log_final_result()
+            
+            # ALWAYS release the driver
             self.release_driver(driver_num)
+            log_step("driver_released", True)
+
+
+    # Supporting helper function for better timeout management
+    def calculate_dynamic_timeout(base_timeout, elapsed_time, max_total_time):
+        """
+        Calculate dynamic timeout based on elapsed time and maximum allowed time
+        """
+        remaining_time = max_total_time - elapsed_time
+        return min(base_timeout, max(1, remaining_time * 0.5))  # Use half of remaining time, minimum 1s
 
     def cleanup_all_buying_drivers(self):
         """
@@ -491,7 +616,7 @@
             # Fallback: Remove problematic arguments
             fallback_opts = Options()
             fallback_opts.add_experimental_option("prefs", prefs)
-            fallback_opts.add_argument("--headless")
+            #fallback_opts.add_argument("--headless")
             fallback_opts.add_argument("--no-sandbox")
             fallback_opts.add_argument("--disable-dev-shm-usage")
             fallback_opts.add_argument("--disable-gpu")
@@ -2658,7 +2783,7 @@
             )
             
             chrome_opts = Options()
-            chrome_opts.add_argument("--headless")
+            #chrome_opts.add_argument("--headless")
             chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer1")
             chrome_opts.add_argument("--profile-directory=Default")
             chrome_opts.add_argument("--no-sandbox")

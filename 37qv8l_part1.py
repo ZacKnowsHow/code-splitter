@@ -50,10 +50,16 @@ from ultralytics import YOLO
 import random
 import torch
 
-VINTED_SHOW_ALL_LISTINGS = True
+BOOKMARK_TEST_MODE = False
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+
+BUYING_TEST_MODE = False
+BUYING_TEST_URL = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1?referrer=catalog"
+
+VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
 print_images_backend_info = False
-test_bookmark_function = True
+test_bookmark_function = False
 bookmark_listings = True
 click_pay_button_final_check = True
 test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
@@ -62,7 +68,7 @@ buying_driver_click_pay_wait_time = 7.5
 actually_purchase_listing = True
 wait_for_bookmark_stopwatch_to_buy = True
 test_purchase_not_true = False #uses the url below rather than the one from the web page
-test_purchase_url = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 should_send_fail_bookmark_notification = True
 
@@ -161,7 +167,7 @@ recent_listings = {
 review_min = 3
 MAX_LISTINGS_TO_SCAN = 50
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
-MAX_LISTINGS_VINTED_TO_SCAN = 50  # Maximum listings to scan before refresh
+MAX_LISTINGS_VINTED_TO_SCAN = 5  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 0  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
@@ -288,7 +294,7 @@ scanned_unique_ids = set()
 vinted_title_must_contain = ["nintendo", "pokemon", "zelda", "mario", "animal crossing", "minecraft", 'oled', 'lite', 'pokémon', 'switch game',
                             'switch bundle', 'nintendo bundle', 'switch with games', 'modded switch']
 
-vinted_title_forbidden_words = ['unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
+vinted_title_forbidden_words = ['box only', 'unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
                                'joycon', 'snes', 'gamecube', 'n64', 'damaged', 'circuit', 'kart live', 'tablet only', 'ringfit', 'ring fit'
                                'repair', '™', 'each', 'empty game', 'just game case', 'empty case', 'arcade', 'wii', 'tv frame', 'joy-con',
                                'for parts', 'wont charge', 'spares & repair', 'xbox', 'prices in description', 'collector set', 'collectors set'
@@ -2192,9 +2198,3 @@ class FacebookScraper:
                 elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
                     self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
                 elif i == 9:  # Rectangle 10 (index 9) - Profit
-                    self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
-                elif i == 0:  # Rectangle 1 (index 0) - Detected Items
-                    self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
-                elif i == 10:  # Rectangle 11 (index 10) - Images
-                    self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
-                elif i == 3:  # Rectangle 4 (index 3) - Click to open
