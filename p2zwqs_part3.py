@@ -1,4 +1,6 @@
 # Continuation from line 4401
+                                driver.execute_script("arguments[0].click();", current_pay_button)
+                            
                             log_step(f"pay_click_attempt_{attempt}_{click_method}", True)
                             pay_clicked = True
                             break
@@ -2197,5 +2199,3 @@
             selectors = SELECTOR_SETS.get(selector_set_name, [])
             if not selectors:
                 log_step(f"try_selectors_{selector_set_name}", False, "No selectors defined")
-                return None, None
-            

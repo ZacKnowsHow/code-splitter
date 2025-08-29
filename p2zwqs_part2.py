@@ -1,4 +1,6 @@
 # Continuation from line 2201
+                    self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
+                elif i == 8:  # Rectangle 9 (index 8) - Join Date
                     self.render_text_in_rect(screen, fonts['join_date'], current_listing_join_date, rect, (0, 0, 0))
                 elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
                     self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
@@ -2197,5 +2199,3 @@ class VintedScraper:
                             if click_method == 'standard':
                                 current_pay_button.click()
                             else:
-                                driver.execute_script("arguments[0].click();", current_pay_button)
-                            
