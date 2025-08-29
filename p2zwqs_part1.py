@@ -50,15 +50,17 @@ from ultralytics import YOLO
 import random
 import torch
 
-BOOKMARK_TEST_MODE = True
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6968678532-little-black-dress?referrer=catalog"
+TEST_NUMBER_OF_LISTINGS = True
+
+BOOKMARK_TEST_MODE = False
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6966914082-scarf?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 BUYING_TEST_MODE = False
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
 
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6968668859-pink-patterned-cropped-vest?referrer=catalog"
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6961760221-joy-con-controllers-for-nintendo-switch-brand-new?referrer=catalog"
 
 VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
@@ -2196,5 +2198,3 @@ class FacebookScraper:
                 elif i == 1:  # Rectangle 2 (index 1) - Price
                     self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
                 elif i == 7:  # Rectangle 8 (index 7) - Description
-                    self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
-                elif i == 8:  # Rectangle 9 (index 8) - Join Date
