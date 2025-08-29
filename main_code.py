@@ -50,8 +50,9 @@ from ultralytics import YOLO
 import random
 import torch
 
-BOOKMARK_TEST_MODE = False
+BOOKMARK_TEST_MODE = True
 BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 BUYING_TEST_MODE = False
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1?referrer=catalog"
@@ -7218,6 +7219,24 @@ class VintedScraper:
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
         global current_listing_images, current_listing_url, current_suitability, current_expected_revenue
         
+        if BOOKMARK_TEST_MODE:
+            print("🧪 BOOKMARK TEST MODE ENABLED")
+            print(f"🔗 URL: {BOOKMARK_TEST_URL}")
+            print(f"👤 USERNAME: {BOOKMARK_TEST_USERNAME}")
+            
+            # Skip all driver initialization, pygame, flask, etc.
+            # Just run the bookmark function directly
+            success = self.bookmark_driver(BOOKMARK_TEST_URL, BOOKMARK_TEST_USERNAME)
+            
+            if success:
+                print("✅ BOOKMARK TEST SUCCESSFUL")
+            else:
+                print("❌ BOOKMARK TEST FAILED")
+            
+            # Exit immediately after test
+            print("🧪 BOOKMARK TEST MODE COMPLETE - EXITING")
+            sys.exit(0)
+            
         # Initialize ALL global variables properly
         suitable_listings = []
         current_listing_index = 0
@@ -7277,6 +7296,6 @@ if __name__ == "__main__":
         globals()['vinted_scraper_instance'] = scraper
         
         # Replace the normal search with enhanced version in the run method
-        # Modify the run() method to use search_vinted_enhanced instead of search_vinte
+        # Modify the run() method to use search_vinted_enhanced instead of search_vinted
     
     scraper.run()
