@@ -1,4 +1,14 @@
 # Continuation from line 2201
+                pygame.draw.rect(screen, (0, 0, 0), rect, 2)
+                number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
+                number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
+                screen.blit(number_text, number_rect)
+
+                if i == 2:  # Rectangle 3 (index 2) - Title
+                    self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
+                elif i == 1:  # Rectangle 2 (index 1) - Price
+                    self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
+                elif i == 7:  # Rectangle 8 (index 7) - Description
                     self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
                 elif i == 8:  # Rectangle 9 (index 8) - Join Date
                     self.render_text_in_rect(screen, fonts['join_date'], current_listing_join_date, rect, (0, 0, 0))
@@ -2189,13 +2199,3 @@ class VintedScraper:
                     
                     # CLICK PAY BUTTON
                     pay_clicked = False
-                    for click_method in ['standard', 'javascript']:
-                        try:
-                            # Re-find pay button for each attempt (DOM may change)
-                            current_pay_button = driver.find_element(By.CSS_SELECTOR, 
-                                'button[data-testid="single-checkout-order-summary-purchase-button"]'
-                            )
-                            
-                            if click_method == 'standard':
-                                current_pay_button.click()
-                            else:
