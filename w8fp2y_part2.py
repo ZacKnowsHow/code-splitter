@@ -1,4 +1,5 @@
 # Continuation from line 2201
+                elif i == 9:  # Rectangle 10 (index 9) - Profit
                     self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
                 elif i == 0:  # Rectangle 1 (index 0) - Detected Items
                     self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
@@ -2198,4 +2199,3 @@ class VintedScraper:
                             log_step(f"pay_click_attempt_{attempt}_{click_method}", True)
                             pay_clicked = True
                             break
-                            

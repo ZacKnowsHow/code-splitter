@@ -1,4 +1,5 @@
 # Continuation from line 4401
+                            
                         except Exception as click_error:
                             log_step(f"pay_click_attempt_{attempt}_{click_method}", False, str(click_error))
                             continue
@@ -2198,4 +2199,3 @@
             for i, selector in enumerate(selectors):
                 try:
                     log_step(f"trying_selector_{selector_set_name}_{i+1}", True, f"Selector: {selector[:30]}...")
-                    
