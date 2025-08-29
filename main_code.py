@@ -50,7 +50,17 @@ from ultralytics import YOLO
 import random
 import torch
 
-TEST_NUMBER_OF_LISTINGS = True
+
+
+
+TEST_WHETHER_SUITABLE = True
+TEST_SUITABLE_URLS = [
+    'https://www.vinted.co.uk/items/6963376052-nintendo-switch?referrer=catalog',
+    'https://www.vinted.co.uk/items/6963025596-nintendo-switch-oled-model-the-legend-of-zelda-tears-of-the-kingdom-edition?referrer=catalog',
+    'https://www.vinted.co.uk/items/6970192196-nintendo-switch-lite-in-grey?referrer=catalog'
+]
+
+TEST_NUMBER_OF_LISTINGS = False
 
 BOOKMARK_TEST_MODE = False
 BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6966914082-scarf?referrer=catalog"
@@ -7215,6 +7225,80 @@ class VintedScraper:
             
             return None
 
+    def test_url_collection_mode(self, driver, search_query):
+        """
+        Simple testing mode that only collects URLs and saves listing IDs
+        No bookmarking, no purchasing, no image downloading - just URL collection
+        """
+        print("🧪 TEST_NUMBER_OF_LISTINGS MODE: Starting URL collection only")
+        
+        # Setup search URL with parameters
+        params = {
+            "search_text": search_query,
+            "price_from": PRICE_FROM,
+            "price_to": PRICE_TO,
+            "currency": CURRENCY,
+            "order": ORDER,
+        }
+        driver.get(f"{BASE_URL}?{urlencode(params)}")
+        
+        refresh_cycle = 1
+        
+        while True:
+            print(end=" ")
+            
+            try:
+                # Wait for page to load
+                WebDriverWait(driver, 20).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                )
+            except TimeoutException:
+                print("0 listings (page load timeout)")
+                refresh_cycle += 1
+                time.sleep(5)
+                continue
+            
+            # Get listing URLs from current page
+            els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
+            urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
+            
+            if not urls:
+                print("0 listings (no URLs found)")
+                refresh_cycle += 1
+                time.sleep(5)
+                continue
+            
+            # Count new URLs that haven't been seen before
+            new_urls = []
+            for url in urls:
+                listing_id = self.extract_vinted_listing_id(url)
+                if listing_id:
+                    # Check if we've already saved this ID
+                    try:
+                        with open(VINTED_SCANNED_IDS_FILE, 'r') as f:
+                            existing_ids = f.read().splitlines()
+                        
+                        if listing_id not in existing_ids:
+                            new_urls.append(url)
+                            # Save the listing ID
+                            with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
+                                f.write(f"{listing_id}\n")
+                    except FileNotFoundError:
+                        # File doesn't exist yet, all URLs are new
+                        new_urls.append(url)
+                        with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
+                            f.write(f"{listing_id}\n")
+            
+            # Print the count of new listings found
+            print(f"{len(new_urls)} listings")
+            
+            # Refresh the page and continue
+            driver.refresh()
+            refresh_cycle += 1
+            
+            # Small delay to prevent overwhelming the server
+            time.sleep(2)
+
     def setup_persistent_buying_driver(self):
         
         """
@@ -7269,6 +7353,22 @@ class VintedScraper:
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
         global current_listing_images, current_listing_url, current_suitability, current_expected_revenue
+        
+        # NEW: Check for TEST_NUMBER_OF_LISTINGS mode
+        if TEST_NUMBER_OF_LISTINGS:
+            print("🧪 TEST_NUMBER_OF_LISTINGS = True - Starting URL collection mode")
+            
+            # Skip all the complex initialization, just setup basic driver
+            driver = self.setup_driver()
+            
+            try:
+                self.test_url_collection_mode(driver, SEARCH_QUERY)
+            except KeyboardInterrupt:
+                print("\n🛑 URL collection stopped by user")
+            finally:
+                driver.quit()
+                print("✅ Driver closed, exiting")
+                sys.exit(0)
         
         # NEW: TEST_BOOKMARK_BUYING_FUNCTIONALITY implementation
         if TEST_BOOKMARK_BUYING_FUNCTIONALITY:
