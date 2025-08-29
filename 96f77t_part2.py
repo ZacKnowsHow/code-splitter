@@ -1,4 +1,7 @@
 # Continuation from line 2201
+                    self.render_text_in_rect(screen, fonts['join_date'], current_listing_join_date, rect, (0, 0, 0))
+                elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
+                    self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
                 elif i == 9:  # Rectangle 10 (index 9) - Profit
                     self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
                 elif i == 0:  # Rectangle 1 (index 0) - Detected Items
@@ -2196,6 +2199,3 @@ class VintedScraper:
                             else:
                                 driver.execute_script("arguments[0].click();", current_pay_button)
                             
-                            log_step(f"pay_click_attempt_{attempt}_{click_method}", True)
-                            pay_clicked = True
-                            break

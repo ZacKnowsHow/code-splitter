@@ -1,4 +1,7 @@
 # Continuation from line 6601
+            for i, selector in enumerate(selectors):
+                try:
+                    log_step(f"trying_selector_{selector_set_name}_{i+1}", True, f"Selector: {selector[:30]}...")
                     
                     # Quick timeout per selector - fail fast approach
                     if selector.startswith('//'):
@@ -636,6 +639,38 @@
             
             # Exit immediately after test
             print("🧪 BOOKMARK TEST MODE COMPLETE - EXITING")
+            sys.exit(0)
+        
+        # NEW: BUYING_TEST_MODE implementation
+        if BUYING_TEST_MODE:
+            print("💳 BUYING TEST MODE ENABLED")
+            print(f"🔗 URL: {BUYING_TEST_URL}")
+            
+            # Skip all driver initialization, pygame, flask, etc.
+            # Just run the buying functionality directly
+            try:
+                # Get an available driver (this will create one if needed)
+                driver_num, driver = self.get_available_driver()
+                
+                if driver is not None:
+                    print(f"✅ BUYING TEST: Got driver {driver_num}")
+                    # Execute the purchase process using process_single_vinted_listing
+                    self.process_single_listing_with_driver(BUYING_TEST_URL, driver_num, driver)
+                    print("✅ BUYING TEST PROCESS COMPLETED")
+                else:
+                    print("❌ BUYING TEST: Could not get available driver")
+                    
+            except Exception as e:
+                print(f"❌ BUYING TEST ERROR: {e}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                # Clean up
+                self.cleanup_all_buying_drivers()
+                self.cleanup_persistent_buying_driver()
+            
+            # Exit immediately after test
+            print("💳 BUYING TEST MODE COMPLETE - EXITING")
             sys.exit(0)
             
         # Initialize ALL global variables properly
