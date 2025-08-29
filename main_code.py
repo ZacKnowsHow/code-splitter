@@ -50,12 +50,15 @@ from ultralytics import YOLO
 import random
 import torch
 
-BOOKMARK_TEST_MODE = True
+BOOKMARK_TEST_MODE = False
 BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
-BUYING_TEST_MODE = False
-BUYING_TEST_URL = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1?referrer=catalog"
+BUYING_TEST_MODE = True
+BUYING_TEST_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+
+TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 
 VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
@@ -7235,6 +7238,38 @@ class VintedScraper:
             
             # Exit immediately after test
             print("🧪 BOOKMARK TEST MODE COMPLETE - EXITING")
+            sys.exit(0)
+        
+        # NEW: BUYING_TEST_MODE implementation
+        if BUYING_TEST_MODE:
+            print("💳 BUYING TEST MODE ENABLED")
+            print(f"🔗 URL: {BUYING_TEST_URL}")
+            
+            # Skip all driver initialization, pygame, flask, etc.
+            # Just run the buying functionality directly
+            try:
+                # Get an available driver (this will create one if needed)
+                driver_num, driver = self.get_available_driver()
+                
+                if driver is not None:
+                    print(f"✅ BUYING TEST: Got driver {driver_num}")
+                    # Execute the purchase process using process_single_vinted_listing
+                    self.process_single_listing_with_driver(BUYING_TEST_URL, driver_num, driver)
+                    print("✅ BUYING TEST PROCESS COMPLETED")
+                else:
+                    print("❌ BUYING TEST: Could not get available driver")
+                    
+            except Exception as e:
+                print(f"❌ BUYING TEST ERROR: {e}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                # Clean up
+                self.cleanup_all_buying_drivers()
+                self.cleanup_persistent_buying_driver()
+            
+            # Exit immediately after test
+            print("💳 BUYING TEST MODE COMPLETE - EXITING")
             sys.exit(0)
             
         # Initialize ALL global variables properly
