@@ -50,8 +50,9 @@ from ultralytics import YOLO
 import random
 import torch
 
-BOOKMARK_TEST_MODE = False
+BOOKMARK_TEST_MODE = True
 BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 BUYING_TEST_MODE = False
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1?referrer=catalog"
@@ -2197,4 +2198,3 @@ class FacebookScraper:
                     self.render_text_in_rect(screen, fonts['join_date'], current_listing_join_date, rect, (0, 0, 0))
                 elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
                     self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
-                elif i == 9:  # Rectangle 10 (index 9) - Profit
