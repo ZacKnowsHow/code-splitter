@@ -50,15 +50,17 @@ from ultralytics import YOLO
 import random
 import torch
 
-BOOKMARK_TEST_MODE = True
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6968678532-little-black-dress?referrer=catalog"
+TEST_NUMBER_OF_LISTINGS = True
+
+BOOKMARK_TEST_MODE = False
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6966914082-scarf?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 BUYING_TEST_MODE = False
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
 
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6968668859-pink-patterned-cropped-vest?referrer=catalog"
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6961760221-joy-con-controllers-for-nintendo-switch-brand-new?referrer=catalog"
 
 VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
@@ -6676,87 +6678,53 @@ class VintedScraper:
             bookmark_start_time = time.time()
             log_step("function_start", True)
             
-                        # ENHANCED DRIVER INITIALIZATION with better error handling
+            # ENHANCED DRIVER INITIALIZATION with better error handling
             if not hasattr(self, 'persistent_bookmark_driver') or self.persistent_bookmark_driver is None:
                 log_step("driver_initialization_start", True)
                 
+                # SPEED OPTIMIZATION: Pre-cached service
+                if not hasattr(self, '_cached_chromedriver_path'):
+                    try:
+                        self._cached_chromedriver_path = ChromeDriverManager().install()
+                        log_step("chromedriver_cache", True)
+                    except Exception as e:
+                        log_step("chromedriver_cache", False, str(e))
+                        log_final_result()
+                        return False
+                
+                # ROBUST CHROME OPTIONS
                 try:
-                    # Stealth Chrome options
-                    chrome_opts = uc.ChromeOptions()
+                    chrome_opts = Options()
                     bookmark_user_data_dir = "C:\VintedScraper_Default_Bookmark"
                     chrome_opts.add_argument(f"--user-data-dir={bookmark_user_data_dir}")
                     chrome_opts.add_argument("--profile-directory=Profile 4")
-                    #chrome_opts.add_argument("--headless")  # Keep commented for now
+                    #chrome_opts.add_argument("--headless")
                     chrome_opts.add_argument("--no-sandbox")
                     chrome_opts.add_argument("--disable-dev-shm-usage")
                     chrome_opts.add_argument("--disable-gpu")
-                    chrome_opts.add_argument("--window-size=800,600")  # More realistic size
+                    chrome_opts.add_argument("--window-size=800,600")
                     chrome_opts.add_argument("--log-level=3")
+                    chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
                     
-                    # Advanced anti-detection
-                    chrome_opts.add_argument("--disable-blink-features=AutomationControlled")
-                    chrome_opts.add_argument("--disable-extensions")
-                    chrome_opts.add_argument("--disable-plugins")
-                    chrome_opts.add_argument("--disable-client-side-phishing-detection")
-                    chrome_opts.add_argument("--disable-sync")
-                    chrome_opts.add_argument("--disable-default-apps")
-                    chrome_opts.add_argument("--hide-scrollbars")
-                    chrome_opts.add_argument("--mute-audio")
-                    chrome_opts.add_argument("--disable-background-timer-throttling")
-                    chrome_opts.add_argument("--disable-renderer-backgrounding")
-                    chrome_opts.add_argument("--disable-backgrounding-occluded-windows")
-                    
-
+                    service = Service(self._cached_chromedriver_path, log_path=os.devnull)
                     log_step("chrome_options_configured", True)
                     
-                    # Create undetected driver
-                    self.persistent_bookmark_driver = uc.Chrome(
-                        options=chrome_opts,
-                        version_main=None,  # Auto-detect Chrome version
-                        driver_executable_path=None,  # Auto-manage
-                        browser_executable_path=None,  # Auto-detect
-                        user_data_dir=bookmark_user_data_dir,
-                        suppress_welcome=True,
-                        no_sandbox=True
-                    )
-                    
+                    self.persistent_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
                     log_step("driver_created", True)
                     
-                    # Execute stealth scripts immediately after creation
-                    stealth_script = """
-                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_JSON;
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Object;
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Proxy;
-                    Object.defineProperty(navigator, 'permissions', {get: () => undefined});
-                    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-                    window.chrome = {runtime: {}, loadTimes: function() {}, csi: function() {}, app: {}};
-                    """
-                    
-                    # Inject on every new page
-                    self.persistent_bookmark_driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
-                        'source': stealth_script
-                    })
-                    
-                    log_step("stealth_injection", True)
-                    
-                    # Minimal timeouts for speed
-                    self.persistent_bookmark_driver.implicitly_wait(0.5)
-                    self.persistent_bookmark_driver.set_page_load_timeout(15)
-                    self.persistent_bookmark_driver.set_script_timeout(5)
+                    # BALANCED timeouts - fail fast but not too aggressive
+                    self.persistent_bookmark_driver.implicitly_wait(1)
+                    self.persistent_bookmark_driver.set_page_load_timeout(8)
+                    self.persistent_bookmark_driver.set_script_timeout(3)
                     log_step("timeouts_configured", True)
-
-                    self.persistent_bookmark_driver.set_window_size(800, 600)
-
+                    
                     # Navigate to Vinted homepage
                     try:
                         self.persistent_bookmark_driver.get("https://www.vinted.co.uk")
                         log_step("homepage_navigation", True)
                     except Exception as homepage_error:
                         log_step("homepage_navigation", False, str(homepage_error))
+                        # Don't fail completely if homepage fails
                         
                 except Exception as driver_setup_error:
                     log_step("driver_initialization", False, str(driver_setup_error))
@@ -6772,20 +6740,12 @@ class VintedScraper:
                     self.persistent_bookmark_driver = None
                     return self.bookmark_driver(listing_url, username)  # Recursive retry
             
+            # ENHANCED TAB MANAGEMENT
             try:
-                # Just navigate directly in the current tab first, then create new tab
-                current_tab = self.persistent_bookmark_driver.current_window_handle
-                
-                # Simple new tab creation
-                self.persistent_bookmark_driver.switch_to.new_window('tab')
-                
-                # Verify we have multiple tabs now
-                all_tabs = self.persistent_bookmark_driver.window_handles
-                if len(all_tabs) > 1:
-                    log_step("new_tab_created", True, f"Total tabs: {len(all_tabs)}")
-                else:
-                    raise Exception("New tab not created")
-                    
+                self.persistent_bookmark_driver.execute_script("window.open('');")
+                new_tab = self.persistent_bookmark_driver.window_handles[-1]
+                self.persistent_bookmark_driver.switch_to.window(new_tab)
+                log_step("new_tab_created", True, f"Total tabs: {len(self.persistent_bookmark_driver.window_handles)}")
             except Exception as tab_error:
                 log_step("new_tab_created", False, str(tab_error))
                 log_final_result()
@@ -6840,27 +6800,16 @@ class VintedScraper:
                         # FIXED: Force-click the pay button using multiple aggressive methods
                         pay_clicked = False
                         
-                        # Method 1: ActionChains (NEW) - More human-like clicking
+                        # Method 1: Click the inner span (Pay text) directly - this bypasses disabled button issues
                         try:
-                            time.sleep(3)
-                            actions = ActionChains(self.persistent_bookmark_driver)
-                            actions.move_to_element(pay_element).click().perform()
-                            log_step("pay_button_click_actionchains", True, "Clicked Pay button with ActionChains")
+                            pay_span = self.persistent_bookmark_driver.find_element(By.XPATH, "//button[@data-testid='single-checkout-order-summary-purchase-button']//span[text()='Pay']")
+                            pay_span.click()
+                            log_step("pay_button_click_span", True, "Clicked Pay span directly")
                             pay_clicked = True
-                        except Exception as actionchains_error:
-                            log_step("pay_button_click_actionchains", False, str(actionchains_error))
+                        except Exception as span_error:
+                            log_step("pay_button_click_span", False, str(span_error))
                         
-                        # Method 2: Click the inner span (Pay text) directly - this bypasses disabled button issues
-                        if not pay_clicked:
-                            try:
-                                pay_span = self.persistent_bookmark_driver.find_element(By.XPATH, "//button[@data-testid='single-checkout-order-summary-purchase-button']//span[text()='Pay']")
-                                pay_span.click()
-                                log_step("pay_button_click_span", True, "Clicked Pay span directly")
-                                pay_clicked = True
-                            except Exception as span_error:
-                                log_step("pay_button_click_span", False, str(span_error))
-                        
-                        # Method 3: If span click failed, try aggressive JavaScript on button
+                        # Method 2: If span click failed, try aggressive JavaScript on button
                         if not pay_clicked:
                             try:
                                 # Force enable button and click it
@@ -6877,7 +6826,7 @@ class VintedScraper:
                             except Exception as js_error:
                                 log_step("pay_button_click_force_js", False, str(js_error))
                         
-                        # Method 4: If still failed, try dispatching click event directly
+                        # Method 3: If still failed, try dispatching click event directly
                         if not pay_clicked:
                             try:
                                 self.persistent_bookmark_driver.execute_script("""
@@ -6896,21 +6845,6 @@ class VintedScraper:
                             except Exception as dispatch_error:
                                 log_step("pay_button_click_dispatch_event", False, str(dispatch_error))
                         
-                        # Method 5: Last resort - try form submission
-                        if not pay_clicked:
-                            try:
-                                self.persistent_bookmark_driver.execute_script("""
-                                    var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
-                                    var form = button ? button.closest('form') : null;
-                                    if (form) {
-                                        form.submit();
-                                    }
-                                """)
-                                log_step("pay_button_form_submit", True, "Submitted form directly")
-                                pay_clicked = True
-                            except Exception as form_error:
-                                log_step("pay_button_form_submit", False, str(form_error))
-
                         # Method 4: Last resort - try form submission
                         if not pay_clicked:
                             try:
@@ -6929,7 +6863,7 @@ class VintedScraper:
                         if pay_clicked:
                             # ⚠️ CRITICAL: Exact 0.25 second wait - DO NOT MODIFY! ⚠️
                             print("🔖 CRITICAL: Waiting exactly 0.25 seconds...")
-                            time.sleep(0.5)
+                            time.sleep(1.25)
                             
                             # ⚠️ CRITICAL: Immediate tab close - DO NOT MODIFY! ⚠️
                             print("🔖 CRITICAL: Closing tab immediately...")
