@@ -1,4 +1,14 @@
 # Continuation from line 4401
+                    for click_method in ['standard', 'javascript']:
+                        try:
+                            # Re-find pay button for each attempt (DOM may change)
+                            current_pay_button = driver.find_element(By.CSS_SELECTOR, 
+                                'button[data-testid="single-checkout-order-summary-purchase-button"]'
+                            )
+                            
+                            if click_method == 'standard':
+                                current_pay_button.click()
+                            else:
                                 driver.execute_script("arguments[0].click();", current_pay_button)
                             
                             log_step(f"pay_click_attempt_{attempt}_{click_method}", True)
@@ -2189,13 +2199,3 @@
                 "a[aria-label*='message'][href='/inbox']",  # Aria-label based
                 "a[href='/inbox']"  # Broad fallback
             ]
-        }
-        
-        def try_selectors(driver, selector_set_name, operation='find', timeout=5, click_method='standard'):
-            """
-            FAILURE FAST-PATH - Try selectors with quick timeouts and fail fast
-            Returns (element, selector_used) or (None, None) if all fail
-            """
-            selectors = SELECTOR_SETS.get(selector_set_name, [])
-            if not selectors:
-                log_step(f"try_selectors_{selector_set_name}", False, "No selectors defined")

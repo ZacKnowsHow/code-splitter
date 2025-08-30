@@ -50,7 +50,17 @@ from ultralytics import YOLO
 import random
 import torch
 
-TEST_NUMBER_OF_LISTINGS = True
+
+
+
+TEST_WHETHER_SUITABLE = True
+TEST_SUITABLE_URLS = [
+    'https://www.vinted.co.uk/items/6963376052-nintendo-switch?referrer=catalog',
+    'https://www.vinted.co.uk/items/6963025596-nintendo-switch-oled-model-the-legend-of-zelda-tears-of-the-kingdom-edition?referrer=catalog',
+    'https://www.vinted.co.uk/items/6970192196-nintendo-switch-lite-in-grey?referrer=catalog'
+]
+
+TEST_NUMBER_OF_LISTINGS = False
 
 BOOKMARK_TEST_MODE = False
 BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6966914082-scarf?referrer=catalog"
@@ -2188,13 +2198,3 @@ class FacebookScraper:
                     rectangles[drag_rect].size = (width, height)
             screen.fill((204, 210, 255))
             for i, rect in enumerate(rectangles):
-                pygame.draw.rect(screen, (0, 0, 0), rect, 2)
-                number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
-                number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
-                screen.blit(number_text, number_rect)
-
-                if i == 2:  # Rectangle 3 (index 2) - Title
-                    self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
-                elif i == 1:  # Rectangle 2 (index 1) - Price
-                    self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
-                elif i == 7:  # Rectangle 8 (index 7) - Description
