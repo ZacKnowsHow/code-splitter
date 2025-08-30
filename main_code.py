@@ -74,6 +74,15 @@ BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
 TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6961760221-joy-con-controllers-for-nintendo-switch-brand-new?referrer=catalog"
 
+PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
+NINTENDO_SWITCH_CLASSES = [
+    'switch', 'oled', 'lite', 
+    'switch_box', 'oled_box', 'lite_box', 
+    'switch_in_tv', 'oled_in_tv', 'controller',
+    'tv_black', 'tv_white', 'comfort_h',
+    'comfort_h_joy'
+]
+
 VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
 print_images_backend_info = False
@@ -316,7 +325,7 @@ vinted_title_forbidden_words = ['box only', 'unofficial', 'keyboard', 'mouse', '
                                'joycon', 'snes', 'gamecube', 'n64', 'damaged', 'circuit', 'kart live', 'tablet only', 'ringfit', 'ring fit'
                                'repair', '™', 'each', 'empty game', 'just game case', 'empty case', 'arcade', 'wii', 'tv frame', 'joy-con',
                                'for parts', 'wont charge', 'spares & repair', 'xbox', 'prices in description', 'collector set', 'collectors set'
-                               'read description', 'joy pads', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
+                                'joy pads', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
 
 vinted_description_forbidden_words = ['faulty', 'jailbreak', 'visit us', 'opening hours', 'open 7 days', 
                                      'telephone', 'call us', '+44', '07', 'kart live', '.shop', 'our website',
@@ -5334,7 +5343,7 @@ class VintedScraper:
     def scrape_item_details(self, driver):
         """
         Enhanced scraper with better price extraction and seller reviews
-        UPDATED: Now includes username collection
+        UPDATED: Now includes username collection AND stores price for threshold filtering
         """
         debug_function_call("scrape_item_details")
         import re  # FIXED: Import re at function level
@@ -5468,10 +5477,19 @@ class VintedScraper:
         if data["title"]:
             data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
 
+        # NEW: Calculate and store the total price for threshold filtering
+        second_price = self.extract_price(data.get("second_price", "0"))
+        postage = self.extract_price(data.get("postage", "0"))
+        total_price = second_price + postage
+        
+        # Store the calculated price for use in object detection
+        self.current_listing_price_float = total_price
+        
         # DEBUG: Print final scraped data for seller_reviews and username
         if print_debug:
             print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
             print(f"DEBUG: Final scraped username: '{data.get('username')}'")
+            print(f"DEBUG: Total price calculated: £{total_price:.2f} (stored for threshold filtering)")
             
         return data
 
@@ -5836,6 +5854,7 @@ class VintedScraper:
         """
         Enhanced object detection with all Facebook exceptions and logic
         PLUS Vinted-specific post-scan game deduplication
+        NEW: Price threshold filtering for Nintendo Switch related items
         """
         if not os.path.isdir(listing_dir):
             return {}, []
@@ -5923,6 +5942,32 @@ class VintedScraper:
             print("🎮 VINTED GAME DEDUPLICATION APPLIED:")
             for game, original_count in games_before_cap.items():
                 print(f"  • {game}: {original_count} → 1")
+        
+        # NEW: PRICE THRESHOLD FILTERING FOR NINTENDO SWITCH ITEMS
+        try:
+            # Get the current listing price stored during scraping
+            listing_price = getattr(self, 'current_listing_price_float', 0.0)
+            
+            # If the listing price is below the threshold, remove Nintendo Switch detections
+            if listing_price > 0 and listing_price < PRICE_THRESHOLD:
+                filtered_classes = []
+                for switch_class in NINTENDO_SWITCH_CLASSES:
+                    if final_detected_objects.get(switch_class, 0) > 0:
+                        filtered_classes.append(switch_class)
+                        final_detected_objects[switch_class] = 0
+                
+                if filtered_classes:
+                    print(f"🚫 PRICE FILTER: Removed Nintendo Switch detections due to low price (£{listing_price:.2f} < £{PRICE_THRESHOLD:.2f})")
+                    print(f"    Filtered classes: {', '.join(filtered_classes)}")
+            elif listing_price >= PRICE_THRESHOLD:
+                # Optional: Log when price threshold allows detection
+                detected_switch_classes = [cls for cls in NINTENDO_SWITCH_CLASSES if final_detected_objects.get(cls, 0) > 0]
+                if detected_switch_classes:
+                    print(f"✅ PRICE FILTER: Nintendo Switch detections allowed (£{listing_price:.2f} >= £{PRICE_THRESHOLD:.2f})")
+        
+        except Exception as price_filter_error:
+            print(f"⚠️ Warning: Price filtering failed: {price_filter_error}")
+            # Continue without price filtering if there's an error
         
         return final_detected_objects, processed_images
 
