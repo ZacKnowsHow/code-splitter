@@ -1,4 +1,299 @@
 # Continuation from line 6601
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+            )
+            print("✅ Page refreshed and loaded successfully")
+        except TimeoutException:
+            print("⚠️ Timeout waiting for page to reload")
+        
+        # Wait for new listings (except first refresh)
+        if not is_first_refresh:
+            print(f"⏳ Waiting {wait_after_max_reached_vinted} seconds for new listings...")
+            time.sleep(wait_after_max_reached_vinted)
+        
+        return True
+
+    def search_vinted_with_refresh(self, driver, search_query):
+        """
+        Enhanced search_vinted method with refresh and rescan functionality
+        UPDATED: Now prints username alongside other listing details
+        """
+        global suitable_listings, current_listing_index
+        
+        # CLEAR THE VINTED SCANNED IDS FILE AT THE BEGINNING OF EACH RUN
+        try:
+            with open(VINTED_SCANNED_IDS_FILE, 'w') as f:
+                pass  # This creates an empty file, clearing any existing content
+            print(f"✅ Cleared {VINTED_SCANNED_IDS_FILE} at the start of the run")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not clear {VINTED_SCANNED_IDS_FILE}: {e}")
+        
+        # Clear previous results
+        suitable_listings.clear()
+        current_listing_index = 0
+        
+        # Ensure root download folder exists
+        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
+
+        # Load YOLO Model Once
+        print("🧠 Loading object detection model...")
+        if not os.path.exists(MODEL_WEIGHTS):
+            print(f"❌ Critical Error: Model weights not found at '{MODEL_WEIGHTS}'. Detection will be skipped.")
+        else:
+            try:
+                print("✅ Model loaded successfully.")
+            except Exception as e:
+                print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
+
+        # Load model with explicit GPU usage
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
+        # Initial page setup
+        params = {
+            "search_text": search_query,
+            "price_from": PRICE_FROM,
+            "price_to": PRICE_TO,
+            "currency": CURRENCY,
+            "order": ORDER,
+        }
+        driver.get(f"{BASE_URL}?{urlencode(params)}")
+        main = driver.current_window_handle
+
+        # Load previously scanned listing IDs (this will now be empty since we cleared the file)
+        scanned_ids = self.load_scanned_vinted_ids()
+        print(f"📚 Loaded {len(scanned_ids)} previously scanned listing IDs")
+
+        page = 1
+        overall_listing_counter = 0  # Total listings processed across all cycles
+        refresh_cycle = 1
+        is_first_refresh = True
+
+        # Main scanning loop with refresh functionality
+        while True:
+            print(f"\n{'='*60}")
+            print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
+            print(f"{'='*60}")
+            
+            cycle_listing_counter = 0  # Listings processed in this cycle
+            found_already_scanned = False
+            
+            # Reset to first page for each cycle
+            page = 1
+            
+            while True:  # Page loop
+                try:
+                    WebDriverWait(driver, 20).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                    )
+                except TimeoutException:
+                    print("⚠️ Timeout waiting for page to load - moving to next cycle")
+                    break
+
+                # Get listing URLs from current page
+                els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
+                urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
+                
+                if not urls:
+                    print(f"📄 No listings found on page {page} - moving to next cycle")
+                    break
+
+                print(f"📄 Processing page {page} with {len(urls)} listings")
+
+                for idx, url in enumerate(urls, start=1):
+                    cycle_listing_counter += 1
+                    
+                    print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
+                    
+                    # Extract listing ID and check if already scanned
+                    listing_id = self.extract_vinted_listing_id(url)
+                    
+                    if REFRESH_AND_RESCAN and listing_id:
+                        if listing_id in scanned_ids:
+                            print(f"🔁 DUPLICATE DETECTED: Listing ID {listing_id} already scanned")
+                            print(f"🔄 Initiating refresh and rescan process...")
+                            found_already_scanned = True
+                            break
+                    
+                    # Check if we've hit the maximum listings for this cycle
+                    if REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                        print(f"📊 Reached MAX_LISTINGS_VINTED_TO_SCAN ({MAX_LISTINGS_VINTED_TO_SCAN})")
+                        print(f"🔄 Initiating refresh cycle...")
+                        break
+
+                    overall_listing_counter += 1
+
+                    # Process the listing (same as original logic)
+                    driver.execute_script("window.open();")
+                    driver.switch_to.window(driver.window_handles[-1])
+                    driver.get(url)
+
+                    try:
+                        listing_start_time = time.time()
+                        details = self.scrape_item_details(driver)
+                        second_price = self.extract_price(details["second_price"])
+                        postage = self.extract_price(details["postage"])
+                        total_price = second_price + postage
+
+                        print(f"  Link:         {url}")
+                        print(f"  Title:        {details['title']}")
+                        print(f"  Username:     {details.get('username', 'Username not found')}")  # NEW: Print username
+                        print(f"  Price:        {details['price']}")
+                        print(f"  Second price: {details['second_price']} ({second_price:.2f})")
+                        print(f"  Postage:      {details['postage']} ({postage:.2f})")
+                        print(f"  Total price:  £{total_price:.2f}")
+                        print(f"  Uploaded:     {details['uploaded']}")
+
+                        # Download images for the current listing
+                        listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
+                        image_paths = self.download_images_for_listing(driver, listing_dir)
+
+                        # Perform object detection and get processed images
+                        detected_objects = {}
+                        processed_images = []
+                        if model and image_paths:
+                            detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
+                            
+                            # Print detected objects
+                            detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
+                            if detected_classes:
+                                for cls in sorted(detected_classes):
+                                    print(f"  • {cls}: {detected_objects[cls]}")
+
+                        # Process listing for pygame display
+                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
+
+                        # Mark this listing as scanned
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+                            print(f"✅ Saved listing ID: {listing_id}")
+
+                        print("-" * 40)
+                        listing_end_time = time.time()
+                        elapsed_time = listing_end_time - listing_start_time
+                        print(f"⏱️ Listing {overall_listing_counter} processing completed in {elapsed_time:.2f} seconds")
+
+                        
+                    except Exception as e:
+                        print(f"  ❌ ERROR scraping listing: {e}")
+                        # Still mark as scanned even if there was an error
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+
+                    finally:
+                        driver.close()
+                        driver.switch_to.window(main)
+
+                # Check if we need to break out of page loop
+                if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
+                    break
+
+                # Try to go to next page
+                try:
+                    nxt = driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
+                    driver.execute_script("arguments[0].click();", nxt)
+                    page += 1
+                    time.sleep(2)
+                except NoSuchElementException:
+                    print("📄 No more pages available - moving to next cycle")
+                    break
+
+            # End of page loop - decide whether to continue or refresh
+            if not REFRESH_AND_RESCAN:
+                print("🏁 REFRESH_AND_RESCAN disabled - ending scan")
+                break
+            
+            if found_already_scanned:
+                print(f"🔁 Found already scanned listing - refreshing immediately")
+                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+            elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
+                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+            else:
+                print("📄 No more pages and no max reached - refreshing for new listings")
+                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+
+            refresh_cycle += 1
+            is_first_refresh = False
+
+    def start_cloudflare_tunnel(self, port=5000):
+        """
+        Starts a Cloudflare Tunnel using the cloudflared binary.
+        Adjust the cloudflared_path if your executable is in a different location.
+        """
+        # Path to the cloudflared executable
+        #pc
+        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #laptop
+        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
+        
+        # Start the tunnel with the desired command-line arguments
+        process = subprocess.Popen(
+            [cloudflared_path, "tunnel", "--url", f"http://localhost:{port}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Function to read and print cloudflared output asynchronously
+        def read_output(proc):
+            for line in proc.stdout:
+                print("[cloudflared]", line.strip())
+        
+        # Start a thread to print cloudflared output so you can see the public URL and any errors
+        threading.Thread(target=read_output, args=(process,), daemon=True).start()
+        
+        # Wait a few seconds for the tunnel to establish (adjust if needed).
+        time.sleep(5)
+        return process
+
+    def run_flask_app(self):
+        try:
+            print("Starting Flask app for https://fk43b0p45crc03r.xyz/")
+            
+            # Run Flask locally - your domain should be configured to tunnel to this
+            app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+            
+        except Exception as e:
+            print(f"Error starting Flask app: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def bookmark_driver(self, listing_url, username=None):
+        """
+        ENHANCED ROBUST bookmark driver with success rate logging, selector alternatives, and failure fast-path
+        CRITICAL: Preserves the exact 0.25 second wait and tab closing sequence after pay button click
+        """
+        
+        # SUCCESS RATE LOGGING - Track exactly where and when things break
+        step_log = {
+            'start_time': time.time(),
+            'steps_completed': [],
+            'failures': [],
+            'success': False,
+            'critical_sequence_completed': False
+        }
+        
+        def log_step(step_name, success=True, error_msg=None):
+            """Log each step for debugging and success rate analysis"""
+            if success:
+                step_log['steps_completed'].append(f"{step_name} - {time.time() - step_log['start_time']:.2f}s")
+                print(f"✅ STEP: {step_name}")
+            else:
+                step_log['failures'].append(f"{step_name}: {error_msg} - {time.time() - step_log['start_time']:.2f}s")
+                print(f"❌ STEP: {step_name} - {error_msg}")
+        
+        def log_final_result():
+            """Log final results for success rate analysis"""
             total_time = time.time() - step_log['start_time']
             print(f"\n📊 BOOKMARK ANALYSIS for {listing_url[:50]}...")
             print(f"⏱️  Total time: {total_time:.2f}s")
