@@ -1,4 +1,6 @@
 # Continuation from line 2201
+            screen.fill((204, 210, 255))
+            for i, rect in enumerate(rectangles):
                 pygame.draw.rect(screen, (0, 0, 0), rect, 2)
                 number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
                 number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
@@ -2197,5 +2199,3 @@ class VintedScraper:
                     if print_debug:
                         print(f"💳 DRIVER {driver_num}: Purchase attempt {attempt}")
                     
-                    # CLICK PAY BUTTON
-                    pay_clicked = False

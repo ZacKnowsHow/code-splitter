@@ -1,4 +1,6 @@
 # Continuation from line 6601
+                "a[href='/inbox']"  # Broad fallback
+            ]
         }
         
         def try_selectors(driver, selector_set_name, operation='find', timeout=5, click_method='standard'):
@@ -274,7 +276,7 @@
                         if pay_clicked:
                             # ⚠️ CRITICAL: Exact 0.25 second wait - DO NOT MODIFY! ⚠️
                             print("🔖 CRITICAL: Waiting exactly 0.25 seconds...")
-                            time.sleep(1.25)
+                            time.sleep(0.25)
                             
                             # ⚠️ CRITICAL: Immediate tab close - DO NOT MODIFY! ⚠️
                             print("🔖 CRITICAL: Closing tab immediately...")
@@ -626,6 +628,56 @@
             
             return None
 
+    def setup_persistent_buying_driver(self):
+        
+        """
+        Set up the persistent buying driver that stays open throughout the program
+        """
+        if self.persistent_buying_driver is not None:
+            return True  # Already set up
+            
+        print("🚀 SETUP: Initializing persistent buying driver...")
+        
+        try:
+            print('USING SETUP_PRSISTENT_BUYING_DRIVER')
+
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull
+            )
+            
+            chrome_opts = Options()
+            #chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer1")
+            chrome_opts.add_argument("--profile-directory=Default")
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+                                
+            self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set fast timeouts for quick processing
+            self.persistent_buying_driver.implicitly_wait(1)
+            self.persistent_buying_driver.set_page_load_timeout(8)
+            self.persistent_buying_driver.set_script_timeout(3)
+            
+            # Navigate main tab to vinted.co.uk and keep it as reference
+            print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
+            self.persistent_buying_driver.get("https://www.vinted.co.uk")
+            self.main_tab_handle = self.persistent_buying_driver.current_window_handle
+            
+            print("✅ SETUP: Persistent buying driver ready!")
+            return True
+            
+        except Exception as e:
+            print(f"❌ SETUP: Failed to create persistent buying driver: {e}")
+            self.persistent_buying_driver = None
+            self.main_tab_handle = None
+            return False
+
     def test_url_collection_mode(self, driver, search_query):
         """
         Simple testing mode that only collects URLs and saves listing IDs
@@ -700,61 +752,138 @@
             # Small delay to prevent overwhelming the server
             time.sleep(2)
 
-    def setup_persistent_buying_driver(self):
-        
-        """
-        Set up the persistent buying driver that stays open throughout the program
-        """
-        if self.persistent_buying_driver is not None:
-            return True  # Already set up
-            
-        print("🚀 SETUP: Initializing persistent buying driver...")
-        
-        try:
-            print('USING SETUP_PRSISTENT_BUYING_DRIVER')
 
-            service = Service(
-                ChromeDriverManager().install(),
-                log_path=os.devnull
-            )
+    def test_suitable_urls_mode(self, driver):
+        """
+        Simple function to cycle through TEST_SUITABLE_URLS and display each on pygame
+        Only uses the scraping driver, no buying or bookmarking drivers
+        Forces ALL listings to be added to pygame regardless of suitability
+        """
+        global suitable_listings, current_listing_index, VINTED_SHOW_ALL_LISTINGS, bookmark_listings
+        
+        print("🧪 TEST_WHETHER_SUITABLE = True - Starting test suitable URLs mode")
+        
+        # Temporarily override settings to force all listings to show
+        original_show_all = VINTED_SHOW_ALL_LISTINGS
+        original_bookmark = bookmark_listings
+        VINTED_SHOW_ALL_LISTINGS = True  # Force show all listings
+        bookmark_listings = False  # Disable bookmarking
+        
+        # Clear previous results
+        suitable_listings.clear()
+        current_listing_index = 0
+        
+        # Load YOLO Model
+        print("🧠 Loading object detection model...")
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+        
+        # Process each URL in TEST_SUITABLE_URLS
+        for idx, url in enumerate(TEST_SUITABLE_URLS, 1):
+            print(f"\n🔍 Processing test URL {idx}/{len(TEST_SUITABLE_URLS)}")
+            print(f"🔗 URL: {url}")
             
-            chrome_opts = Options()
-            #chrome_opts.add_argument("--headless")
-            chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer1")
-            chrome_opts.add_argument("--profile-directory=Default")
-            chrome_opts.add_argument("--no-sandbox")
-            chrome_opts.add_argument("--disable-dev-shm-usage")
-            chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument("--window-size=800,600")
-            chrome_opts.add_argument("--log-level=3")
-            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-                                
-            self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            try:
+                # Open new tab
+                driver.execute_script("window.open();")
+                driver.switch_to.window(driver.window_handles[-1])
+                driver.get(url)
+                
+                # Scrape details
+                details = self.scrape_item_details(driver)
+                
+                # Download images
+                listing_dir = os.path.join(DOWNLOAD_ROOT, f"test_listing_{idx}")
+                image_paths = self.download_images_for_listing(driver, listing_dir)
+                
+                # Perform object detection
+                detected_objects = {}
+                processed_images = []
+                if model and image_paths:
+                    detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
+                
+                # Process for pygame display (no booking logic, force show all)
+                self.process_vinted_listing(details, detected_objects, processed_images, idx, url)
+                
+                print(f"✅ Processed test URL {idx} - added to pygame")
+                
+            except Exception as e:
+                print(f"❌ Error processing test URL {idx}: {e}")
             
-            # Set fast timeouts for quick processing
-            self.persistent_buying_driver.implicitly_wait(1)
-            self.persistent_buying_driver.set_page_load_timeout(8)
-            self.persistent_buying_driver.set_script_timeout(3)
-            
-            # Navigate main tab to vinted.co.uk and keep it as reference
-            print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
-            self.persistent_buying_driver.get("https://www.vinted.co.uk")
-            self.main_tab_handle = self.persistent_buying_driver.current_window_handle
-            
-            print("✅ SETUP: Persistent buying driver ready!")
-            return True
-            
-        except Exception as e:
-            print(f"❌ SETUP: Failed to create persistent buying driver: {e}")
-            self.persistent_buying_driver = None
-            self.main_tab_handle = None
-            return False
+            finally:
+                # Close tab and return to main
+                driver.close()
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+        
+        # Restore original settings
+        VINTED_SHOW_ALL_LISTINGS = original_show_all
+        bookmark_listings = original_bookmark
+        
+        print(f"✅ Test mode complete - processed {len(TEST_SUITABLE_URLS)} URLs, all added to pygame")
 
     def run(self):
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
         global current_listing_images, current_listing_url, current_suitability, current_expected_revenue
         
+        # NEW: Check for TEST_WHETHER_SUITABLE mode
+        if TEST_WHETHER_SUITABLE:
+            print("🧪 TEST_WHETHER_SUITABLE = True - Starting test suitable URLs mode")
+            
+            # Initialize ALL global variables including current_seller_reviews
+            suitable_listings = []
+            current_listing_index = 0
+            recent_listings = {'listings': [], 'current_index': 0}
+            
+            # Initialize all current listing variables INCLUDING current_seller_reviews
+            current_listing_title = "No title"
+            current_listing_description = "No description" 
+            current_listing_join_date = "No join date"
+            current_listing_price = "0"
+            current_expected_revenue = "0"
+            current_profit = "0"
+            current_detected_items = "None"
+            current_listing_images = []
+            current_listing_url = ""
+            current_suitability = "Suitability unknown"
+            current_seller_reviews = "No reviews yet"  # FIX: Initialize this variable
+            
+            # Initialize pygame display with default values
+            self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
+            
+            # Setup driver with headless mode to reduce WebGL errors
+            driver = self.setup_driver()
+            
+            try:
+                # Start pygame FIRST so it's ready to display results
+                print("🎮 Starting pygame window...")
+                pygame_thread = threading.Thread(target=self.run_pygame_window)
+                pygame_thread.daemon = True
+                pygame_thread.start()
+                
+                # Give pygame time to initialize
+                time.sleep(2)
+                
+                # Process the test URLs
+                self.test_suitable_urls_mode(driver)
+                
+                # Keep pygame running to display results
+                print("🎮 Pygame running - use arrow keys to navigate, ESC to exit")
+                pygame_thread.join()  # Wait for pygame to finish
+                
+            except KeyboardInterrupt:
+                print("\n🛑 Test mode stopped by user")
+            finally:
+                driver.quit()
+                pygame.quit()
+                print("✅ Driver closed, exiting")
+                sys.exit(0)
+
         # NEW: Check for TEST_NUMBER_OF_LISTINGS mode
         if TEST_NUMBER_OF_LISTINGS:
             print("🧪 TEST_NUMBER_OF_LISTINGS = True - Starting URL collection mode")
@@ -788,14 +917,15 @@
                 bookmark_success = self.bookmark_driver(TEST_BOOKMARK_BUYING_URL, test_username)
                 
                 if bookmark_success:
-                    print("✅ BOOKMARK: Successfully bookmarked the item")
-                    print(f"⏱️ WAITING: Waiting {bookmark_stopwatch_length} seconds for bookmark timer...")
-                    
-                    # Wait for the full bookmark stopwatch duration
-                    time.sleep(bookmark_stopwatch_length)
-                    
-                    print("✅ WAIT COMPLETE: Bookmark timer finished, starting buying process...")
-                    
+                    if wait_for_bookmark_stopwatch_to_buy:
+                        print("✅ BOOKMARK: Successfully bookmarked the item")
+                        print(f"⏱️ WAITING: Waiting {bookmark_stopwatch_length} seconds for bookmark timer...")
+                        
+                        # Wait for the full bookmark stopwatch duration
+                        time.sleep(bookmark_stopwatch_length)
+                        
+                        print("✅ WAIT COMPLETE: Bookmark timer finished, starting buying process...")
+                        
                     # Now start the buying process using process_single_listing_with_driver
                     driver_num, driver = self.get_available_driver()
                     
