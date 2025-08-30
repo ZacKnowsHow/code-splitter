@@ -74,6 +74,15 @@ BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
 TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6961760221-joy-con-controllers-for-nintendo-switch-brand-new?referrer=catalog"
 
+PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
+NINTENDO_SWITCH_CLASSES = [
+    'switch', 'oled', 'lite', 
+    'switch_box', 'oled_box', 'lite_box', 
+    'switch_in_tv', 'oled_in_tv', 'controller',
+    'tv_black', 'tv_white', 'comfort_h',
+    'comfort_h_joy'
+]
+
 VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
 print_images_backend_info = False
@@ -316,7 +325,7 @@ vinted_title_forbidden_words = ['box only', 'unofficial', 'keyboard', 'mouse', '
                                'joycon', 'snes', 'gamecube', 'n64', 'damaged', 'circuit', 'kart live', 'tablet only', 'ringfit', 'ring fit'
                                'repair', '™', 'each', 'empty game', 'just game case', 'empty case', 'arcade', 'wii', 'tv frame', 'joy-con',
                                'for parts', 'wont charge', 'spares & repair', 'xbox', 'prices in description', 'collector set', 'collectors set'
-                               'read description', 'joy pads', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
+                                'joy pads', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
 
 vinted_description_forbidden_words = ['faulty', 'jailbreak', 'visit us', 'opening hours', 'open 7 days', 
                                      'telephone', 'call us', '+44', '07', 'kart live', '.shop', 'our website',
@@ -2189,12 +2198,3 @@ class FacebookScraper:
                         dragging = False
                         resizing = False
                         drag_rect = None
-            # Handle dragging and resizing
-            if dragging and drag_rect is not None:
-                rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
-                rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
-            elif resizing and drag_rect is not None:
-                if resize_edge == 'bottom-right':
-                    width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
-                    height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
-                    rectangles[drag_rect].size = (width, height)
