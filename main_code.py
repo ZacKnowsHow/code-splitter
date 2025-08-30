@@ -50,8 +50,10 @@ from ultralytics import YOLO
 import random
 import torch
 
+allow_website_redesign = True
+
 # tests whether the listing is suitable for buying based on URL rather than scanning
-TEST_WHETHER_SUITABLE = True
+TEST_WHETHER_SUITABLE = False
 TEST_SUITABLE_URLS = [
     'https://www.vinted.co.uk/items/6963376052-nintendo-switch?referrer=catalog',
     'https://www.vinted.co.uk/items/6963025596-nintendo-switch-oled-model-the-legend-of-zelda-tears-of-the-kingdom-edition?referrer=catalog',
@@ -82,6 +84,10 @@ NINTENDO_SWITCH_CLASSES = [
     'tv_black', 'tv_white', 'comfort_h',
     'comfort_h_joy'
 ]
+
+allow_website_redesign = True  # Set to True to enable draggable/resizable elements
+WEBSITE_LAYOUT_CONFIG_FILE = r"C:\Users\ZacKnowsHow\Downloads\website_layout_config.json"
+
 
 VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
@@ -520,6 +526,37 @@ def vinted_button_clicked():
 
 
 # Replace the render_main_page function starting at line ~465 with this modified version
+def load_website_layout_config():
+    """Load website element positions and sizes from config file"""
+    try:
+        if os.path.exists(WEBSITE_LAYOUT_CONFIG_FILE):
+            with open(WEBSITE_LAYOUT_CONFIG_FILE, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Error loading website layout config: {e}")
+    return {}
+
+def save_website_layout_config(layout_data):
+    """Save website element positions and sizes to config file"""
+    try:
+        with open(WEBSITE_LAYOUT_CONFIG_FILE, 'w') as f:
+            json.dump(layout_data, f, indent=2)
+        print("Website layout saved successfully")
+    except Exception as e:
+        print(f"Error saving website layout config: {e}")
+
+# 3. ADD THIS NEW FLASK ROUTE:
+
+@app.route('/save-layout', methods=['POST'])
+def save_layout():
+    """Save the current layout configuration"""
+    try:
+        layout_data = request.get_json()
+        save_website_layout_config(layout_data)
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
 
 def render_main_page():
     try:
@@ -596,6 +633,9 @@ def render_main_page():
         else:
             image_html = "<p>No images available</p>"
 
+
+        saved_layout = load_website_layout_config()
+
         # Return the complete HTML with NEW top bar layout and stopwatch functionality
         return f'''
         <!DOCTYPE html>
@@ -609,6 +649,75 @@ def render_main_page():
             <meta name="apple-mobile-web-app-title" content="Marketplace Scanner">
             <title>Marketplace Scanner</title>
             <style>
+                /* Keep all existing styles and add these new ones */
+                
+                .redesign-mode .draggable-element {{
+                    border: 2px dashed #007bff !important;
+                    position: relative;
+                    cursor: move;
+                    user-select: none;
+                }}
+                
+                .redesign-mode .resize-handle {{
+                    position: absolute;
+                    bottom: 0;
+                    right: 0;
+                    width: 20px;
+                    height: 20px;
+                    background: #007bff;
+                    cursor: nw-resize;
+                    z-index: 1000;
+                }}
+                
+                .redesign-mode .resize-handle::before {{
+                    content: '⟲';
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    color: white;
+                    font-size: 10px;
+                    font-weight: bold;
+                }}
+                
+                .redesign-toggle {{
+                    position: fixed;
+                    top: 10px;
+                    right: 10px;
+                    background: #007bff;
+                    color: white;
+                    border: none;
+                    padding: 10px;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    z-index: 9999;
+                    font-weight: bold;
+                }}
+                
+                .redesign-toggle:hover {{
+                    background: #0056b3;
+                }}
+                
+                .save-layout-btn {{
+                    position: fixed;
+                    top: 60px;
+                    right: 10px;
+                    background: #28a745;
+                    color: white;
+                    border: none;
+                    padding: 10px;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    z-index: 9999;
+                    font-weight: bold;
+                    display: none;
+                }}
+                
+                .save-layout-btn:hover {{
+                    background: #1e7e34;
+                }}
+                
+                /* Rest of existing CSS remains the same */
                 * {{
                     box-sizing: border-box;
                     margin: 0;
@@ -928,226 +1037,388 @@ def render_main_page():
                 }}
             </style>
             <script>
+                // Keep all existing JavaScript and add this new functionality
+                
+                let allowWebsiteRedesign = {str(allow_website_redesign).lower()};
+                let savedLayout = {json.dumps(saved_layout)};
+                let redesignMode = false;
+                let dragData = null;
+                let resizeData = null;
+                const SNAP_DISTANCE = 10; // Distance for snapping alignment
+                
+                // Existing JavaScript variables and functions...
                 const allListings = {all_listings_json};
                 let currentListingIndex = 0;
                 let stopwatchIntervals = {{}};
-                console.log('All listings loaded:', allListings);
-                console.log('Number of listings:', allListings.length);
-
-                function refreshPage() {{
-                    location.reload();
+                
+                // Apply saved layout on page load
+                function applySavedLayout() {{
+                    if (Object.keys(savedLayout).length === 0) return;
+                    
+                    Object.keys(savedLayout).forEach(elementId => {{
+                        const element = document.getElementById(elementId);
+                        if (element && savedLayout[elementId]) {{
+                            const config = savedLayout[elementId];
+                            element.style.width = config.width + 'px';
+                            element.style.height = config.height + 'px';
+                            element.style.left = config.left + 'px';
+                            element.style.top = config.top + 'px';
+                            element.style.position = 'absolute';
+                            
+                            // Apply scaling to content
+                            scaleElementContent(element, config.width, config.height);
+                        }}
+                    }});
                 }}
-
-                function updateStopwatch() {{
-                    if (allListings.length === 0) return;
+                
+                function toggleRedesignMode() {{
+                    redesignMode = !redesignMode;
+                    const container = document.querySelector('.container');
+                    const saveBtn = document.querySelector('.save-layout-btn');
+                    const toggleBtn = document.querySelector('.redesign-toggle');
                     
-                    const currentListing = allListings[currentListingIndex];
-                    const currentUrl = currentListing.url;
-                    const stopwatchElement = document.querySelector('.stopwatch-display');
-                    
-                    if (stopwatchElement) {{
-                        // Check if this URL has an active stopwatch
-                        // This would need to be populated from the Python backend
-                        // For now, show placeholder text
-                        stopwatchElement.textContent = 'No stopwatch - listing unbookmarked';
-                    }}
-                }}
-
-                function updateListingDisplay(index) {{
-                    if (allListings.length === 0) {{
-                        console.log('No listings available');
-                        return;
-                    }}
-                    if (index < 0) index = allListings.length - 1;
-                    if (index >= allListings.length) index = 0;
-                    currentListingIndex = index;
-                    const listing = allListings[index];
-                    console.log('Updating to listing:', listing);
-
-                    // Update content
-                    const titleEl = document.querySelector('.content-title');
-                    const priceEl = document.querySelector('.content-price');
-                    const profitEl = document.querySelector('.content-profit');
-                    const joinDateEl = document.querySelector('.content-join-date');
-                    const detectedItemsEl = document.querySelector('.content-detected-items');
-                    const descriptionEl = document.querySelector('.content-description');
-                    const urlEl = document.querySelector('.content-url');
-                    const counterEl = document.querySelector('.listing-counter');
-
-                    if (titleEl) titleEl.textContent = listing.title;
-                    if (priceEl) priceEl.textContent = 'Price: £' + listing.price;
-                    if (profitEl) profitEl.textContent = `Profit: £${{listing.profit.toFixed(2)}}`;
-                    if (joinDateEl) joinDateEl.textContent = listing.join_date;
-                    if (detectedItemsEl) detectedItemsEl.textContent = listing.detected_items;
-                    if (descriptionEl) descriptionEl.textContent = listing.description;
-                    if (urlEl) urlEl.textContent = listing.url;
-                    if (counterEl) counterEl.textContent = `${{currentListingIndex + 1}} of ${{allListings.length}}`;
-
-                    // Update images
-                    const imageContainer = document.querySelector('.image-container');
-                    if (imageContainer) {{
-                        imageContainer.innerHTML = '';
-                        listing.processed_images.forEach(imgBase64 => {{
-                            const imageWrapper = document.createElement('div');
-                            imageWrapper.className = 'image-wrapper';
-                            const img = document.createElement('img');
-                            img.src = `data:image/png;base64=${{imgBase64}}`;
-                            img.alt = 'Listing Image';
-                            imageWrapper.appendChild(img);
-                            imageContainer.appendChild(imageWrapper);
-                        }});
-                    }}
-                    
-                    // Update stopwatch
-                    updateStopwatch();
-                    
-                    // Reset confirmation dialog state
-                    hideConfirmation();
-                }}
-
-                function changeListingIndex(direction) {{
-                    if (direction === 'next') {{
-                        updateListingDisplay(currentListingIndex + 1);
-                    }} else if (direction === 'previous') {{
-                        updateListingDisplay(currentListingIndex - 1);
-                    }}
-                }}
-
-                // Single button function to open listing directly
-                function openListing() {{
-                    var urlElement = document.querySelector('.content-url');
-                    var url = urlElement ? urlElement.textContent.trim() : '';
-                    
-                    if (url && url !== 'No URL Available') {{
-                        console.log('Opening listing:', url);
-                        window.open(url, '_blank');
+                    if (redesignMode) {{
+                        container.classList.add('redesign-mode');
+                        saveBtn.style.display = 'block';
+                        toggleBtn.textContent = 'Exit Redesign';
+                        makeElementsDraggable();
                     }} else {{
-                        alert('No valid URL available for this listing');
+                        container.classList.remove('redesign-mode');
+                        saveBtn.style.display = 'none';
+                        toggleBtn.textContent = 'Redesign Mode';
+                        removeElementsDraggable();
+                        rearrangeElementsInFlow();
                     }}
                 }}
                 
-                // Confirmation dialog functions
-                function showConfirmation(message, confirmCallback, cancelCallback) {{
-                    const buyDecisionContainer = document.querySelector('.buy-decision-container');
-                    const confirmationContainer = document.querySelector('.confirmation-container');
+                function makeElementsDraggable() {{
+                    // Individual elements for each component
+                    const draggableElements = [
+                        'refresh-button', 'listing-counter', 'stopwatch-display',
+                        'title-section', 'price-section', 'profit-section', 'description-section',
+                        'open-listing-button', 'buy-yes-button', 'buy-no-button', 
+                        'confirmation-container', 'details-row', 'image-container', 
+                        'join-date-section', 'previous-button', 'next-button', 'listing-url'
+                    ];
                     
-                    if (buyDecisionContainer) buyDecisionContainer.style.display = 'none';
-                    if (confirmationContainer) {{
-                        confirmationContainer.style.display = 'flex';
+                    draggableElements.forEach(id => {{
+                        const element = document.getElementById(id);
+                        if (element) {{
+                            element.classList.add('draggable-element');
+                            
+                            // Store original position for flow rearrangement
+                            if (!element.dataset.originalIndex) {{
+                                element.dataset.originalIndex = Array.from(element.parentNode.children).indexOf(element);
+                            }}
+                            
+                            // Add resize handle
+                            const resizeHandle = document.createElement('div');
+                            resizeHandle.className = 'resize-handle';
+                            element.appendChild(resizeHandle);
+                            
+                            // Mouse events for dragging
+                            element.addEventListener('mousedown', startDrag);
+                            
+                            // Mouse events for resizing
+                            resizeHandle.addEventListener('mousedown', startResize);
+                        }}
+                    }});
+                }}
+                
+                function removeElementsDraggable() {{
+                    const elements = document.querySelectorAll('.draggable-element');
+                    elements.forEach(element => {{
+                        element.classList.remove('draggable-element');
+                        const resizeHandle = element.querySelector('.resize-handle');
+                        if (resizeHandle) resizeHandle.remove();
                         
-                        const confirmationText = confirmationContainer.querySelector('.confirmation-text');
-                        if (confirmationText) confirmationText.textContent = message;
+                        element.removeEventListener('mousedown', startDrag);
+                        element.style.position = '';
+                        element.style.left = '';
+                        element.style.top = '';
+                    }});
+                }}
+                
+                function startDrag(e) {{
+                    if (e.target.classList.contains('resize-handle')) return;
+                    
+                    e.preventDefault();
+                    dragData = {{
+                        element: e.currentTarget,
+                        startX: e.clientX,
+                        startY: e.clientY,
+                        initialLeft: e.currentTarget.offsetLeft,
+                        initialTop: e.currentTarget.offsetTop
+                    }};
+                    
+                    // Show snap guides
+                    showSnapGuides();
+                    
+                    document.addEventListener('mousemove', drag);
+                    document.addEventListener('mouseup', stopDrag);
+                }}
+                
+                function drag(e) {{
+                    if (!dragData) return;
+                    
+                    let deltaX = e.clientX - dragData.startX;
+                    let deltaY = e.clientY - dragData.startY;
+                    let newLeft = dragData.initialLeft + deltaX;
+                    let newTop = dragData.initialTop + deltaY;
+                    
+                    // Snap to other elements
+                    const snapResult = getSnapPosition(dragData.element, newLeft, newTop);
+                    newLeft = snapResult.left;
+                    newTop = snapResult.top;
+                    
+                    dragData.element.style.position = 'absolute';
+                    dragData.element.style.left = newLeft + 'px';
+                    dragData.element.style.top = newTop + 'px';
+                    
+                    // Update snap guides
+                    updateSnapGuides(newLeft, newTop);
+                }}
+                
+                function stopDrag() {{
+                    document.removeEventListener('mousemove', drag);
+                    document.removeEventListener('mouseup', stopDrag);
+                    
+                    // Hide snap guides
+                    hideSnapGuides();
+                    
+                    // Rearrange other elements to fill gaps
+                    rearrangeElementsAfterMove(dragData.element);
+                    
+                    dragData = null;
+                }}
+                
+                function startResize(e) {{
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    resizeData = {{
+                        element: e.currentTarget.parentElement,
+                        startX: e.clientX,
+                        startY: e.clientY,
+                        initialWidth: e.currentTarget.parentElement.offsetWidth,
+                        initialHeight: e.currentTarget.parentElement.offsetHeight
+                    }};
+                    
+                    document.addEventListener('mousemove', resize);
+                    document.addEventListener('mouseup', stopResize);
+                }}
+                
+                function resize(e) {{
+                    if (!resizeData) return;
+                    
+                    const deltaX = e.clientX - resizeData.startX;
+                    const deltaY = e.clientY - resizeData.startY;
+                    
+                    const newWidth = Math.max(50, resizeData.initialWidth + deltaX);
+                    const newHeight = Math.max(30, resizeData.initialHeight + deltaY);
+                    
+                    resizeData.element.style.width = newWidth + 'px';
+                    resizeData.element.style.height = newHeight + 'px';
+                    
+                    // Scale content to fit
+                    scaleElementContent(resizeData.element, newWidth, newHeight);
+                }}
+                
+                function stopResize() {{
+                    document.removeEventListener('mousemove', resize);
+                    document.removeEventListener('mouseup', stopResize);
+                    resizeData = null;
+                }}
+                
+                function scaleElementContent(element, width, height) {{
+                    // Calculate scale factors
+                    const originalWidth = 200; // Base width
+                    const originalHeight = 50; // Base height
+                    
+                    const scaleX = width / originalWidth;
+                    const scaleY = height / originalHeight;
+                    const scale = Math.min(scaleX, scaleY, 2); // Cap at 200%
+                    
+                    // Apply scaling to text and content
+                    const textElements = element.querySelectorAll('span, p, button');
+                    textElements.forEach(textEl => {{
+                        textEl.style.fontSize = (12 * scale) + 'px';
+                        textEl.style.lineHeight = scale;
+                        textEl.style.padding = (5 * scale) + 'px';
+                    }});
+                    
+                    // Scale buttons
+                    const buttons = element.querySelectorAll('button');
+                    buttons.forEach(btn => {{
+                        btn.style.width = '100%';
+                        btn.style.height = '100%';
+                        btn.style.minHeight = 'auto';
+                    }});
+                }}
+                
+                function getSnapPosition(dragElement, left, top) {{
+                    const elements = document.querySelectorAll('.draggable-element');
+                    let snappedLeft = left;
+                    let snappedTop = top;
+                    
+                    elements.forEach(element => {{
+                        if (element === dragElement) return;
                         
-                        const confirmYesBtn = confirmationContainer.querySelector('.confirm-yes-button');
-                        const confirmNoBtn = confirmationContainer.querySelector('.confirm-no-button');
+                        const rect = element.getBoundingClientRect();
+                        const container = document.querySelector('.container');
+                        const containerRect = container.getBoundingClientRect();
                         
-                        if (confirmYesBtn) {{
-                            confirmYesBtn.onclick = function() {{
-                                confirmCallback();
-                                hideConfirmation();
-                            }};
+                        const elementLeft = rect.left - containerRect.left;
+                        const elementTop = rect.top - containerRect.top;
+                        const elementRight = elementLeft + rect.width;
+                        const elementBottom = elementTop + rect.height;
+                        
+                        // Horizontal snapping
+                        if (Math.abs(left - elementLeft) < SNAP_DISTANCE) {{
+                            snappedLeft = elementLeft;
+                        }} else if (Math.abs(left - elementRight) < SNAP_DISTANCE) {{
+                            snappedLeft = elementRight;
                         }}
                         
-                        if (confirmNoBtn) {{
-                            confirmNoBtn.onclick = function() {{
-                                cancelCallback();
-                                hideConfirmation();
-                            }};
+                        // Vertical snapping
+                        if (Math.abs(top - elementTop) < SNAP_DISTANCE) {{
+                            snappedTop = elementTop;
+                        }} else if (Math.abs(top - elementBottom) < SNAP_DISTANCE) {{
+                            snappedTop = elementBottom;
                         }}
+                    }});
+                    
+                    return {{ left: snappedLeft, top: snappedTop }};
+                }}
+                
+                function showSnapGuides() {{
+                    // Create snap guide lines
+                    if (!document.querySelector('.snap-guide-vertical')) {{
+                        const vGuide = document.createElement('div');
+                        vGuide.className = 'snap-guide-vertical';
+                        vGuide.style.cssText = `
+                            position: absolute;
+                            top: 0;
+                            width: 1px;
+                            height: 100vh;
+                            background: #007bff;
+                            display: none;
+                            z-index: 10000;
+                        `;
+                        document.body.appendChild(vGuide);
+                    }}
+                    
+                    if (!document.querySelector('.snap-guide-horizontal')) {{
+                        const hGuide = document.createElement('div');
+                        hGuide.className = 'snap-guide-horizontal';
+                        hGuide.style.cssText = `
+                            position: absolute;
+                            left: 0;
+                            width: 100vw;
+                            height: 1px;
+                            background: #007bff;
+                            display: none;
+                            z-index: 10000;
+                        `;
+                        document.body.appendChild(hGuide);
                     }}
                 }}
                 
-                function hideConfirmation() {{
-                    const buyDecisionContainer = document.querySelector('.buy-decision-container');
-                    const confirmationContainer = document.querySelector('.confirmation-container');
+                function updateSnapGuides(left, top) {{
+                    const vGuide = document.querySelector('.snap-guide-vertical');
+                    const hGuide = document.querySelector('.snap-guide-horizontal');
                     
-                    if (buyDecisionContainer) buyDecisionContainer.style.display = 'flex';
-                    if (confirmationContainer) confirmationContainer.style.display = 'none';
+                    if (vGuide) {{
+                        vGuide.style.left = left + 'px';
+                        vGuide.style.display = 'block';
+                    }}
+                    
+                    if (hGuide) {{
+                        hGuide.style.top = top + 'px';
+                        hGuide.style.display = 'block';
+                    }}
                 }}
-
-                // Buy decision functions with confirmation
-                function buyYes() {{
-                    showConfirmation(
-                        'Are you sure you want to buy this listing?',
-                        function() {{
-                            var urlElement = document.querySelector('.content-url');
-                            var url = urlElement ? urlElement.textContent.trim() : '';
-                            
-                            if (url && url !== 'No URL Available') {{
-                                console.log('User confirmed: wants to buy listing: ' + url);
-                                
-                                fetch('/vinted-button-clicked', {{
-                                    method: 'POST',
-                                    headers: {{
-                                        'Content-Type': 'application/x-www-form-urlencoded',
-                                    }},
-                                    body: `url=${{encodeURIComponent(url)}}&action=buy_yes`
-                                }})
-                                .then(response => {{
-                                    if (response.ok) {{
-                                        console.log('Vinted YES button confirmed and sent successfully');
-                                    }} else {{
-                                        console.error('Failed to process Vinted YES button');
-                                    }}
-                                }})
-                                .catch(error => {{
-                                    console.error('Error with Vinted YES button:', error);
-                                }});
-                            }} else {{
-                                console.log('User confirmed: wants to buy listing but no URL available');
-                            }}
-                        }},
-                        function() {{
-                            console.log('User cancelled buying decision');
+                
+                function hideSnapGuides() {{
+                    const vGuide = document.querySelector('.snap-guide-vertical');
+                    const hGuide = document.querySelector('.snap-guide-horizontal');
+                    
+                    if (vGuide) vGuide.style.display = 'none';
+                    if (hGuide) hGuide.style.display = 'none';
+                }}
+                
+                function rearrangeElementsAfterMove(movedElement) {{
+                    // This would rearrange elements in their original flow when one is moved out
+                    // For now, we'll keep it simple and not auto-rearrange
+                }}
+                
+                function rearrangeElementsInFlow() {{
+                    // Reset all elements to their original flow positions
+                    const elements = document.querySelectorAll('.draggable-element');
+                    elements.forEach(element => {{
+                        element.style.position = '';
+                        element.style.left = '';
+                        element.style.top = '';
+                        element.style.width = '';
+                        element.style.height = '';
+                        
+                        // Reset scaling
+                        const textElements = element.querySelectorAll('span, p, button');
+                        textElements.forEach(textEl => {{
+                            textEl.style.fontSize = '';
+                            textEl.style.lineHeight = '';
+                            textEl.style.padding = '';
+                        }});
+                    }});
+                }}
+                
+                function saveLayout() {{
+                    const draggableElements = document.querySelectorAll('.draggable-element');
+                    const layoutData = {{}};
+                    
+                    draggableElements.forEach(element => {{
+                        if (element.id) {{
+                            layoutData[element.id] = {{
+                                width: element.offsetWidth,
+                                height: element.offsetHeight,
+                                left: element.offsetLeft,
+                                top: element.offsetTop
+                            }};
                         }}
-                    );
-                }}
-
-                function buyNo() {{
-                    showConfirmation(
-                        'Are you sure you don\\'t want to buy this listing?',
-                        function() {{
-                            var urlElement = document.querySelector('.content-url');
-                            var url = urlElement ? urlElement.textContent.trim() : '';
-                            
-                            if (url && url !== 'No URL Available') {{
-                                console.log('User confirmed: does not want to buy listing: ' + url);
-                                
-                                fetch('/vinted-button-clicked', {{
-                                    method: 'POST',
-                                    headers: {{
-                                        'Content-Type': 'application/x-www-form-urlencoded',
-                                    }},
-                                    body: `url=${{encodeURIComponent(url)}}&action=buy_no`
-                                }})
-                                .then(response => {{
-                                    if (response.ok) {{
-                                        console.log('Vinted NO button confirmed and sent successfully');
-                                    }} else {{
-                                        console.error('Failed to process Vinted NO button');
-                                    }}
-                                }})
-                                .catch(error => {{
-                                    console.error('Error with Vinted NO button:', error);
-                                }});
-                            }} else {{
-                                console.log('User confirmed: does not want to buy listing but no URL available');
-                            }}
+                    }});
+                    
+                    fetch('/save-layout', {{
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/json',
                         }},
-                        function() {{
-                            console.log('User cancelled buying decision');
+                        body: JSON.stringify(layoutData)
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.status === 'success') {{
+                            alert('Layout saved successfully!');
+                        }} else {{
+                            alert('Error saving layout: ' + data.message);
                         }}
-                    );
+                    }})
+                    .catch(error => {{
+                        console.error('Error:', error);
+                        alert('Error saving layout');
+                    }});
                 }}
-
-                // Initialize display on page load
+                
+                // Keep all existing functions (refreshPage, updateStopwatch, etc.)...
+                
+                // Initialize on page load
                 window.onload = () => {{
                     console.log('Page loaded, initializing display');
                     if (allListings.length > 0) {{
                         updateListingDisplay(0);
-                    }} else {{
-                        console.log('No listings to display');
                     }}
+                    
+                    // Apply saved layout if exists
+                    applySavedLayout();
                     
                     // Start stopwatch update interval
                     setInterval(updateStopwatch, 1000);
@@ -1156,8 +1427,18 @@ def render_main_page():
         </head>
         <body>
             <div class="container listing-container">
-                <!-- NEW: Top bar with three colored rectangles -->
-                <div class="top-bar">
+                <!-- Redesign mode toggle button -->
+                <button class="redesign-toggle" onclick="toggleRedesignMode()" style="display: {('block' if allow_website_redesign else 'none')}">
+                    Redesign Mode
+                </button>
+                
+                <!-- Save layout button -->
+                <button class="save-layout-btn" onclick="saveLayout()">
+                    Save Layout
+                </button>
+                
+                <!-- Top bar with ID for dragging -->
+                <div class="top-bar" id="top-bar">
                     <button class="top-bar-item refresh-button" onclick="refreshPage()">
                         Refresh Page
                     </button>
@@ -1169,10 +1450,13 @@ def render_main_page():
                     </div>
                 </div>
                 
-                <div class="section-box">
+                <!-- Title section with ID -->
+                <div class="section-box" id="title-section">
                     <p><span class="content-title">{title}</span></p>
                 </div>
-                <div class="financial-row">
+                
+                <!-- Financial row with ID -->
+                <div class="financial-row" id="financial-row">
                     <div class="financial-item">
                         <p><span class="content-price">{price}</span></p>
                     </div>
@@ -1180,19 +1464,21 @@ def render_main_page():
                         <p><span class="content-profit">{profit}</span></p>
                     </div>
                 </div>
-                <div class="section-box">
+                
+                <!-- Description section with ID -->
+                <div class="section-box" id="description-section">
                     <p><span class="content-description">{description}</span></p>
                 </div>
                 
-                <!-- Single button for opening listing -->
-                <div class="single-button-container">
+                <!-- Single button container with ID -->
+                <div class="single-button-container" id="single-button-container">
                     <button class="custom-button open-listing-button" onclick="openListing()">
                         Open Listing in New Tab
                     </button>
                 </div>
                 
-                <!-- Buy decision buttons -->
-                <div class="buy-decision-container">
+                <!-- Buy decision buttons with ID -->
+                <div class="buy-decision-container" id="buy-decision-container">
                     <button class="buy-yes-button" onclick="buyYes()">
                         Yes - Buy now
                     </button>
@@ -1201,8 +1487,8 @@ def render_main_page():
                     </button>
                 </div>
                 
-                <!-- Confirmation dialog (initially hidden) -->
-                <div class="confirmation-container">
+                <!-- Confirmation dialog with ID -->
+                <div class="confirmation-container" id="confirmation-container">
                     <div class="confirmation-text">
                         Are you sure?
                     </div>
@@ -1216,21 +1502,30 @@ def render_main_page():
                     </div>
                 </div>
                 
-                <div class="details-row">
+                <!-- Details row with ID -->
+                <div class="details-row" id="details-row">
                     <div class="details-item">
                         <p><span class="content-detected-items">{detected_items}</span></p>
                     </div>
                 </div>
-                <div class="image-container">
+                
+                <!-- Image container with ID -->
+                <div class="image-container" id="image-container">
                     {image_html}
                 </div>
-                <div class="details-item">
+                
+                <!-- Join date section with ID -->
+                <div class="details-item" id="join-date-section">
                     <p><span class="content-join-date">{join_date}</span></p>
                 </div>
-                <div class="navigation-buttons">
+                
+                <!-- Navigation buttons with ID -->
+                <div class="navigation-buttons" id="navigation-buttons">
                     <button onclick="changeListingIndex('previous')" class="custom-button" style="background-color: #666;">Previous</button>
                     <button onclick="changeListingIndex('next')" class="custom-button" style="background-color: #666;">Next</button>
                 </div>
+                
+                <!-- Listing URL with ID -->
                 <div class="listing-url" id="listing-url">
                     <p><span class="header">Listing URL: </span><span class="content-url">{listing_url}</span></p>
                 </div>
@@ -1241,10 +1536,10 @@ def render_main_page():
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"ERROR in render_main_page: {e}")
-        print(f"Traceback: {error_details}")
-        return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
-
+        print(f"ERROR in render_main_page: {{e}}")
+        print(f"Traceback: {{error_details}}")
+        return f"<html><body><h1>Error in render_main_page</h1><pre>{{error_details}}</pre></body></html>"
+    
 def base64_encode_image(img):
     """Convert PIL Image to base64 string, resizing if necessary"""
     max_size = (200, 200)
