@@ -1,4 +1,13 @@
 # Continuation from line 2201
+            # Handle dragging and resizing
+            if dragging and drag_rect is not None:
+                rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
+                rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
+            elif resizing and drag_rect is not None:
+                if resize_edge == 'bottom-right':
+                    width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
+                    height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
+                    rectangles[drag_rect].size = (width, height)
             screen.fill((204, 210, 255))
             for i, rect in enumerate(rectangles):
                 pygame.draw.rect(screen, (0, 0, 0), rect, 2)
@@ -2190,12 +2199,3 @@ class VintedScraper:
                 while not purchase_successful and attempt < max_attempts:
                     attempt += 1
                     elapsed_time = time.time() - start_time
-                    
-                    # Check timeout
-                    if elapsed_time >= bookmark_stopwatch_length:
-                        log_step("purchase_timeout", False, f"Timeout after {elapsed_time:.1f}s")
-                        break
-                    
-                    if print_debug:
-                        print(f"💳 DRIVER {driver_num}: Purchase attempt {attempt}")
-                    

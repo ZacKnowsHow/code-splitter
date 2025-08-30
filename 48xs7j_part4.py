@@ -1,4 +1,49 @@
 # Continuation from line 6601
+            total_time = time.time() - step_log['start_time']
+            print(f"\n📊 BOOKMARK ANALYSIS for {listing_url[:50]}...")
+            print(f"⏱️  Total time: {total_time:.2f}s")
+            print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
+            print(f"❌ Failures: {len(step_log['failures'])}")
+            print(f"🎯 Critical sequence: {'YES' if step_log['critical_sequence_completed'] else 'NO'}")
+            print(f"🏆 Overall success: {'YES' if step_log['success'] else 'NO'}")
+            
+            # Log failures for analysis
+            if step_log['failures']:
+                print("🔍 FAILURE DETAILS:")
+                for failure in step_log['failures']:
+                    print(f"  • {failure}")
+        
+        # SELECTOR ALTERNATIVES - For each critical element, have 3-4 backup selectors ready
+        SELECTOR_SETS = {
+            'buy_button': [
+                "button[data-testid='item-buy-button']",  # Primary
+                "button.web_ui__Button__primary[data-testid='item-buy-button']",  # With class
+                "button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated",  # Full class chain
+                "//button[@data-testid='item-buy-button']",  # XPath fallback
+                "//button[contains(@class, 'web_ui__Button__primary')]//span[text()='Buy now']"  # Text-based XPath
+            ],
+            
+            'pay_button': [
+                'button[data-testid="single-checkout-order-summary-purchase-button"]',  # Primary
+                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',  # With class
+                '//button[@data-testid="single-checkout-order-summary-purchase-button"]',  # XPath
+                'button.web_ui__Button__primary[data-testid*="purchase"]',  # Partial match
+                '//button[contains(@data-testid, "purchase-button")]'  # Broader XPath
+            ],
+            
+            'processing_payment': [
+                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",  # Exact
+                "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",  # Broader class match
+                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format' and contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",  # Alternative message
+                "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",  # Broader span match
+                "//*[contains(text(), 'Processing payment')]"  # Very broad fallback
+            ],
+            
+            'messages_button': [
+                "a[data-testid='header-conversations-button']",  # Primary
+                "a[href='/inbox'][data-testid='header-conversations-button']",  # With href
+                "a[href='/inbox'].web_ui__Button__button",  # Class-based
+                "a[aria-label*='message'][href='/inbox']",  # Aria-label based
                 "a[href='/inbox']"  # Broad fallback
             ]
         }
