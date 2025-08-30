@@ -1,4 +1,6 @@
 # Continuation from line 4401
+                    # CLICK PAY BUTTON
+                    pay_clicked = False
                     for click_method in ['standard', 'javascript']:
                         try:
                             # Re-find pay button for each attempt (DOM may change)
@@ -2197,5 +2199,3 @@
                 "a[href='/inbox'][data-testid='header-conversations-button']",  # With href
                 "a[href='/inbox'].web_ui__Button__button",  # Class-based
                 "a[aria-label*='message'][href='/inbox']",  # Aria-label based
-                "a[href='/inbox']"  # Broad fallback
-            ]

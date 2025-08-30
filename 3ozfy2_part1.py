@@ -50,9 +50,7 @@ from ultralytics import YOLO
 import random
 import torch
 
-
-
-
+# tests whether the listing is suitable for buying based on URL rather than scanning
 TEST_WHETHER_SUITABLE = True
 TEST_SUITABLE_URLS = [
     'https://www.vinted.co.uk/items/6963376052-nintendo-switch?referrer=catalog',
@@ -60,15 +58,19 @@ TEST_SUITABLE_URLS = [
     'https://www.vinted.co.uk/items/6970192196-nintendo-switch-lite-in-grey?referrer=catalog'
 ]
 
+# tests the number of listings found by the search
 TEST_NUMBER_OF_LISTINGS = False
 
+#tests the bookmark functionality
 BOOKMARK_TEST_MODE = False
 BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6966914082-scarf?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
+#tests the buying functionality
 BUYING_TEST_MODE = False
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
 
+#tests both the bookmark and buying functionality
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
 TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6961760221-joy-con-controllers-for-nintendo-switch-brand-new?referrer=catalog"
 
@@ -2196,5 +2198,3 @@ class FacebookScraper:
                     width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
                     height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
                     rectangles[drag_rect].size = (width, height)
-            screen.fill((204, 210, 255))
-            for i, rect in enumerate(rectangles):
