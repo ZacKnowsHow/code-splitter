@@ -1,301 +1,4 @@
 # Continuation from line 2201
-                    <div class="listing-counter" id="listing-counter">
-                        Listing 1 of 1
-                    </div>
-                    <div class="section-box"> 
-                        <p><span class="header"></span><span class="content-title">{title}</span></p> 
-                    </div>
-                    <div class="financial-row"> 
-                        <div class="financial-item"> 
-                            <p><span class="header"></span><span class="content-price">{price}</span></p> 
-                        </div> 
-                        <div class="financial-item"> 
-                            <p><span class="header"></span><span class="content-profit">{profit}</span></p> 
-                        </div> 
-                    </div> 
-
-                    <div class="section-box"> 
-                        <p><span class="header"></span><span class="content-description">{description}</span></p> 
-                    </div>
-
-                    <div class="price-button-container">
-                        <div class="button-row">
-                            <button class="custom-button" onclick="handleButtonClick(5)"" style="background-color:rgb(109,171,96);">Message price + £5</button>
-                            <button class="custom-button" onclick="handleButtonClick(10)"" style="background-color:rgb(79,158,196);">Message price + £10</button>
-                        </div>
-                        <div class="button-row">
-                            <button class="custom-button" onclick="handleButtonClick(15)"" style="background-color:rgb(151,84,80);">Message price + £15</button>
-                            <button class="custom-button" onclick="handleButtonClick(20)"" style="background-color: rgb(192,132,17);">Message price + £20</button>
-                            <button class="custom-button" onclick="handleCustomPriceClick()" style="background-color: rgb(76,175,80);">Custom Price +</button>
-                        </div>
-                    </div>
-                    <div class="details-row">
-                        <div class="details-item"> 
-                            <p><span class="header"></span><span class="content-detected-items">{detected_items}</span></p> 
-                        </div> 
-                        <div class="image-container"> 
-                            {image_html} 
-                        </div> 
-                    </div>
-
-                    <div class="details-item"> 
-                            <p><span class="header"></span><span class="content-join-date">{join_date}</span></p> 
-                        </div> 
-                    <div class="navigation-buttons">
-                        <button onclick="changeListingIndex('previous')">Previous</button>
-                        <button onclick="changeListingIndex('next')">Next</button>
-                    </div>
-                    <div class="listing-url" id="listing-url"> 
-                        <p><span class="header">Listing URL: </span><span class="content-url">{listing_url}</span></p>
-                    </div>
-                </div> 
-            </div>
-        </body> 
-        </html> 
-        ''' 
-
-        except Exception as e: 
-            return f"<html><body><h1>Error</h1><p>{str(e)}</p></body></html>" 
-
-
-    
-
-    def process_request_queue(self):
-        global messaging_driver
-        while not request_queue.empty():
-            url, website_static_price_str, price_increment = request_queue.get()
-            start_time = time.time()
-            message_sent = False
-            try:
-                # Parse the price from the string
-                try:
-                    cleaned_price_str = (
-                        website_static_price_str
-                        .replace('Price:', '')
-                        .replace('\n', '')
-                        .replace('£', '')
-                        .replace(' ', '')
-                        .strip()
-                    )
-                    website_static_price = float(cleaned_price_str)
-                    print(f"🏷️ Website Static Price: £{website_static_price:.2f}")
-                except (ValueError, AttributeError) as e:
-                    print(f"Error parsing price: {e}")
-                    print(f"Problematic price string: {website_static_price_str}")
-                    website_static_price = 0.00
-                    continue
-
-                # Validate the URL format
-                if not url.startswith(('http://', 'https://')):
-                    url = 'https://' + url
-
-                # Reinitialize the driver if needed
-                if not messaging_driver:
-                    messaging_driver = self.setup_chrome_messaging_driver()
-                    if not messaging_driver:
-                        print("❌ No driver available.")
-                        continue
-
-                # Navigate to the target URL
-                messaging_driver.get(url)
-                WebDriverWait(messaging_driver, 15).until(
-                    EC.presence_of_element_located((By.TAG_NAME, 'body'))
-                )
-
-                # Create the messaging string using the adjusted website price
-                website_price_adjusted = int(round(website_static_price)) + price_increment
-                message_1 = f"hi, is this still available? happy to pay £{website_price_adjusted} + shipping, if that works for you? I'm Richmond based so collection is a bit far! (id pay first obviously)"
-
-                # NEW: Search for an element containing the text "Message seller" (case-insensitive)
-                print("[Progress] Searching for 'Message seller' element on the page...")
-                elements = messaging_driver.find_elements(
-                    By.XPATH,
-                    "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'message seller')]"
-                )
-                found_button = None
-                for elem in elements:
-                    if elem.is_displayed():
-                        found_button = elem
-                        break
-
-                if found_button:
-                    print("[Success] Found the 'Message seller' element. Attempting click...")
-                    try:
-                        messaging_driver.execute_script("arguments[0].click();", found_button)
-                        print("✅ 'Message seller' button clicked successfully.")
-                        message_sent = True
-                    except Exception as js_click_err:
-                        print(f"❌ JavaScript click failed: {js_click_err}")
-                else:
-                    print("❌ Failed to locate the 'Message seller' element.")
-
-                # Allow time for the message window to load
-                time.sleep(2)
-
-                if not message_sent:
-                    print("❌ Message seller button was not clicked, skipping further processing.")
-                    continue
-
-                # Use ActionChains to clear and then type the message
-                actions = ActionChains(messaging_driver)
-                for _ in range(6):
-                    actions.send_keys(Keys.TAB)
-                actions.key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL)
-                actions.send_keys(message_1)
-                actions.perform()
-
-                # If sending is enabled, try to click the send button
-                if send_message:
-                    try:
-                        send_button = WebDriverWait(messaging_driver, 10).until(
-                            EC.element_to_be_clickable(( 
-                                By.XPATH, 
-                                "//span[contains(@class, 'x1lliihq') and contains(@class, 'x6ikm8r') "
-                                "and contains(@class, 'x10wlt62') and contains(@class, 'x1n2onr6') "
-                                "and contains(@class, 'xlyipyv') and contains(@class, 'xuxw1ft') and text()='Send Message']"
-                            ))
-                        )
-                        try:
-                            send_button.click()
-                        except Exception as e:
-                            try:
-                                messaging_driver.execute_script("arguments[0].click();", send_button)
-                            except Exception as e2:
-                                ActionChains(messaging_driver).move_to_element(send_button).click().perform()
-                        print("🚀 Message sent successfully! 🚀")
-                        message_sent = True
-                    except Exception as send_error:
-                        print(f"🚨 Failed to send message: {send_error}")
-                        if time.time() - start_time > WAIT_TIME_FOR_WEBSITE_MESSAGE:
-                            print(f"⏰ Messaging process timed out after {WAIT_TIME_FOR_WEBSITE_MESSAGE} seconds")
-                        continue
-
-                print(f"Successfully processed request for {url}")
-
-            except Exception as e:
-                print(f"Error processing request for {url}: {e}")
-            finally:
-                request_queue.task_done()  # This is called exactly once per item
-                if request_queue.empty():
-                    self.button_clicked.is_processing = False
-
-
-    def base64_encode_image(self, img):
-        """Convert PIL Image to base64 string, resizing if necessary"""
-        # Resize image while maintaining aspect ratio
-        max_size = (200, 200)
-        img.thumbnail(max_size, Image.LANCZOS)
-        
-        # Convert to base64
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode()
-    
-    def run_flask_app(self):
-        try:
-            print("Starting Flask app with existing Cloudflare Tunnel...")
-            print("Your website will be available at: https://fk43b0p45crc03r.xyz")
-            
-            # Start your existing tunnel
-            tunnel_process = self.start_cloudflare_tunnel(port=5000)
-            
-            # Run Flask on localhost - the tunnel will route external traffic to this
-            app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
-            
-        except Exception as e:
-            print(f"Error starting Flask app: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            try:
-                if tunnel_process:
-                    tunnel_process.terminate()
-                    print("Tunnel terminated.")
-            except Exception as term_err:
-                print(f"Error terminating tunnel: {term_err}")
-
-
-    def get_ngrok_url(self):
-        return "equal-ape-sincerely.ngrok-free.app"
-
-    def start_ngrok_and_get_url(self):
-        return "equal-ape-sincerely.ngrok-free.app"
-
-    def run_pygame_window(self):
-        global LOCK_POSITION, current_listing_index, suitable_listings
-        screen, clock = self.initialize_pygame_window()
-        rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
-            pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
-            pygame.Rect(0, 180, 240, 180), pygame.Rect(240, 180, 240, 180), pygame.Rect(480, 180, 320, 180),
-            pygame.Rect(0, 360, 240, 240), pygame.Rect(240, 360, 240, 120), pygame.Rect(240, 480, 240, 120),
-            pygame.Rect(480, 360, 160, 240), pygame.Rect(640, 360, 160, 240)
-        ]
-        fonts = {
-            'number': pygame.font.Font(None, 24),
-            'price': pygame.font.Font(None, 36),
-            'title': pygame.font.Font(None, 40),
-            'description': pygame.font.Font(None, 28),
-            'join_date': pygame.font.Font(None, 28),
-            'revenue': pygame.font.Font(None, 36),
-            'profit': pygame.font.Font(None, 36),
-            'items': pygame.font.Font(None, 30),
-            'click': pygame.font.Font(None, 28),  # New font for click text
-            'suitability': pygame.font.Font(None, 28)  # New font for suitability reason
-
-        }
-        dragging = False
-        resizing = False
-        drag_rect = None
-        drag_offset = (0, 0)
-        resize_edge = None
-
-        running = True
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                    running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_l:
-                        LOCK_POSITION = not LOCK_POSITION
-                    elif event.key == pygame.K_RIGHT:
-                        if suitable_listings:
-                            current_listing_index = (current_listing_index + 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
-                    elif event.key == pygame.K_LEFT:
-                        if suitable_listings:
-                            current_listing_index = (current_listing_index - 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:  # Left mouse button
-                        # Check if rectangle 4 was clicked
-                        if rectangles[3].collidepoint(event.pos):
-                            if suitable_listings and 0 <= current_listing_index < len(suitable_listings):
-                                current_url = suitable_listings[current_listing_index].get('url')
-                                if current_url:
-                                    try:
-                                        import webbrowser
-                                        webbrowser.open(current_url)
-                                    except Exception as e:
-                                        print(f"Failed to open URL: {e}")
-                        elif not LOCK_POSITION:
-                            for i, rect in enumerate(rectangles):
-                                if rect.collidepoint(event.pos):
-                                    if event.pos[0] > rect.right - 10 and event.pos[1] > rect.bottom - 10:
-                                        resizing = True
-                                        drag_rect = i
-                                        resize_edge = 'bottom-right'
-                                    else:
-                                        dragging = True
-                                        drag_rect = i
-                                        drag_offset = (rect.x - event.pos[0], rect.y - event.pos[1])
-                                    break
-                elif event.type == pygame.MOUSEBUTTONUP:
-                    if event.button == 1:
-                        dragging = False
-                        resizing = False
-                        drag_rect = None
-            # Handle dragging and resizing
-            if dragging and drag_rect is not None:
                 rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
                 rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
             elif resizing and drag_rect is not None:
@@ -2199,3 +1902,300 @@ class VintedScraper:
         process_log = {
             'start_time': time.time(),
             'url': url,
+            'driver_num': driver_num,
+            'steps_completed': [],
+            'failures': [],
+            'success': False,
+            'critical_operations': []
+        }
+        
+        def log_step(step_name, success=True, error_msg=None, duration=None):
+            """Log each step for debugging and success rate analysis"""
+            elapsed = duration if duration else time.time() - process_log['start_time']
+            
+            if success:
+                process_log['steps_completed'].append(f"{step_name} - {elapsed:.2f}s")
+                if print_debug:
+                    print(f"✅ DRIVER {driver_num}: {step_name}")
+            else:
+                process_log['failures'].append(f"{step_name}: {error_msg} - {elapsed:.2f}s")
+                print(f"❌ DRIVER {driver_num}: {step_name} - {error_msg}")
+        
+        def log_final_result():
+            """Log comprehensive results for success rate analysis"""
+            total_time = time.time() - process_log['start_time']
+            print(f"\n📊 PROCESSING ANALYSIS - Driver {driver_num}")
+            print(f"🔗 URL: {url[:60]}...")
+            print(f"⏱️  Total time: {total_time:.2f}s")
+            print(f"✅ Steps completed: {len(process_log['steps_completed'])}")
+            print(f"❌ Failures: {len(process_log['failures'])}")
+            print(f"🏆 Overall success: {'YES' if process_log['success'] else 'NO'}")
+            
+            if process_log['failures'] and print_debug:
+                print("🔍 FAILURE DETAILS:")
+                for failure in process_log['failures'][:5]:  # Show first 5 failures
+                    print(f"  • {failure}")
+
+        # SELECTOR ALTERNATIVES - Multiple backup selectors for each critical element
+        SELECTOR_SETS = {
+            'buy_button': [
+                'button[data-testid="item-buy-button"]',
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                'button.web_ui__Button__button[data-testid="item-buy-button"]',
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+                '//span[text()="Buy now"]/parent::button'
+            ],
+            
+            'pay_button': [
+                'button[data-testid="single-checkout-order-summary-purchase-button"]',
+                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
+                '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
+                'button.web_ui__Button__primary[data-testid*="purchase"]',
+                '//button[contains(@data-testid, "purchase-button")]',
+                '//button[contains(@class, "web_ui__Button__primary")]'
+            ],
+            
+            'ship_to_home': [
+                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]',
+                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to home"]',
+                '//h2[text()="Ship to home"]',
+                '//*[text()="Ship to home"]'
+            ],
+            
+            'ship_to_pickup': [
+                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]',
+                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to pick-up point"]',
+                '//h2[text()="Ship to pick-up point"]',
+                '//*[text()="Ship to pick-up point"]'
+            ],
+            
+            'success_message': [
+                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Purchase successful']",
+                "//h2[contains(@class, 'web_ui__Text__title') and text()='Purchase successful']",
+                "//h2[text()='Purchase successful']",
+                "//*[contains(text(), 'Purchase successful')]"
+            ],
+            
+            'error_modal': [
+                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format']//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left' and contains(text(), 'Sorry, we couldn')]",
+                "//span[@data-testid='checkout-payment-error-modal--body']",
+                "//div[@data-testid='checkout-payment-error-modal--overlay']",
+                "//span[contains(text(), \"Sorry, we couldn't process your payment\")]",
+                "//*[contains(text(), 'Some of the items belong to another purchase')]"
+            ],
+            
+            'ok_button': [
+                "//button[@data-testid='checkout-payment-error-modal-action-button']",
+                "//button//span[@class='web_ui__Button__label' and text()='OK, close']",
+                "//button[contains(.//text(), 'OK, close')]",
+                "//button[contains(@class, 'web_ui__Button__primary')]",
+                "//*[text()='OK, close']"
+            ]
+        }
+        
+        def try_selectors_fast_fail(driver, selector_set_name, operation='find', timeout=3, click_method='standard'):
+            """
+            FAILURE FAST-PATH - Try selectors with quick timeouts and fail quickly
+            Returns (element, selector_used) or (None, None) if all fail
+            """
+            selectors = SELECTOR_SETS.get(selector_set_name, [])
+            if not selectors:
+                log_step(f"no_selectors_{selector_set_name}", False, "No selectors defined")
+                return None, None
+            
+            for i, selector in enumerate(selectors):
+                try:
+                    if print_debug:
+                        print(f"🔍 DRIVER {driver_num}: Trying selector {i+1}/{len(selectors)} for {selector_set_name}")
+                    
+                    # Use appropriate locator strategy
+                    if selector.startswith('//'):
+                        if operation == 'click':
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.element_to_be_clickable((By.XPATH, selector))
+                            )
+                        else:
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.presence_of_element_located((By.XPATH, selector))
+                            )
+                    else:
+                        if operation == 'click':
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                            )
+                        else:
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                            )
+                    
+                    # If we need to click, try the requested click method(s)
+                    if operation == 'click':
+                        click_methods = ['standard', 'javascript', 'actionchains'] if click_method == 'all' else [click_method]
+                        
+                        for method in click_methods:
+                            try:
+                                if method == 'standard':
+                                    element.click()
+                                elif method == 'javascript':
+                                    driver.execute_script("arguments[0].click();", element)
+                                elif method == 'actionchains':
+                                    from selenium.webdriver.common.action_chains import ActionChains
+                                    ActionChains(driver).move_to_element(element).click().perform()
+                                
+                                log_step(f"click_{selector_set_name}_{method}", True)
+                                break
+                            except Exception as click_error:
+                                log_step(f"click_{selector_set_name}_{method}_attempt", False, str(click_error))
+                                continue
+                        else:
+                            continue  # All click methods failed, try next selector
+                    
+                    log_step(f"selector_{selector_set_name}_success", True, f"Used #{i+1}: {selector[:30]}...")
+                    return element, selector
+                    
+                except TimeoutException:
+                    log_step(f"selector_{selector_set_name}_{i+1}_timeout", False, f"Timeout after {timeout}s")
+                    continue
+                except Exception as e:
+                    log_step(f"selector_{selector_set_name}_{i+1}_error", False, str(e)[:100])
+                    continue
+            
+            log_step(f"all_selectors_{selector_set_name}_failed", False, f"All {len(selectors)} selectors failed")
+            return None, None
+
+        # START OF MAIN PROCESSING LOGIC
+        start_time = time.time()
+        log_step("processing_started", True)
+        
+        try:
+            print(f"🔥 DRIVER {driver_num}: Starting robust processing of {url[:50]}...")
+            
+            # DRIVER HEALTH CHECK - Verify driver is alive before using it
+            try:
+                current_url = driver.current_url
+                log_step("driver_health_check", True, f"Driver alive: {current_url[:30]}...")
+            except Exception as e:
+                log_step("driver_health_check", False, f"Driver is dead: {str(e)}")
+                log_final_result()
+                return
+            
+            # TAB MANAGEMENT - Open new tab for processing
+            try:
+                driver.execute_script("window.open('');")
+                new_tab = driver.window_handles[-1]
+                driver.switch_to.window(new_tab)
+                log_step("new_tab_opened", True, f"Total tabs: {len(driver.window_handles)}")
+            except Exception as e:
+                log_step("new_tab_creation", False, str(e))
+                log_final_result()
+                return
+
+            # URL HANDLING - Support test mode
+            if test_purchase_not_true:
+                actual_url = test_purchase_url
+                log_step("test_mode_url", True, f"Using test URL: {actual_url}")
+            else:
+                actual_url = url
+                log_step("normal_url", True)
+            
+            # NAVIGATION - Navigate to listing with retry logic
+            navigation_success = False
+            for nav_attempt in range(3):  # Try up to 3 times
+                try:
+                    log_step(f"navigation_attempt_{nav_attempt+1}", True)
+                    driver.get(actual_url)
+                    
+                    # Wait for page to load with timeout
+                    WebDriverWait(driver, 8).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                    navigation_success = True
+                    log_step("navigation_success", True)
+                    break
+                    
+                except TimeoutException:
+                    log_step(f"navigation_timeout_{nav_attempt+1}", False, "Page load timeout")
+                    if nav_attempt < 2:  # Not the last attempt
+                        time.sleep(1)
+                        continue
+                except Exception as nav_error:
+                    log_step(f"navigation_error_{nav_attempt+1}", False, str(nav_error))
+                    if nav_attempt < 2:  # Not the last attempt
+                        time.sleep(1)
+                        continue
+
+            if not navigation_success:
+                log_step("navigation_final_failure", False, "All navigation attempts failed")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                log_final_result()
+                return
+
+            # BUY BUTTON DETECTION - Look for Buy now button with multiple selectors
+            buy_button, buy_selector = try_selectors_fast_fail(
+                driver, 'buy_button', operation='click', timeout=10, click_method='all'
+            )
+            
+            if not buy_button:
+                log_step("buy_button_not_found", False, "Item likely sold or unavailable")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                log_final_result()
+                return
+
+            log_step("buy_button_clicked", True, f"Used: {buy_selector[:30]}...")
+            process_log['critical_operations'].append("buy_button_clicked")
+
+            # PURCHASE FLOW BRANCHING - Different logic based on actually_purchase_listing
+            if actually_purchase_listing:
+                log_step("purchase_mode_enabled", True, "Starting actual purchase process")
+                
+                # SHIPPING SELECTION - Click "Ship to home" first if available
+                ship_home_element, ship_home_selector = try_selectors_fast_fail(
+                    driver, 'ship_to_home', operation='click', timeout=15, click_method='all'
+                )
+                
+                if ship_home_element:
+                    log_step("ship_to_home_clicked", True)
+                    time.sleep(2)  # Brief wait as requested
+                else:
+                    log_step("ship_to_home_not_found", False, "Continuing without shipping selection")
+                
+                # PAY BUTTON DETECTION - Look for pay button
+                pay_button, pay_selector = try_selectors_fast_fail(
+                    driver, 'pay_button', operation='find', timeout=15
+                )
+                
+                if not pay_button:
+                    log_step("pay_button_not_found", False, "Payment interface not available")
+                    try:
+                        driver.close()
+                        if len(driver.window_handles) > 0:
+                            driver.switch_to.window(driver.window_handles[0])
+                    except:
+                        pass
+                    log_final_result()
+                    return
+
+                log_step("pay_button_found", True)
+                process_log['critical_operations'].append("pay_button_found")
+
+                # PURCHASE LOOP - Attempt purchase with error handling
+                purchase_successful = False
+                max_attempts = 250
+                attempt = 0
+                
+                while not purchase_successful and attempt < max_attempts:
+                    attempt += 1
+                    elapsed_time = time.time() - start_time
+                    
+                    # Check timeout

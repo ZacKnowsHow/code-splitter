@@ -50,8 +50,6 @@ from ultralytics import YOLO
 import random
 import torch
 
-allow_website_redesign = True
-
 # tests whether the listing is suitable for buying based on URL rather than scanning
 TEST_WHETHER_SUITABLE = False
 TEST_SUITABLE_URLS = [
@@ -74,20 +72,14 @@ BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle
 
 #tests both the bookmark and buying functionality
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6961760221-joy-con-controllers-for-nintendo-switch-brand-new?referrer=catalog"
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 
-PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
+PRICE_THRESHOLD = 25.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
-    'switch', 'oled', 'lite', 
-    'switch_box', 'oled_box', 'lite_box', 
-    'switch_in_tv', 'oled_in_tv', 'controller',
-    'tv_black', 'tv_white', 'comfort_h',
+    'controller','tv_black', 
+    'tv_white', 'comfort_h',
     'comfort_h_joy'
 ]
-
-allow_website_redesign = True  # Set to True to enable draggable/resizable elements
-WEBSITE_LAYOUT_CONFIG_FILE = r"C:\Users\ZacKnowsHow\Downloads\website_layout_config.json"
-
 
 VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
@@ -526,37 +518,6 @@ def vinted_button_clicked():
 
 
 # Replace the render_main_page function starting at line ~465 with this modified version
-def load_website_layout_config():
-    """Load website element positions and sizes from config file"""
-    try:
-        if os.path.exists(WEBSITE_LAYOUT_CONFIG_FILE):
-            with open(WEBSITE_LAYOUT_CONFIG_FILE, 'r') as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"Error loading website layout config: {e}")
-    return {}
-
-def save_website_layout_config(layout_data):
-    """Save website element positions and sizes to config file"""
-    try:
-        with open(WEBSITE_LAYOUT_CONFIG_FILE, 'w') as f:
-            json.dump(layout_data, f, indent=2)
-        print("Website layout saved successfully")
-    except Exception as e:
-        print(f"Error saving website layout config: {e}")
-
-# 3. ADD THIS NEW FLASK ROUTE:
-
-@app.route('/save-layout', methods=['POST'])
-def save_layout():
-    """Save the current layout configuration"""
-    try:
-        layout_data = request.get_json()
-        save_website_layout_config(layout_data)
-        return jsonify({"status": "success"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)})
-
 
 def render_main_page():
     try:
@@ -633,9 +594,6 @@ def render_main_page():
         else:
             image_html = "<p>No images available</p>"
 
-
-        saved_layout = load_website_layout_config()
-
         # Return the complete HTML with NEW top bar layout and stopwatch functionality
         return f'''
         <!DOCTYPE html>
@@ -649,75 +607,6 @@ def render_main_page():
             <meta name="apple-mobile-web-app-title" content="Marketplace Scanner">
             <title>Marketplace Scanner</title>
             <style>
-                /* Keep all existing styles and add these new ones */
-                
-                .redesign-mode .draggable-element {{
-                    border: 2px dashed #007bff !important;
-                    position: relative;
-                    cursor: move;
-                    user-select: none;
-                }}
-                
-                .redesign-mode .resize-handle {{
-                    position: absolute;
-                    bottom: 0;
-                    right: 0;
-                    width: 20px;
-                    height: 20px;
-                    background: #007bff;
-                    cursor: nw-resize;
-                    z-index: 1000;
-                }}
-                
-                .redesign-mode .resize-handle::before {{
-                    content: '⟲';
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    color: white;
-                    font-size: 10px;
-                    font-weight: bold;
-                }}
-                
-                .redesign-toggle {{
-                    position: fixed;
-                    top: 10px;
-                    right: 10px;
-                    background: #007bff;
-                    color: white;
-                    border: none;
-                    padding: 10px;
-                    border-radius: 5px;
-                    cursor: pointer;
-                    z-index: 9999;
-                    font-weight: bold;
-                }}
-                
-                .redesign-toggle:hover {{
-                    background: #0056b3;
-                }}
-                
-                .save-layout-btn {{
-                    position: fixed;
-                    top: 60px;
-                    right: 10px;
-                    background: #28a745;
-                    color: white;
-                    border: none;
-                    padding: 10px;
-                    border-radius: 5px;
-                    cursor: pointer;
-                    z-index: 9999;
-                    font-weight: bold;
-                    display: none;
-                }}
-                
-                .save-layout-btn:hover {{
-                    background: #1e7e34;
-                }}
-                
-                /* Rest of existing CSS remains the same */
                 * {{
                     box-sizing: border-box;
                     margin: 0;
@@ -1037,388 +926,226 @@ def render_main_page():
                 }}
             </style>
             <script>
-                // Keep all existing JavaScript and add this new functionality
-                
-                let allowWebsiteRedesign = {str(allow_website_redesign).lower()};
-                let savedLayout = {json.dumps(saved_layout)};
-                let redesignMode = false;
-                let dragData = null;
-                let resizeData = null;
-                const SNAP_DISTANCE = 10; // Distance for snapping alignment
-                
-                // Existing JavaScript variables and functions...
                 const allListings = {all_listings_json};
                 let currentListingIndex = 0;
                 let stopwatchIntervals = {{}};
-                
-                // Apply saved layout on page load
-                function applySavedLayout() {{
-                    if (Object.keys(savedLayout).length === 0) return;
-                    
-                    Object.keys(savedLayout).forEach(elementId => {{
-                        const element = document.getElementById(elementId);
-                        if (element && savedLayout[elementId]) {{
-                            const config = savedLayout[elementId];
-                            element.style.width = config.width + 'px';
-                            element.style.height = config.height + 'px';
-                            element.style.left = config.left + 'px';
-                            element.style.top = config.top + 'px';
-                            element.style.position = 'absolute';
-                            
-                            // Apply scaling to content
-                            scaleElementContent(element, config.width, config.height);
-                        }}
-                    }});
+                console.log('All listings loaded:', allListings);
+                console.log('Number of listings:', allListings.length);
+
+                function refreshPage() {{
+                    location.reload();
                 }}
-                
-                function toggleRedesignMode() {{
-                    redesignMode = !redesignMode;
-                    const container = document.querySelector('.container');
-                    const saveBtn = document.querySelector('.save-layout-btn');
-                    const toggleBtn = document.querySelector('.redesign-toggle');
+
+                function updateStopwatch() {{
+                    if (allListings.length === 0) return;
                     
-                    if (redesignMode) {{
-                        container.classList.add('redesign-mode');
-                        saveBtn.style.display = 'block';
-                        toggleBtn.textContent = 'Exit Redesign';
-                        makeElementsDraggable();
-                    }} else {{
-                        container.classList.remove('redesign-mode');
-                        saveBtn.style.display = 'none';
-                        toggleBtn.textContent = 'Redesign Mode';
-                        removeElementsDraggable();
-                        rearrangeElementsInFlow();
+                    const currentListing = allListings[currentListingIndex];
+                    const currentUrl = currentListing.url;
+                    const stopwatchElement = document.querySelector('.stopwatch-display');
+                    
+                    if (stopwatchElement) {{
+                        // Check if this URL has an active stopwatch
+                        // This would need to be populated from the Python backend
+                        // For now, show placeholder text
+                        stopwatchElement.textContent = 'No stopwatch - listing unbookmarked';
                     }}
                 }}
-                
-                function makeElementsDraggable() {{
-                    // Individual elements for each component
-                    const draggableElements = [
-                        'refresh-button', 'listing-counter', 'stopwatch-display',
-                        'title-section', 'price-section', 'profit-section', 'description-section',
-                        'open-listing-button', 'buy-yes-button', 'buy-no-button', 
-                        'confirmation-container', 'details-row', 'image-container', 
-                        'join-date-section', 'previous-button', 'next-button', 'listing-url'
-                    ];
-                    
-                    draggableElements.forEach(id => {{
-                        const element = document.getElementById(id);
-                        if (element) {{
-                            element.classList.add('draggable-element');
-                            
-                            // Store original position for flow rearrangement
-                            if (!element.dataset.originalIndex) {{
-                                element.dataset.originalIndex = Array.from(element.parentNode.children).indexOf(element);
-                            }}
-                            
-                            // Add resize handle
-                            const resizeHandle = document.createElement('div');
-                            resizeHandle.className = 'resize-handle';
-                            element.appendChild(resizeHandle);
-                            
-                            // Mouse events for dragging
-                            element.addEventListener('mousedown', startDrag);
-                            
-                            // Mouse events for resizing
-                            resizeHandle.addEventListener('mousedown', startResize);
-                        }}
-                    }});
-                }}
-                
-                function removeElementsDraggable() {{
-                    const elements = document.querySelectorAll('.draggable-element');
-                    elements.forEach(element => {{
-                        element.classList.remove('draggable-element');
-                        const resizeHandle = element.querySelector('.resize-handle');
-                        if (resizeHandle) resizeHandle.remove();
-                        
-                        element.removeEventListener('mousedown', startDrag);
-                        element.style.position = '';
-                        element.style.left = '';
-                        element.style.top = '';
-                    }});
-                }}
-                
-                function startDrag(e) {{
-                    if (e.target.classList.contains('resize-handle')) return;
-                    
-                    e.preventDefault();
-                    dragData = {{
-                        element: e.currentTarget,
-                        startX: e.clientX,
-                        startY: e.clientY,
-                        initialLeft: e.currentTarget.offsetLeft,
-                        initialTop: e.currentTarget.offsetTop
-                    }};
-                    
-                    // Show snap guides
-                    showSnapGuides();
-                    
-                    document.addEventListener('mousemove', drag);
-                    document.addEventListener('mouseup', stopDrag);
-                }}
-                
-                function drag(e) {{
-                    if (!dragData) return;
-                    
-                    let deltaX = e.clientX - dragData.startX;
-                    let deltaY = e.clientY - dragData.startY;
-                    let newLeft = dragData.initialLeft + deltaX;
-                    let newTop = dragData.initialTop + deltaY;
-                    
-                    // Snap to other elements
-                    const snapResult = getSnapPosition(dragData.element, newLeft, newTop);
-                    newLeft = snapResult.left;
-                    newTop = snapResult.top;
-                    
-                    dragData.element.style.position = 'absolute';
-                    dragData.element.style.left = newLeft + 'px';
-                    dragData.element.style.top = newTop + 'px';
-                    
-                    // Update snap guides
-                    updateSnapGuides(newLeft, newTop);
-                }}
-                
-                function stopDrag() {{
-                    document.removeEventListener('mousemove', drag);
-                    document.removeEventListener('mouseup', stopDrag);
-                    
-                    // Hide snap guides
-                    hideSnapGuides();
-                    
-                    // Rearrange other elements to fill gaps
-                    rearrangeElementsAfterMove(dragData.element);
-                    
-                    dragData = null;
-                }}
-                
-                function startResize(e) {{
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    resizeData = {{
-                        element: e.currentTarget.parentElement,
-                        startX: e.clientX,
-                        startY: e.clientY,
-                        initialWidth: e.currentTarget.parentElement.offsetWidth,
-                        initialHeight: e.currentTarget.parentElement.offsetHeight
-                    }};
-                    
-                    document.addEventListener('mousemove', resize);
-                    document.addEventListener('mouseup', stopResize);
-                }}
-                
-                function resize(e) {{
-                    if (!resizeData) return;
-                    
-                    const deltaX = e.clientX - resizeData.startX;
-                    const deltaY = e.clientY - resizeData.startY;
-                    
-                    const newWidth = Math.max(50, resizeData.initialWidth + deltaX);
-                    const newHeight = Math.max(30, resizeData.initialHeight + deltaY);
-                    
-                    resizeData.element.style.width = newWidth + 'px';
-                    resizeData.element.style.height = newHeight + 'px';
-                    
-                    // Scale content to fit
-                    scaleElementContent(resizeData.element, newWidth, newHeight);
-                }}
-                
-                function stopResize() {{
-                    document.removeEventListener('mousemove', resize);
-                    document.removeEventListener('mouseup', stopResize);
-                    resizeData = null;
-                }}
-                
-                function scaleElementContent(element, width, height) {{
-                    // Calculate scale factors
-                    const originalWidth = 200; // Base width
-                    const originalHeight = 50; // Base height
-                    
-                    const scaleX = width / originalWidth;
-                    const scaleY = height / originalHeight;
-                    const scale = Math.min(scaleX, scaleY, 2); // Cap at 200%
-                    
-                    // Apply scaling to text and content
-                    const textElements = element.querySelectorAll('span, p, button');
-                    textElements.forEach(textEl => {{
-                        textEl.style.fontSize = (12 * scale) + 'px';
-                        textEl.style.lineHeight = scale;
-                        textEl.style.padding = (5 * scale) + 'px';
-                    }});
-                    
-                    // Scale buttons
-                    const buttons = element.querySelectorAll('button');
-                    buttons.forEach(btn => {{
-                        btn.style.width = '100%';
-                        btn.style.height = '100%';
-                        btn.style.minHeight = 'auto';
-                    }});
-                }}
-                
-                function getSnapPosition(dragElement, left, top) {{
-                    const elements = document.querySelectorAll('.draggable-element');
-                    let snappedLeft = left;
-                    let snappedTop = top;
-                    
-                    elements.forEach(element => {{
-                        if (element === dragElement) return;
-                        
-                        const rect = element.getBoundingClientRect();
-                        const container = document.querySelector('.container');
-                        const containerRect = container.getBoundingClientRect();
-                        
-                        const elementLeft = rect.left - containerRect.left;
-                        const elementTop = rect.top - containerRect.top;
-                        const elementRight = elementLeft + rect.width;
-                        const elementBottom = elementTop + rect.height;
-                        
-                        // Horizontal snapping
-                        if (Math.abs(left - elementLeft) < SNAP_DISTANCE) {{
-                            snappedLeft = elementLeft;
-                        }} else if (Math.abs(left - elementRight) < SNAP_DISTANCE) {{
-                            snappedLeft = elementRight;
-                        }}
-                        
-                        // Vertical snapping
-                        if (Math.abs(top - elementTop) < SNAP_DISTANCE) {{
-                            snappedTop = elementTop;
-                        }} else if (Math.abs(top - elementBottom) < SNAP_DISTANCE) {{
-                            snappedTop = elementBottom;
-                        }}
-                    }});
-                    
-                    return {{ left: snappedLeft, top: snappedTop }};
-                }}
-                
-                function showSnapGuides() {{
-                    // Create snap guide lines
-                    if (!document.querySelector('.snap-guide-vertical')) {{
-                        const vGuide = document.createElement('div');
-                        vGuide.className = 'snap-guide-vertical';
-                        vGuide.style.cssText = `
-                            position: absolute;
-                            top: 0;
-                            width: 1px;
-                            height: 100vh;
-                            background: #007bff;
-                            display: none;
-                            z-index: 10000;
-                        `;
-                        document.body.appendChild(vGuide);
+
+                function updateListingDisplay(index) {{
+                    if (allListings.length === 0) {{
+                        console.log('No listings available');
+                        return;
                     }}
-                    
-                    if (!document.querySelector('.snap-guide-horizontal')) {{
-                        const hGuide = document.createElement('div');
-                        hGuide.className = 'snap-guide-horizontal';
-                        hGuide.style.cssText = `
-                            position: absolute;
-                            left: 0;
-                            width: 100vw;
-                            height: 1px;
-                            background: #007bff;
-                            display: none;
-                            z-index: 10000;
-                        `;
-                        document.body.appendChild(hGuide);
-                    }}
-                }}
-                
-                function updateSnapGuides(left, top) {{
-                    const vGuide = document.querySelector('.snap-guide-vertical');
-                    const hGuide = document.querySelector('.snap-guide-horizontal');
-                    
-                    if (vGuide) {{
-                        vGuide.style.left = left + 'px';
-                        vGuide.style.display = 'block';
-                    }}
-                    
-                    if (hGuide) {{
-                        hGuide.style.top = top + 'px';
-                        hGuide.style.display = 'block';
-                    }}
-                }}
-                
-                function hideSnapGuides() {{
-                    const vGuide = document.querySelector('.snap-guide-vertical');
-                    const hGuide = document.querySelector('.snap-guide-horizontal');
-                    
-                    if (vGuide) vGuide.style.display = 'none';
-                    if (hGuide) hGuide.style.display = 'none';
-                }}
-                
-                function rearrangeElementsAfterMove(movedElement) {{
-                    // This would rearrange elements in their original flow when one is moved out
-                    // For now, we'll keep it simple and not auto-rearrange
-                }}
-                
-                function rearrangeElementsInFlow() {{
-                    // Reset all elements to their original flow positions
-                    const elements = document.querySelectorAll('.draggable-element');
-                    elements.forEach(element => {{
-                        element.style.position = '';
-                        element.style.left = '';
-                        element.style.top = '';
-                        element.style.width = '';
-                        element.style.height = '';
-                        
-                        // Reset scaling
-                        const textElements = element.querySelectorAll('span, p, button');
-                        textElements.forEach(textEl => {{
-                            textEl.style.fontSize = '';
-                            textEl.style.lineHeight = '';
-                            textEl.style.padding = '';
+                    if (index < 0) index = allListings.length - 1;
+                    if (index >= allListings.length) index = 0;
+                    currentListingIndex = index;
+                    const listing = allListings[index];
+                    console.log('Updating to listing:', listing);
+
+                    // Update content
+                    const titleEl = document.querySelector('.content-title');
+                    const priceEl = document.querySelector('.content-price');
+                    const profitEl = document.querySelector('.content-profit');
+                    const joinDateEl = document.querySelector('.content-join-date');
+                    const detectedItemsEl = document.querySelector('.content-detected-items');
+                    const descriptionEl = document.querySelector('.content-description');
+                    const urlEl = document.querySelector('.content-url');
+                    const counterEl = document.querySelector('.listing-counter');
+
+                    if (titleEl) titleEl.textContent = listing.title;
+                    if (priceEl) priceEl.textContent = 'Price: £' + listing.price;
+                    if (profitEl) profitEl.textContent = `Profit: £${{listing.profit.toFixed(2)}}`;
+                    if (joinDateEl) joinDateEl.textContent = listing.join_date;
+                    if (detectedItemsEl) detectedItemsEl.textContent = listing.detected_items;
+                    if (descriptionEl) descriptionEl.textContent = listing.description;
+                    if (urlEl) urlEl.textContent = listing.url;
+                    if (counterEl) counterEl.textContent = `${{currentListingIndex + 1}} of ${{allListings.length}}`;
+
+                    // Update images
+                    const imageContainer = document.querySelector('.image-container');
+                    if (imageContainer) {{
+                        imageContainer.innerHTML = '';
+                        listing.processed_images.forEach(imgBase64 => {{
+                            const imageWrapper = document.createElement('div');
+                            imageWrapper.className = 'image-wrapper';
+                            const img = document.createElement('img');
+                            img.src = `data:image/png;base64=${{imgBase64}}`;
+                            img.alt = 'Listing Image';
+                            imageWrapper.appendChild(img);
+                            imageContainer.appendChild(imageWrapper);
                         }});
-                    }});
+                    }}
+                    
+                    // Update stopwatch
+                    updateStopwatch();
+                    
+                    // Reset confirmation dialog state
+                    hideConfirmation();
+                }}
+
+                function changeListingIndex(direction) {{
+                    if (direction === 'next') {{
+                        updateListingDisplay(currentListingIndex + 1);
+                    }} else if (direction === 'previous') {{
+                        updateListingDisplay(currentListingIndex - 1);
+                    }}
+                }}
+
+                // Single button function to open listing directly
+                function openListing() {{
+                    var urlElement = document.querySelector('.content-url');
+                    var url = urlElement ? urlElement.textContent.trim() : '';
+                    
+                    if (url && url !== 'No URL Available') {{
+                        console.log('Opening listing:', url);
+                        window.open(url, '_blank');
+                    }} else {{
+                        alert('No valid URL available for this listing');
+                    }}
                 }}
                 
-                function saveLayout() {{
-                    const draggableElements = document.querySelectorAll('.draggable-element');
-                    const layoutData = {{}};
+                // Confirmation dialog functions
+                function showConfirmation(message, confirmCallback, cancelCallback) {{
+                    const buyDecisionContainer = document.querySelector('.buy-decision-container');
+                    const confirmationContainer = document.querySelector('.confirmation-container');
                     
-                    draggableElements.forEach(element => {{
-                        if (element.id) {{
-                            layoutData[element.id] = {{
-                                width: element.offsetWidth,
-                                height: element.offsetHeight,
-                                left: element.offsetLeft,
-                                top: element.offsetTop
+                    if (buyDecisionContainer) buyDecisionContainer.style.display = 'none';
+                    if (confirmationContainer) {{
+                        confirmationContainer.style.display = 'flex';
+                        
+                        const confirmationText = confirmationContainer.querySelector('.confirmation-text');
+                        if (confirmationText) confirmationText.textContent = message;
+                        
+                        const confirmYesBtn = confirmationContainer.querySelector('.confirm-yes-button');
+                        const confirmNoBtn = confirmationContainer.querySelector('.confirm-no-button');
+                        
+                        if (confirmYesBtn) {{
+                            confirmYesBtn.onclick = function() {{
+                                confirmCallback();
+                                hideConfirmation();
                             }};
                         }}
-                    }});
-                    
-                    fetch('/save-layout', {{
-                        method: 'POST',
-                        headers: {{
-                            'Content-Type': 'application/json',
-                        }},
-                        body: JSON.stringify(layoutData)
-                    }})
-                    .then(response => response.json())
-                    .then(data => {{
-                        if (data.status === 'success') {{
-                            alert('Layout saved successfully!');
-                        }} else {{
-                            alert('Error saving layout: ' + data.message);
+                        
+                        if (confirmNoBtn) {{
+                            confirmNoBtn.onclick = function() {{
+                                cancelCallback();
+                                hideConfirmation();
+                            }};
                         }}
-                    }})
-                    .catch(error => {{
-                        console.error('Error:', error);
-                        alert('Error saving layout');
-                    }});
+                    }}
                 }}
                 
-                // Keep all existing functions (refreshPage, updateStopwatch, etc.)...
-                
-                // Initialize on page load
+                function hideConfirmation() {{
+                    const buyDecisionContainer = document.querySelector('.buy-decision-container');
+                    const confirmationContainer = document.querySelector('.confirmation-container');
+                    
+                    if (buyDecisionContainer) buyDecisionContainer.style.display = 'flex';
+                    if (confirmationContainer) confirmationContainer.style.display = 'none';
+                }}
+
+                // Buy decision functions with confirmation
+                function buyYes() {{
+                    showConfirmation(
+                        'Are you sure you want to buy this listing?',
+                        function() {{
+                            var urlElement = document.querySelector('.content-url');
+                            var url = urlElement ? urlElement.textContent.trim() : '';
+                            
+                            if (url && url !== 'No URL Available') {{
+                                console.log('User confirmed: wants to buy listing: ' + url);
+                                
+                                fetch('/vinted-button-clicked', {{
+                                    method: 'POST',
+                                    headers: {{
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                    }},
+                                    body: `url=${{encodeURIComponent(url)}}&action=buy_yes`
+                                }})
+                                .then(response => {{
+                                    if (response.ok) {{
+                                        console.log('Vinted YES button confirmed and sent successfully');
+                                    }} else {{
+                                        console.error('Failed to process Vinted YES button');
+                                    }}
+                                }})
+                                .catch(error => {{
+                                    console.error('Error with Vinted YES button:', error);
+                                }});
+                            }} else {{
+                                console.log('User confirmed: wants to buy listing but no URL available');
+                            }}
+                        }},
+                        function() {{
+                            console.log('User cancelled buying decision');
+                        }}
+                    );
+                }}
+
+                function buyNo() {{
+                    showConfirmation(
+                        'Are you sure you don\\'t want to buy this listing?',
+                        function() {{
+                            var urlElement = document.querySelector('.content-url');
+                            var url = urlElement ? urlElement.textContent.trim() : '';
+                            
+                            if (url && url !== 'No URL Available') {{
+                                console.log('User confirmed: does not want to buy listing: ' + url);
+                                
+                                fetch('/vinted-button-clicked', {{
+                                    method: 'POST',
+                                    headers: {{
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                    }},
+                                    body: `url=${{encodeURIComponent(url)}}&action=buy_no`
+                                }})
+                                .then(response => {{
+                                    if (response.ok) {{
+                                        console.log('Vinted NO button confirmed and sent successfully');
+                                    }} else {{
+                                        console.error('Failed to process Vinted NO button');
+                                    }}
+                                }})
+                                .catch(error => {{
+                                    console.error('Error with Vinted NO button:', error);
+                                }});
+                            }} else {{
+                                console.log('User confirmed: does not want to buy listing but no URL available');
+                            }}
+                        }},
+                        function() {{
+                            console.log('User cancelled buying decision');
+                        }}
+                    );
+                }}
+
+                // Initialize display on page load
                 window.onload = () => {{
                     console.log('Page loaded, initializing display');
                     if (allListings.length > 0) {{
                         updateListingDisplay(0);
+                    }} else {{
+                        console.log('No listings to display');
                     }}
-                    
-                    // Apply saved layout if exists
-                    applySavedLayout();
                     
                     // Start stopwatch update interval
                     setInterval(updateStopwatch, 1000);
@@ -1427,18 +1154,8 @@ def render_main_page():
         </head>
         <body>
             <div class="container listing-container">
-                <!-- Redesign mode toggle button -->
-                <button class="redesign-toggle" onclick="toggleRedesignMode()" style="display: {('block' if allow_website_redesign else 'none')}">
-                    Redesign Mode
-                </button>
-                
-                <!-- Save layout button -->
-                <button class="save-layout-btn" onclick="saveLayout()">
-                    Save Layout
-                </button>
-                
-                <!-- Top bar with ID for dragging -->
-                <div class="top-bar" id="top-bar">
+                <!-- NEW: Top bar with three colored rectangles -->
+                <div class="top-bar">
                     <button class="top-bar-item refresh-button" onclick="refreshPage()">
                         Refresh Page
                     </button>
@@ -1450,13 +1167,10 @@ def render_main_page():
                     </div>
                 </div>
                 
-                <!-- Title section with ID -->
-                <div class="section-box" id="title-section">
+                <div class="section-box">
                     <p><span class="content-title">{title}</span></p>
                 </div>
-                
-                <!-- Financial row with ID -->
-                <div class="financial-row" id="financial-row">
+                <div class="financial-row">
                     <div class="financial-item">
                         <p><span class="content-price">{price}</span></p>
                     </div>
@@ -1464,21 +1178,19 @@ def render_main_page():
                         <p><span class="content-profit">{profit}</span></p>
                     </div>
                 </div>
-                
-                <!-- Description section with ID -->
-                <div class="section-box" id="description-section">
+                <div class="section-box">
                     <p><span class="content-description">{description}</span></p>
                 </div>
                 
-                <!-- Single button container with ID -->
-                <div class="single-button-container" id="single-button-container">
+                <!-- Single button for opening listing -->
+                <div class="single-button-container">
                     <button class="custom-button open-listing-button" onclick="openListing()">
                         Open Listing in New Tab
                     </button>
                 </div>
                 
-                <!-- Buy decision buttons with ID -->
-                <div class="buy-decision-container" id="buy-decision-container">
+                <!-- Buy decision buttons -->
+                <div class="buy-decision-container">
                     <button class="buy-yes-button" onclick="buyYes()">
                         Yes - Buy now
                     </button>
@@ -1487,8 +1199,8 @@ def render_main_page():
                     </button>
                 </div>
                 
-                <!-- Confirmation dialog with ID -->
-                <div class="confirmation-container" id="confirmation-container">
+                <!-- Confirmation dialog (initially hidden) -->
+                <div class="confirmation-container">
                     <div class="confirmation-text">
                         Are you sure?
                     </div>
@@ -1502,30 +1214,21 @@ def render_main_page():
                     </div>
                 </div>
                 
-                <!-- Details row with ID -->
-                <div class="details-row" id="details-row">
+                <div class="details-row">
                     <div class="details-item">
                         <p><span class="content-detected-items">{detected_items}</span></p>
                     </div>
                 </div>
-                
-                <!-- Image container with ID -->
-                <div class="image-container" id="image-container">
+                <div class="image-container">
                     {image_html}
                 </div>
-                
-                <!-- Join date section with ID -->
-                <div class="details-item" id="join-date-section">
+                <div class="details-item">
                     <p><span class="content-join-date">{join_date}</span></p>
                 </div>
-                
-                <!-- Navigation buttons with ID -->
-                <div class="navigation-buttons" id="navigation-buttons">
+                <div class="navigation-buttons">
                     <button onclick="changeListingIndex('previous')" class="custom-button" style="background-color: #666;">Previous</button>
                     <button onclick="changeListingIndex('next')" class="custom-button" style="background-color: #666;">Next</button>
                 </div>
-                
-                <!-- Listing URL with ID -->
                 <div class="listing-url" id="listing-url">
                     <p><span class="header">Listing URL: </span><span class="content-url">{listing_url}</span></p>
                 </div>
@@ -1536,10 +1239,10 @@ def render_main_page():
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"ERROR in render_main_page: {{e}}")
-        print(f"Traceback: {{error_details}}")
-        return f"<html><body><h1>Error in render_main_page</h1><pre>{{error_details}}</pre></body></html>"
-    
+        print(f"ERROR in render_main_page: {e}")
+        print(f"Traceback: {error_details}")
+        return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
+
 def base64_encode_image(img):
     """Convert PIL Image to base64 string, resizing if necessary"""
     max_size = (200, 200)
@@ -2198,3 +1901,300 @@ class FacebookScraper:
                     <div class="button-row">
                         <button class="custom-button" onclick="refreshPage()" style="background-color:rgb(108,178,209);">Refresh Page</button>
                     </div>
+                    <div class="listing-counter" id="listing-counter">
+                        Listing 1 of 1
+                    </div>
+                    <div class="section-box"> 
+                        <p><span class="header"></span><span class="content-title">{title}</span></p> 
+                    </div>
+                    <div class="financial-row"> 
+                        <div class="financial-item"> 
+                            <p><span class="header"></span><span class="content-price">{price}</span></p> 
+                        </div> 
+                        <div class="financial-item"> 
+                            <p><span class="header"></span><span class="content-profit">{profit}</span></p> 
+                        </div> 
+                    </div> 
+
+                    <div class="section-box"> 
+                        <p><span class="header"></span><span class="content-description">{description}</span></p> 
+                    </div>
+
+                    <div class="price-button-container">
+                        <div class="button-row">
+                            <button class="custom-button" onclick="handleButtonClick(5)"" style="background-color:rgb(109,171,96);">Message price + £5</button>
+                            <button class="custom-button" onclick="handleButtonClick(10)"" style="background-color:rgb(79,158,196);">Message price + £10</button>
+                        </div>
+                        <div class="button-row">
+                            <button class="custom-button" onclick="handleButtonClick(15)"" style="background-color:rgb(151,84,80);">Message price + £15</button>
+                            <button class="custom-button" onclick="handleButtonClick(20)"" style="background-color: rgb(192,132,17);">Message price + £20</button>
+                            <button class="custom-button" onclick="handleCustomPriceClick()" style="background-color: rgb(76,175,80);">Custom Price +</button>
+                        </div>
+                    </div>
+                    <div class="details-row">
+                        <div class="details-item"> 
+                            <p><span class="header"></span><span class="content-detected-items">{detected_items}</span></p> 
+                        </div> 
+                        <div class="image-container"> 
+                            {image_html} 
+                        </div> 
+                    </div>
+
+                    <div class="details-item"> 
+                            <p><span class="header"></span><span class="content-join-date">{join_date}</span></p> 
+                        </div> 
+                    <div class="navigation-buttons">
+                        <button onclick="changeListingIndex('previous')">Previous</button>
+                        <button onclick="changeListingIndex('next')">Next</button>
+                    </div>
+                    <div class="listing-url" id="listing-url"> 
+                        <p><span class="header">Listing URL: </span><span class="content-url">{listing_url}</span></p>
+                    </div>
+                </div> 
+            </div>
+        </body> 
+        </html> 
+        ''' 
+
+        except Exception as e: 
+            return f"<html><body><h1>Error</h1><p>{str(e)}</p></body></html>" 
+
+
+    
+
+    def process_request_queue(self):
+        global messaging_driver
+        while not request_queue.empty():
+            url, website_static_price_str, price_increment = request_queue.get()
+            start_time = time.time()
+            message_sent = False
+            try:
+                # Parse the price from the string
+                try:
+                    cleaned_price_str = (
+                        website_static_price_str
+                        .replace('Price:', '')
+                        .replace('\n', '')
+                        .replace('£', '')
+                        .replace(' ', '')
+                        .strip()
+                    )
+                    website_static_price = float(cleaned_price_str)
+                    print(f"🏷️ Website Static Price: £{website_static_price:.2f}")
+                except (ValueError, AttributeError) as e:
+                    print(f"Error parsing price: {e}")
+                    print(f"Problematic price string: {website_static_price_str}")
+                    website_static_price = 0.00
+                    continue
+
+                # Validate the URL format
+                if not url.startswith(('http://', 'https://')):
+                    url = 'https://' + url
+
+                # Reinitialize the driver if needed
+                if not messaging_driver:
+                    messaging_driver = self.setup_chrome_messaging_driver()
+                    if not messaging_driver:
+                        print("❌ No driver available.")
+                        continue
+
+                # Navigate to the target URL
+                messaging_driver.get(url)
+                WebDriverWait(messaging_driver, 15).until(
+                    EC.presence_of_element_located((By.TAG_NAME, 'body'))
+                )
+
+                # Create the messaging string using the adjusted website price
+                website_price_adjusted = int(round(website_static_price)) + price_increment
+                message_1 = f"hi, is this still available? happy to pay £{website_price_adjusted} + shipping, if that works for you? I'm Richmond based so collection is a bit far! (id pay first obviously)"
+
+                # NEW: Search for an element containing the text "Message seller" (case-insensitive)
+                print("[Progress] Searching for 'Message seller' element on the page...")
+                elements = messaging_driver.find_elements(
+                    By.XPATH,
+                    "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'message seller')]"
+                )
+                found_button = None
+                for elem in elements:
+                    if elem.is_displayed():
+                        found_button = elem
+                        break
+
+                if found_button:
+                    print("[Success] Found the 'Message seller' element. Attempting click...")
+                    try:
+                        messaging_driver.execute_script("arguments[0].click();", found_button)
+                        print("✅ 'Message seller' button clicked successfully.")
+                        message_sent = True
+                    except Exception as js_click_err:
+                        print(f"❌ JavaScript click failed: {js_click_err}")
+                else:
+                    print("❌ Failed to locate the 'Message seller' element.")
+
+                # Allow time for the message window to load
+                time.sleep(2)
+
+                if not message_sent:
+                    print("❌ Message seller button was not clicked, skipping further processing.")
+                    continue
+
+                # Use ActionChains to clear and then type the message
+                actions = ActionChains(messaging_driver)
+                for _ in range(6):
+                    actions.send_keys(Keys.TAB)
+                actions.key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL)
+                actions.send_keys(message_1)
+                actions.perform()
+
+                # If sending is enabled, try to click the send button
+                if send_message:
+                    try:
+                        send_button = WebDriverWait(messaging_driver, 10).until(
+                            EC.element_to_be_clickable(( 
+                                By.XPATH, 
+                                "//span[contains(@class, 'x1lliihq') and contains(@class, 'x6ikm8r') "
+                                "and contains(@class, 'x10wlt62') and contains(@class, 'x1n2onr6') "
+                                "and contains(@class, 'xlyipyv') and contains(@class, 'xuxw1ft') and text()='Send Message']"
+                            ))
+                        )
+                        try:
+                            send_button.click()
+                        except Exception as e:
+                            try:
+                                messaging_driver.execute_script("arguments[0].click();", send_button)
+                            except Exception as e2:
+                                ActionChains(messaging_driver).move_to_element(send_button).click().perform()
+                        print("🚀 Message sent successfully! 🚀")
+                        message_sent = True
+                    except Exception as send_error:
+                        print(f"🚨 Failed to send message: {send_error}")
+                        if time.time() - start_time > WAIT_TIME_FOR_WEBSITE_MESSAGE:
+                            print(f"⏰ Messaging process timed out after {WAIT_TIME_FOR_WEBSITE_MESSAGE} seconds")
+                        continue
+
+                print(f"Successfully processed request for {url}")
+
+            except Exception as e:
+                print(f"Error processing request for {url}: {e}")
+            finally:
+                request_queue.task_done()  # This is called exactly once per item
+                if request_queue.empty():
+                    self.button_clicked.is_processing = False
+
+
+    def base64_encode_image(self, img):
+        """Convert PIL Image to base64 string, resizing if necessary"""
+        # Resize image while maintaining aspect ratio
+        max_size = (200, 200)
+        img.thumbnail(max_size, Image.LANCZOS)
+        
+        # Convert to base64
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode()
+    
+    def run_flask_app(self):
+        try:
+            print("Starting Flask app with existing Cloudflare Tunnel...")
+            print("Your website will be available at: https://fk43b0p45crc03r.xyz")
+            
+            # Start your existing tunnel
+            tunnel_process = self.start_cloudflare_tunnel(port=5000)
+            
+            # Run Flask on localhost - the tunnel will route external traffic to this
+            app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
+            
+        except Exception as e:
+            print(f"Error starting Flask app: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            try:
+                if tunnel_process:
+                    tunnel_process.terminate()
+                    print("Tunnel terminated.")
+            except Exception as term_err:
+                print(f"Error terminating tunnel: {term_err}")
+
+
+    def get_ngrok_url(self):
+        return "equal-ape-sincerely.ngrok-free.app"
+
+    def start_ngrok_and_get_url(self):
+        return "equal-ape-sincerely.ngrok-free.app"
+
+    def run_pygame_window(self):
+        global LOCK_POSITION, current_listing_index, suitable_listings
+        screen, clock = self.initialize_pygame_window()
+        rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
+            pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
+            pygame.Rect(0, 180, 240, 180), pygame.Rect(240, 180, 240, 180), pygame.Rect(480, 180, 320, 180),
+            pygame.Rect(0, 360, 240, 240), pygame.Rect(240, 360, 240, 120), pygame.Rect(240, 480, 240, 120),
+            pygame.Rect(480, 360, 160, 240), pygame.Rect(640, 360, 160, 240)
+        ]
+        fonts = {
+            'number': pygame.font.Font(None, 24),
+            'price': pygame.font.Font(None, 36),
+            'title': pygame.font.Font(None, 40),
+            'description': pygame.font.Font(None, 28),
+            'join_date': pygame.font.Font(None, 28),
+            'revenue': pygame.font.Font(None, 36),
+            'profit': pygame.font.Font(None, 36),
+            'items': pygame.font.Font(None, 30),
+            'click': pygame.font.Font(None, 28),  # New font for click text
+            'suitability': pygame.font.Font(None, 28)  # New font for suitability reason
+
+        }
+        dragging = False
+        resizing = False
+        drag_rect = None
+        drag_offset = (0, 0)
+        resize_edge = None
+
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_l:
+                        LOCK_POSITION = not LOCK_POSITION
+                    elif event.key == pygame.K_RIGHT:
+                        if suitable_listings:
+                            current_listing_index = (current_listing_index + 1) % len(suitable_listings)
+                            self.update_listing_details(**suitable_listings[current_listing_index])
+                    elif event.key == pygame.K_LEFT:
+                        if suitable_listings:
+                            current_listing_index = (current_listing_index - 1) % len(suitable_listings)
+                            self.update_listing_details(**suitable_listings[current_listing_index])
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Left mouse button
+                        # Check if rectangle 4 was clicked
+                        if rectangles[3].collidepoint(event.pos):
+                            if suitable_listings and 0 <= current_listing_index < len(suitable_listings):
+                                current_url = suitable_listings[current_listing_index].get('url')
+                                if current_url:
+                                    try:
+                                        import webbrowser
+                                        webbrowser.open(current_url)
+                                    except Exception as e:
+                                        print(f"Failed to open URL: {e}")
+                        elif not LOCK_POSITION:
+                            for i, rect in enumerate(rectangles):
+                                if rect.collidepoint(event.pos):
+                                    if event.pos[0] > rect.right - 10 and event.pos[1] > rect.bottom - 10:
+                                        resizing = True
+                                        drag_rect = i
+                                        resize_edge = 'bottom-right'
+                                    else:
+                                        dragging = True
+                                        drag_rect = i
+                                        drag_offset = (rect.x - event.pos[0], rect.y - event.pos[1])
+                                    break
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        dragging = False
+                        resizing = False
+                        drag_rect = None
+            # Handle dragging and resizing
+            if dragging and drag_rect is not None:
