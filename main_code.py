@@ -71,8 +71,8 @@ BUYING_TEST_MODE = False
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
 
 #tests both the bookmark and buying functionality
-TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+TEST_BOOKMARK_BUYING_FUNCTIONALITY = True
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6979387938-montblanc-explorer-extreme-parfum?referrer=catalog"
 
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
@@ -4047,6 +4047,34 @@ class VintedScraper:
                 print(f"Error rendering text: {e}")
                 continue  # Skip this line if rendering fails
         
+
+
+    def bookmark_stopwatch_wrapper(self, func_name, tab_open_func, *args, **kwargs):
+        """
+        Wrapper function that times bookmark operations from tab open to ctrl+w
+        """
+        import time
+        
+        # Start timing when tab is opened
+        start_time = time.time()
+        print(f"⏱️ STOPWATCH START: {func_name} - Tab opening...")
+        
+        try:
+            # Execute the tab opening and bookmark operation
+            result = tab_open_func(*args, **kwargs)
+            
+            # Stop timing immediately after the 0.25s wait and ctrl+w
+            end_time = time.time()
+            elapsed = end_time - start_time
+            
+            print(f"⏱️ STOPWATCH END: {func_name} completed in {elapsed:.3f} seconds")
+            return result
+            
+        except Exception as e:
+            end_time = time.time()
+            elapsed = end_time - start_time
+            print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
+            raise
     def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
@@ -4092,26 +4120,21 @@ class VintedScraper:
         else:
             formatted_detected_items = {"no_items": "No items detected"}
 
-        # NEW: Generate exact UK time when item is appended to pygame
-        from datetime import datetime
-        import pytz
-        
-        uk_tz = pytz.timezone('Europe/London')
-        uk_time = datetime.now(uk_tz)
-        exact_time_str = uk_time.strftime("%H:%M:%S.%f")[:-3]  # Format: HH:MM:SS.mmm
+        # FIXED: Use the join_date parameter directly instead of generating new timestamp
+        # The join_date parameter now contains the stored timestamp from when item was processed
+        stored_append_time = join_date if join_date else "No timestamp"
 
         # Explicitly set the global variables
         current_detected_items = formatted_detected_items
         current_listing_title = title[:50] + '...' if len(title) > 50 else title
         current_listing_description = description[:200] + '...' if len(description) > 200 else description if description else "No description"
-        current_listing_join_date = exact_time_str  # CHANGED: Replace upload date with exact append time
+        current_listing_join_date = stored_append_time  # FIXED: Use stored timestamp, not current time
         current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
         current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
         current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
-# Enhanced process_single_listing_with_driver function with robustness improvements
 
     def process_single_listing_with_driver(self, url, driver_num, driver):
         """
@@ -4303,6 +4326,8 @@ class VintedScraper:
             
             # TAB MANAGEMENT - Open new tab for processing
             try:
+                stopwatch_start = time.time()
+                print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
                 driver.execute_script("window.open('');")
                 new_tab = driver.window_handles[-1]
                 driver.switch_to.window(new_tab)
@@ -6877,6 +6902,8 @@ class VintedScraper:
             
             # ENHANCED TAB MANAGEMENT
             try:
+                stopwatch_start = time.time()
+                print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
                 self.persistent_bookmark_driver.execute_script("window.open('');")
                 new_tab = self.persistent_bookmark_driver.window_handles[-1]
                 self.persistent_bookmark_driver.switch_to.window(new_tab)
@@ -6920,41 +6947,7 @@ class VintedScraper:
             if first_buy_element:
                 log_step("first_buy_button_clicked", True, f"Used: {first_buy_selector[:30]}...")
                 
-                # NEW: Add "Ship to home" button click here - VERY QUICK
-                try:
-                    print("🏠 QUICK: Looking for Ship to home button...")
-                    
-                    # Try to find and click "Ship to home" button quickly (2 second timeout only)
-                    ship_to_home_selectors = [
-                        '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]',
-                        '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to home"]',
-                        '//h2[text()="Ship to home"]',
-                        '//*[text()="Ship to home"]'
-                    ]
-                    
-                    ship_home_clicked = False
-                    for selector in ship_to_home_selectors:
-                        try:
-                            ship_element = WebDriverWait(self.persistent_bookmark_driver, 2).until(
-                                EC.element_to_be_clickable((By.XPATH, selector))
-                            )
-                            ship_element.click()
-                            print("✅ QUICK: Ship to home button clicked successfully")
-                            ship_home_clicked = True
-                            time.sleep(2.75) # takes a while to load after clicking
-                            break
-                        except:
-                            continue
-                    
-                    if not ship_home_clicked:
-                        print("⚠️ QUICK: Ship to home button not found - continuing...")
-                
-                except Exception as ship_error:
-                    print(f"⚠️ QUICK: Ship to home click failed: {ship_error}")
-                    # Continue regardless - don't let this stop the bookmark process
-                
-                # EXISTING CODE CONTINUES HERE (look for Pay button)
-                # Look for Pay button with enhanced selectors
+     
                 pay_element, pay_selector = try_selectors(
                     self.persistent_bookmark_driver,
                     'pay_button',
@@ -7037,7 +7030,11 @@ class VintedScraper:
                             # ⚠️ CRITICAL: Immediate tab close - DO NOT MODIFY! ⚠️
                             print("🔖 CRITICAL: Closing tab immediately...")
                             self.persistent_bookmark_driver.close()
-                            
+
+                            stopwatch_end = time.time()
+                            elapsed = stopwatch_end - stopwatch_start
+                            print(f"⏱️ STOPWATCH: First sequence completed in {elapsed:.3f} seconds")
+                                            
                             step_log['critical_sequence_completed'] = True
                             log_step("critical_sequence_completed", True, "0.25s wait + tab close")
                             
