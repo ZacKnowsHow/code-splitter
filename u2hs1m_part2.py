@@ -1848,6 +1848,34 @@ class VintedScraper:
                 print(f"Error rendering text: {e}")
                 continue  # Skip this line if rendering fails
         
+
+
+    def bookmark_stopwatch_wrapper(self, func_name, tab_open_func, *args, **kwargs):
+        """
+        Wrapper function that times bookmark operations from tab open to ctrl+w
+        """
+        import time
+        
+        # Start timing when tab is opened
+        start_time = time.time()
+        print(f"⏱️ STOPWATCH START: {func_name} - Tab opening...")
+        
+        try:
+            # Execute the tab opening and bookmark operation
+            result = tab_open_func(*args, **kwargs)
+            
+            # Stop timing immediately after the 0.25s wait and ctrl+w
+            end_time = time.time()
+            elapsed = end_time - start_time
+            
+            print(f"⏱️ STOPWATCH END: {func_name} completed in {elapsed:.3f} seconds")
+            return result
+            
+        except Exception as e:
+            end_time = time.time()
+            elapsed = end_time - start_time
+            print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
+            raise
     def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
@@ -1893,26 +1921,21 @@ class VintedScraper:
         else:
             formatted_detected_items = {"no_items": "No items detected"}
 
-        # NEW: Generate exact UK time when item is appended to pygame
-        from datetime import datetime
-        import pytz
-        
-        uk_tz = pytz.timezone('Europe/London')
-        uk_time = datetime.now(uk_tz)
-        exact_time_str = uk_time.strftime("%H:%M:%S.%f")[:-3]  # Format: HH:MM:SS.mmm
+        # FIXED: Use the join_date parameter directly instead of generating new timestamp
+        # The join_date parameter now contains the stored timestamp from when item was processed
+        stored_append_time = join_date if join_date else "No timestamp"
 
         # Explicitly set the global variables
         current_detected_items = formatted_detected_items
         current_listing_title = title[:50] + '...' if len(title) > 50 else title
         current_listing_description = description[:200] + '...' if len(description) > 200 else description if description else "No description"
-        current_listing_join_date = exact_time_str  # CHANGED: Replace upload date with exact append time
+        current_listing_join_date = stored_append_time  # FIXED: Use stored timestamp, not current time
         current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
         current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
         current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
-# Enhanced process_single_listing_with_driver function with robustness improvements
 
     def process_single_listing_with_driver(self, url, driver_num, driver):
         """
@@ -2104,6 +2127,8 @@ class VintedScraper:
             
             # TAB MANAGEMENT - Open new tab for processing
             try:
+                stopwatch_start = time.time()
+                print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
                 driver.execute_script("window.open('');")
                 new_tab = driver.window_handles[-1]
                 driver.switch_to.window(new_tab)
@@ -2174,28 +2199,3 @@ class VintedScraper:
                 log_final_result()
                 return
 
-            log_step("buy_button_clicked", True, f"Used: {buy_selector[:30]}...")
-            process_log['critical_operations'].append("buy_button_clicked")
-
-            # PURCHASE FLOW BRANCHING - Different logic based on actually_purchase_listing
-            if actually_purchase_listing:
-                log_step("purchase_mode_enabled", True, "Starting actual purchase process")
-                
-                # SHIPPING SELECTION - Click "Ship to home" first if available
-                ship_home_element, ship_home_selector = try_selectors_fast_fail(
-                    driver, 'ship_to_home', operation='click', timeout=15, click_method='all'
-                )
-                
-                if ship_home_element:
-                    log_step("ship_to_home_clicked", True)
-                    time.sleep(2)  # Brief wait as requested
-                else:
-                    log_step("ship_to_home_not_found", False, "Continuing without shipping selection")
-                
-                # PAY BUTTON DETECTION - Look for pay button
-                pay_button, pay_selector = try_selectors_fast_fail(
-                    driver, 'pay_button', operation='find', timeout=15
-                )
-                
-                if not pay_button:
-                    log_step("pay_button_not_found", False, "Payment interface not available")
