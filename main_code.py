@@ -74,14 +74,14 @@ BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
 TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 
-PRICE_THRESHOLD = 25.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
+PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
     'controller','tv_black', 
     'tv_white', 'comfort_h',
-    'comfort_h_joy'
+    'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = True
+VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
 print_images_backend_info = False
 test_bookmark_function = False
@@ -3500,6 +3500,19 @@ class FacebookScraper:
                 messaging_driver.quit()
 
 class VintedScraper:
+
+    def restart_driver_if_dead(self, driver):
+        """If driver is dead, create a new one. That's it."""
+        try:
+            driver.current_url  # Simple test
+            return driver  # Driver is fine
+        except:
+            print("🔄 Driver crashed, restarting...")
+            try:
+                driver.quit()
+            except:
+                pass
+            return self.setup_driver()
     # Add this method to the VintedScraper class
     def send_pushover_notification(self, title, message, api_token, user_key):
         """
@@ -6341,7 +6354,7 @@ class VintedScraper:
     def search_vinted_with_refresh(self, driver, search_query):
         """
         Enhanced search_vinted method with refresh and rescan functionality
-        UPDATED: Now prints username alongside other listing details
+        UPDATED: Now restarts the main driver every 250 cycles to prevent freezing
         """
         global suitable_listings, current_listing_index
         
@@ -6369,42 +6382,86 @@ class VintedScraper:
                 print("✅ Model loaded successfully.")
             except Exception as e:
                 print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
+        
         print(f"CUDA available: {torch.cuda.is_available()}")
         print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
 
         # Load model with explicit GPU usage
         if torch.cuda.is_available():
-            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
+            model = YOLO(MODEL_WEIGHTS).cuda()
             print("✅ YOLO model loaded on GPU")
         else:
-            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
+            model = YOLO(MODEL_WEIGHTS).cpu()
             print("⚠️ YOLO model loaded on CPU (no CUDA available)")
 
-        # Initial page setup
-        params = {
-            "search_text": search_query,
-            "price_from": PRICE_FROM,
-            "price_to": PRICE_TO,
-            "currency": CURRENCY,
-            "order": ORDER,
-        }
-        driver.get(f"{BASE_URL}?{urlencode(params)}")
-        main = driver.current_window_handle
-
-        # Load previously scanned listing IDs (this will now be empty since we cleared the file)
+        # Store original driver reference
+        current_driver = driver
+        
+        # Load previously scanned listing IDs
         scanned_ids = self.load_scanned_vinted_ids()
         print(f"📚 Loaded {len(scanned_ids)} previously scanned listing IDs")
 
         page = 1
-        overall_listing_counter = 0  # Total listings processed across all cycles
+        overall_listing_counter = 0
         refresh_cycle = 1
         is_first_refresh = True
+        
+        # NEW: Driver restart tracking
+        DRIVER_RESTART_INTERVAL = 250
+        cycles_since_restart = 0
 
-        # Main scanning loop with refresh functionality
+        # Main scanning loop with refresh functionality AND driver restart
         while True:
             print(f"\n{'='*60}")
             print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
+            print(f"🔄 Cycles since last driver restart: {cycles_since_restart}")
             print(f"{'='*60}")
+            
+            # NEW: Check if we need to restart the driver
+            if cycles_since_restart >= DRIVER_RESTART_INTERVAL:
+                print(f"\n🔄 DRIVER RESTART: Reached {DRIVER_RESTART_INTERVAL} cycles")
+                print("🔄 RESTARTING: Main scraping driver to prevent freezing...")
+                
+                try:
+                    # Close current driver safely
+                    print("🔄 CLOSING: Current driver...")
+                    current_driver.quit()
+                    time.sleep(2)  # Give time for cleanup
+                    
+                    # Create new driver
+                    print("🔄 CREATING: New driver...")
+                    current_driver = self.setup_driver()
+                    
+                    if current_driver is None:
+                        print("❌ CRITICAL: Failed to create new driver after restart")
+                        break
+                    
+                    print("✅ DRIVER RESTART: Successfully restarted main driver")
+                    cycles_since_restart = 0  # Reset counter
+                    
+                    # Re-navigate to search page after restart
+                    params = {
+                        "search_text": search_query,
+                        "price_from": PRICE_FROM,
+                        "price_to": PRICE_TO,
+                        "currency": CURRENCY,
+                        "order": ORDER,
+                    }
+                    current_driver.get(f"{BASE_URL}?{urlencode(params)}")
+                    
+                    # Wait for page to load after restart
+                    try:
+                        WebDriverWait(current_driver, 20).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                        )
+                        print("✅ RESTART: Page loaded successfully after driver restart")
+                    except TimeoutException:
+                        print("⚠️ RESTART: Timeout waiting for page after driver restart")
+                    
+                except Exception as restart_error:
+                    print(f"❌ RESTART ERROR: Failed to restart driver: {restart_error}")
+                    print("💥 CRITICAL: Cannot continue without working driver")
+                    break
             
             cycle_listing_counter = 0  # Listings processed in this cycle
             found_already_scanned = False
@@ -6414,7 +6471,7 @@ class VintedScraper:
             
             while True:  # Page loop
                 try:
-                    WebDriverWait(driver, 20).until(
+                    WebDriverWait(current_driver, 20).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                     )
                 except TimeoutException:
@@ -6422,7 +6479,7 @@ class VintedScraper:
                     break
 
                 # Get listing URLs from current page
-                els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
+                els = current_driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
                 urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
                 
                 if not urls:
@@ -6454,21 +6511,21 @@ class VintedScraper:
 
                     overall_listing_counter += 1
 
-                    # Process the listing (same as original logic)
-                    driver.execute_script("window.open();")
-                    driver.switch_to.window(driver.window_handles[-1])
-                    driver.get(url)
+                    # Process the listing (using current_driver instead of driver)
+                    current_driver.execute_script("window.open();")
+                    current_driver.switch_to.window(current_driver.window_handles[-1])
+                    current_driver.get(url)
 
                     try:
                         listing_start_time = time.time()
-                        details = self.scrape_item_details(driver)
+                        details = self.scrape_item_details(current_driver)
                         second_price = self.extract_price(details["second_price"])
                         postage = self.extract_price(details["postage"])
                         total_price = second_price + postage
 
                         print(f"  Link:         {url}")
                         print(f"  Title:        {details['title']}")
-                        print(f"  Username:     {details.get('username', 'Username not found')}")  # NEW: Print username
+                        print(f"  Username:     {details.get('username', 'Username not found')}")
                         print(f"  Price:        {details['price']}")
                         print(f"  Second price: {details['second_price']} ({second_price:.2f})")
                         print(f"  Postage:      {details['postage']} ({postage:.2f})")
@@ -6477,7 +6534,7 @@ class VintedScraper:
 
                         # Download images for the current listing
                         listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
-                        image_paths = self.download_images_for_listing(driver, listing_dir)
+                        image_paths = self.download_images_for_listing(current_driver, listing_dir)
 
                         # Perform object detection and get processed images
                         detected_objects = {}
@@ -6514,8 +6571,8 @@ class VintedScraper:
                             self.save_vinted_listing_id(listing_id)
 
                     finally:
-                        driver.close()
-                        driver.switch_to.window(main)
+                        current_driver.close()
+                        current_driver.switch_to.window(current_driver.window_handles[0])  # Use index 0 instead of main
 
                 # Check if we need to break out of page loop
                 if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
@@ -6523,8 +6580,8 @@ class VintedScraper:
 
                 # Try to go to next page
                 try:
-                    nxt = driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
-                    driver.execute_script("arguments[0].click();", nxt)
+                    nxt = current_driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
+                    current_driver.execute_script("arguments[0].click();", nxt)
                     page += 1
                     time.sleep(2)
                 except NoSuchElementException:
@@ -6538,15 +6595,16 @@ class VintedScraper:
             
             if found_already_scanned:
                 print(f"🔁 Found already scanned listing - refreshing immediately")
-                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
             elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
                 print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
-                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
             else:
                 print("📄 No more pages and no max reached - refreshing for new listings")
-                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
 
             refresh_cycle += 1
+            cycles_since_restart += 1  # NEW: Increment counter after each cycle
             is_first_refresh = False
 
     def start_cloudflare_tunnel(self, port=5000):
@@ -6862,6 +6920,40 @@ class VintedScraper:
             if first_buy_element:
                 log_step("first_buy_button_clicked", True, f"Used: {first_buy_selector[:30]}...")
                 
+                # NEW: Add "Ship to home" button click here - VERY QUICK
+                try:
+                    print("🏠 QUICK: Looking for Ship to home button...")
+                    
+                    # Try to find and click "Ship to home" button quickly (2 second timeout only)
+                    ship_to_home_selectors = [
+                        '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]',
+                        '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to home"]',
+                        '//h2[text()="Ship to home"]',
+                        '//*[text()="Ship to home"]'
+                    ]
+                    
+                    ship_home_clicked = False
+                    for selector in ship_to_home_selectors:
+                        try:
+                            ship_element = WebDriverWait(self.persistent_bookmark_driver, 2).until(
+                                EC.element_to_be_clickable((By.XPATH, selector))
+                            )
+                            ship_element.click()
+                            print("✅ QUICK: Ship to home button clicked successfully")
+                            ship_home_clicked = True
+                            time.sleep(2.75) # takes a while to load after clicking
+                            break
+                        except:
+                            continue
+                    
+                    if not ship_home_clicked:
+                        print("⚠️ QUICK: Ship to home button not found - continuing...")
+                
+                except Exception as ship_error:
+                    print(f"⚠️ QUICK: Ship to home click failed: {ship_error}")
+                    # Continue regardless - don't let this stop the bookmark process
+                
+                # EXISTING CODE CONTINUES HERE (look for Pay button)
                 # Look for Pay button with enhanced selectors
                 pay_element, pay_selector = try_selectors(
                     self.persistent_bookmark_driver,
