@@ -48,6 +48,54 @@ from datetime import datetime
 import logging
 from ultralytics import YOLO
 import random
+import torch
+
+# tests whether the listing is suitable for buying based on URL rather than scanning
+TEST_WHETHER_SUITABLE = False
+TEST_SUITABLE_URLS = [
+    'https://www.vinted.co.uk/items/6963376052-nintendo-switch?referrer=catalog',
+    'https://www.vinted.co.uk/items/6963025596-nintendo-switch-oled-model-the-legend-of-zelda-tears-of-the-kingdom-edition?referrer=catalog',
+    'https://www.vinted.co.uk/items/6970192196-nintendo-switch-lite-in-grey?referrer=catalog'
+]
+
+# tests the number of listings found by the search
+TEST_NUMBER_OF_LISTINGS = False
+
+#tests the bookmark functionality
+BOOKMARK_TEST_MODE = False
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+BOOKMARK_TEST_USERNAME = "leah_lane" 
+
+#tests the buying functionality
+BUYING_TEST_MODE = False
+BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
+
+#tests both the bookmark and buying functionality
+TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+
+PRICE_THRESHOLD = 25.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
+NINTENDO_SWITCH_CLASSES = [
+    'controller','tv_black', 
+    'tv_white', 'comfort_h',
+    'comfort_h_joy'
+]
+
+VINTED_SHOW_ALL_LISTINGS = True
+print_debug = False
+print_images_backend_info = False
+test_bookmark_function = False
+bookmark_listings = True
+click_pay_button_final_check = True
+test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+bookmark_stopwatch_length = 540
+buying_driver_click_pay_wait_time = 7.5
+actually_purchase_listing = True
+wait_for_bookmark_stopwatch_to_buy = True
+test_purchase_not_true = False #uses the url below rather than the one from the web page
+test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1?referrer=catalog"
+#sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
+should_send_fail_bookmark_notification = True
 
 # Config
 PROFILE_DIR = "Default"
@@ -71,7 +119,7 @@ logging.getLogger('ultralytics').setLevel(logging.WARNING)
 #pc
 #MODEL_WEIGHTS = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
 #laptop
-MODEL_WEIGHTS = r"C:\Users\zacha\Downloads\best.pt"
+MODEL_WEIGHTS = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
 CLASS_NAMES = [
    '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'comfort_h',
    'comfort_h_joy', 'controller', 'crash_sand', 'dance', 'diamond_p', 'evee',
@@ -84,6 +132,7 @@ CLASS_NAMES = [
    'switch_box', 'switch_in_tv', 'switch_screen', 'switch_sports', 'sword_p', 'tears_z',
    'tv_black', 'tv_white', 'violet_p'
 ]
+
 GENERAL_CONFIDENCE_MIN = 0.5
 HIGHER_CONFIDENCE_MIN = 0.55
 HIGHER_CONFIDENCE_ITEMS = { 'controller': HIGHER_CONFIDENCE_MIN, 'tv_white': HIGHER_CONFIDENCE_MIN, 'tv_black': HIGHER_CONFIDENCE_MIN }
@@ -96,7 +145,6 @@ SCRAPER_USER_DATA_DIR = r"C:\FacebookScraper_ScraperProfile"
 MESSAGING_USER_DATA_DIR = r"C:\FacebookScraper_MessagingProfile"
 #profile 2
 
-VINTED_BUYING_USER_DATA_DIR = r"C:\VintedPostButtonClick"
 
 app = Flask(__name__, template_folder='templates')
 
@@ -127,14 +175,14 @@ max_price = 500
 element_exractor_timeout = 0.85
 price_mulitplier = 1
 visible_listings_scanned = 0
-SD_card_price = 5
+SD_card_price = 0
 
 app.secret_key = "facebook1967"
 PIN_CODE = 14346
 #pc
-#OUTPUT_FILE_PATH = r"C:\users\zacknowshow\Downloads\SUITABLE_LISTINGS.txt"
+OUTPUT_FILE_PATH = r"C:\users\zacknowshow\Downloads\SUITABLE_LISTINGS.txt"
 #laptop
-OUTPUT_FILE_PATH = r"C:\Users\zacha\Downloads\SUITABLE_LISTINGS.txt"
+#OUTPUT_FILE_PATH = r"C:\Users\zacha\Downloads\SUITABLE_LISTINGS.txt"
 
 recent_listings = {
     'listings': [],
@@ -142,23 +190,21 @@ recent_listings = {
 }
 
 review_min = 3
-bookmark_listings = True
 MAX_LISTINGS_TO_SCAN = 50
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
-MAX_LISTINGS_VINTED_TO_SCAN = 70  # Maximum listings to scan before refresh
+MAX_LISTINGS_VINTED_TO_SCAN = 5  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 0  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
 REPEAT_LISTINGS = True
 WAIT_TIME_AFTER_REFRESH = 125
 LOCK_POSITION = True
-SHOW_ALL_LISTINGS = True
-VINTED_SHOW_ALL_LISTINGS = True
+SHOW_ALL_LISTINGS = False
 SHOW_PARTIALLY_SUITABLE = False
 setup_website = False
 send_message = True
 current_listing_url = ""
-send_notification = False
+send_notification = True
 WAIT_TIME_FOR_WEBSITE_MESSAGE = 25
 request_processing_event = threading.Event()
 
@@ -189,12 +235,12 @@ description_forbidden_words = ['faulty', 'not post', 'jailbreak', 'scam', 'visit
                                 'https', 'case only', 'shop', 'spares or repairs', 'dock cover', '3d print', 'spares & repair',
                                 'error code', 'will not connect']
 #pc
-#CONFIG_FILE = r"C:\Users\ZacKnowsHow\Downloads\square_configuratgion.json"
+CONFIG_FILE = r"C:\Users\ZacKnowsHow\Downloads\square_configuratgion.json"
 #laptop
-CONFIG_FILE = r"C:\Users\zacha\Downloads\square_configuratgion.json"
+#CONFIG_FILE = r"C:\Users\zacha\Downloads\square_configuratgion.json"
 
 
-model_weights = r"C:\Users\zacha\Downloads\best.pt"
+model_weights = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
 class_names = [
    '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'comfort_h',
    'comfort_h_joy', 'controller', 'crash_sand', 'dance', 'diamond_p', 'evee',
@@ -273,11 +319,11 @@ scanned_unique_ids = set()
 vinted_title_must_contain = ["nintendo", "pokemon", "zelda", "mario", "animal crossing", "minecraft", 'oled', 'lite', 'pokémon', 'switch game',
                             'switch bundle', 'nintendo bundle', 'switch with games', 'modded switch']
 
-vinted_title_forbidden_words = ['unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
+vinted_title_forbidden_words = ['box only', 'unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
                                'joycon', 'snes', 'gamecube', 'n64', 'damaged', 'circuit', 'kart live', 'tablet only', 'ringfit', 'ring fit'
                                'repair', '™', 'each', 'empty game', 'just game case', 'empty case', 'arcade', 'wii', 'tv frame', 'joy-con',
                                'for parts', 'wont charge', 'spares & repair', 'xbox', 'prices in description', 'collector set', 'collectors set'
-                               'read description', 'joy pads', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
+                                'joy pads', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
 
 vinted_description_forbidden_words = ['faulty', 'jailbreak', 'visit us', 'opening hours', 'open 7 days', 
                                      'telephone', 'call us', '+44', '07', 'kart live', '.shop', 'our website',
@@ -290,12 +336,17 @@ vinted_min_price = 14
 vinted_max_price = 500
 vinted_banned_prices = {59.00, 49.00, 17.00}
 
+def debug_function_call(func_name, line_number=None):
+    """Debug function to track where errors occur"""
+    if print_debug:
+        print(f"DEBUG: Entering function {func_name}" + (f" at line {line_number}" if line_number else ""))
+
 # Vinted profit suitability ranges (same structure as Facebook but independent variables)
 def check_vinted_profit_suitability(listing_price, profit_percentage):
     if 10 <= listing_price < 16:
         return 100 <= profit_percentage <= 600
     elif 16 <= listing_price < 25:
-        return 65 <= profit_percentage <= 400
+        return 50 <= profit_percentage <= 400
     elif 25 <= listing_price < 50:
         return 37.5 <= profit_percentage <= 550
     elif 50 <= listing_price < 100:
@@ -359,7 +410,8 @@ def logout():
 
 @app.route('/button-clicked', methods=['POST'])
 def button_clicked():
-    print("DEBUG: Received a button-click POST request")
+    if print_debug:
+        print("DEBUG: Received a button-click POST request")
     global messaging_driver, website_static_price
     url = request.form.get('url')
     website_static_price_str = request.form.get('website_price')
@@ -385,7 +437,7 @@ def serve_icon():
     #pc
     #return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2 (1).png", mimetype='image/png')
     #laptop
-    return send_file(r"C:\Users\zacha\Downloads\icon_2 (1).png", mimetype='image/png')
+    return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2.png", mimetype='image/png')
 
 @app.route('/change_listing', methods=['POST'])
 def change_listing():
@@ -426,25 +478,37 @@ def change_listing():
 @app.route('/vinted-button-clicked', methods=['POST'])
 def vinted_button_clicked():
     """Handle Vinted scraper button clicks with enhanced functionality"""
-    print("DEBUG: Received a Vinted button-click POST request")
+    if print_debug:
+        print("DEBUG: Received a Vinted button-click POST request")
     
-    # Get the listing URL from the form data
+    # Get the listing URL and action from the form data
     url = request.form.get('url')
+    action = request.form.get('action')
     
     if not url:
         print("ERROR: No URL provided in Vinted button click")
         return 'NO URL PROVIDED', 400
     
     try:
-        # Access the Vinted scraper instance and trigger enhanced button functionality
-        if 'vinted_scraper_instance' in globals():
-            vinted_scraper_instance.vinted_button_clicked_enhanced(url)
+        # Print the appropriate message based on the action
+        if action == 'buy_yes':
+            print(f'✅ VINTED YES BUTTON: User wishes to buy listing: {url}')
+            
+            # Access the Vinted scraper instance and trigger enhanced button functionality
+            if 'vinted_scraper_instance' in globals():
+                vinted_scraper_instance.vinted_button_clicked_enhanced(url)
+            else:
+                print("WARNING: No Vinted scraper instance found")
+                print(f'Vinted button clicked on listing: {url}')
+                with open('vinted_clicked_listings.txt', 'a') as f:
+                    f.write(f"{action}: {url}\n")
+                    
+        elif action == 'buy_no':
+            print(f'❌ VINTED NO BUTTON: User does not wish to buy listing: {url}')
+            # DO NOT CALL vinted_button_clicked_enhanced - just print message
+            # No navigation should happen for "No" button
         else:
-            print("WARNING: No Vinted scraper instance found")
-            # Fallback to simple logging
-            print(f'Vinted button clicked on listing: {url}')
-            with open('vinted_clicked_listings.txt', 'a') as f:
-                f.write(f"{url}\n")
+            print(f'🔘 VINTED BUTTON: Unknown action "{action}" for listing: {url}')
         
         return 'VINTED BUTTON CLICK PROCESSED', 200
         
@@ -461,11 +525,11 @@ def render_main_page():
         global current_listing_title, current_listing_price, current_listing_description
         global current_listing_join_date, current_detected_items, current_profit
         global current_listing_images, current_listing_url, recent_listings
-
-        print("DEBUG: render_main_page called")
-        print(f"DEBUG: recent_listings has {len(recent_listings.get('listings', []))} listings")
-        print(f"DEBUG: current_listing_title = {current_listing_title}")
-        print(f"DEBUG: current_listing_price = {current_listing_price}")
+        if print_debug:
+            print("DEBUG: render_main_page called")
+            print(f"DEBUG: recent_listings has {len(recent_listings.get('listings', []))} listings")
+            print(f"DEBUG: current_listing_title = {current_listing_title}")
+            print(f"DEBUG: current_listing_price = {current_listing_price}")
 
         # Ensure default values if variables are None or empty
         title = str(current_listing_title or 'No Title Available')
@@ -503,7 +567,8 @@ def render_main_page():
                         'suitability': str(listing.get('suitability', 'Unknown'))
                     })
                 all_listings_json = json.dumps(listings_data)
-                print(f"DEBUG: Created JSON for {len(listings_data)} listings")
+                if print_debug:
+                    print(f"DEBUG: Created JSON for {len(listings_data)} listings")
             except Exception as json_error:
                 print(f"ERROR creating listings JSON: {json_error}")
                 all_listings_json = "[]"
@@ -529,7 +594,7 @@ def render_main_page():
         else:
             image_html = "<p>No images available</p>"
 
-        # Return the complete HTML with modified JavaScript for Vinted
+        # Return the complete HTML with NEW top bar layout and stopwatch functionality
         return f'''
         <!DOCTYPE html>
         <html>
@@ -573,6 +638,56 @@ def render_main_page():
                     height: calc(100vh - 10px);
                     overflow-y: auto;
                 }}
+                
+                /* NEW: Top bar styles */
+                .top-bar {{
+                    display: flex;
+                    gap: 5px;
+                    margin-bottom: 15px;
+                    justify-content: space-between;
+                }}
+                
+                .top-bar-item {{
+                    flex: 1;
+                    padding: 8px 4px;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    color: white;
+                    text-align: center;
+                    min-height: 40px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }}
+                
+                .refresh-button {{
+                    background-color: #4CAF50;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    border: none;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                
+                .refresh-button:hover {{
+                    background-color: #45a049;
+                    transform: translateY(-1px);
+                }}
+                
+                .refresh-button:active {{
+                    transform: translateY(0);
+                }}
+                
+                .listing-counter {{
+                    background-color: #2196F3;
+                }}
+                
+                .stopwatch-display {{
+                    background-color: #FF9800;
+                    font-family: monospace;
+                }}
+                
                 .custom-button {{
                     width: 100%;
                     padding: 12px;
@@ -684,19 +799,156 @@ def render_main_page():
                     margin: 15px 0;
                 }}
                 .open-listing-button {{
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    background-color: #28a745;
                     font-size: 18px;
                     padding: 15px;
+                }}
+                
+                /* Buy decision buttons */
+                .buy-decision-container {{
+                    display: flex;
+                    gap: 10px;
+                    margin: 15px 0;
+                }}
+                .buy-yes-button {{
+                    background-color: #28a745;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                .buy-yes-button:hover {{
+                    background-color: #218838;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                .buy-yes-button:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                .buy-no-button {{
+                    background-color: #dc3545;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                .buy-no-button:hover {{
+                    background-color: #c82333;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                .buy-no-button:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                
+                /* Confirmation button styles */
+                .confirmation-container {{
+                    display: none;
+                    flex-direction: column;
+                    gap: 10px;
+                    margin: 15px 0;
+                }}
+                
+                .confirmation-text {{
+                    color: #333;
+                    font-weight: bold;
+                    font-size: 14px;
+                    margin-bottom: 10px;
+                    text-align: center;
+                }}
+                
+                .confirmation-buttons {{
+                    display: flex;
+                    gap: 10px;
+                }}
+                
+                .confirm-yes-button {{
+                    background-color: #28a745;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                
+                .confirm-no-button {{
+                    background-color: #6c757d;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                
+                .confirm-yes-button:hover {{
+                    background-color: #218838;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                
+                .confirm-no-button:hover {{
+                    background-color: #5a6268;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                
+                .confirm-yes-button:active, .confirm-no-button:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 }}
             </style>
             <script>
                 const allListings = {all_listings_json};
                 let currentListingIndex = 0;
+                let stopwatchIntervals = {{}};
                 console.log('All listings loaded:', allListings);
                 console.log('Number of listings:', allListings.length);
 
                 function refreshPage() {{
                     location.reload();
+                }}
+
+                function updateStopwatch() {{
+                    if (allListings.length === 0) return;
+                    
+                    const currentListing = allListings[currentListingIndex];
+                    const currentUrl = currentListing.url;
+                    const stopwatchElement = document.querySelector('.stopwatch-display');
+                    
+                    if (stopwatchElement) {{
+                        // Check if this URL has an active stopwatch
+                        // This would need to be populated from the Python backend
+                        // For now, show placeholder text
+                        stopwatchElement.textContent = 'No stopwatch - listing unbookmarked';
+                    }}
                 }}
 
                 function updateListingDisplay(index) {{
@@ -718,7 +970,7 @@ def render_main_page():
                     const detectedItemsEl = document.querySelector('.content-detected-items');
                     const descriptionEl = document.querySelector('.content-description');
                     const urlEl = document.querySelector('.content-url');
-                    const counterEl = document.getElementById('listing-counter');
+                    const counterEl = document.querySelector('.listing-counter');
 
                     if (titleEl) titleEl.textContent = listing.title;
                     if (priceEl) priceEl.textContent = 'Price: £' + listing.price;
@@ -727,7 +979,7 @@ def render_main_page():
                     if (detectedItemsEl) detectedItemsEl.textContent = listing.detected_items;
                     if (descriptionEl) descriptionEl.textContent = listing.description;
                     if (urlEl) urlEl.textContent = listing.url;
-                    if (counterEl) counterEl.textContent = `Listing ${{currentListingIndex + 1}} of ${{allListings.length}}`;
+                    if (counterEl) counterEl.textContent = `${{currentListingIndex + 1}} of ${{allListings.length}}`;
 
                     // Update images
                     const imageContainer = document.querySelector('.image-container');
@@ -737,12 +989,18 @@ def render_main_page():
                             const imageWrapper = document.createElement('div');
                             imageWrapper.className = 'image-wrapper';
                             const img = document.createElement('img');
-                            img.src = `data:image/png;base64,${{imgBase64}}`;
+                            img.src = `data:image/png;base64=${{imgBase64}}`;
                             img.alt = 'Listing Image';
                             imageWrapper.appendChild(img);
                             imageContainer.appendChild(imageWrapper);
                         }});
                     }}
+                    
+                    // Update stopwatch
+                    updateStopwatch();
+                    
+                    // Reset confirmation dialog state
+                    hideConfirmation();
                 }}
 
                 function changeListingIndex(direction) {{
@@ -753,7 +1011,7 @@ def render_main_page():
                     }}
                 }}
 
-                // NEW: Single button function to open listing directly
+                // Single button function to open listing directly
                 function openListing() {{
                     var urlElement = document.querySelector('.content-url');
                     var url = urlElement ? urlElement.textContent.trim() : '';
@@ -765,6 +1023,120 @@ def render_main_page():
                         alert('No valid URL available for this listing');
                     }}
                 }}
+                
+                // Confirmation dialog functions
+                function showConfirmation(message, confirmCallback, cancelCallback) {{
+                    const buyDecisionContainer = document.querySelector('.buy-decision-container');
+                    const confirmationContainer = document.querySelector('.confirmation-container');
+                    
+                    if (buyDecisionContainer) buyDecisionContainer.style.display = 'none';
+                    if (confirmationContainer) {{
+                        confirmationContainer.style.display = 'flex';
+                        
+                        const confirmationText = confirmationContainer.querySelector('.confirmation-text');
+                        if (confirmationText) confirmationText.textContent = message;
+                        
+                        const confirmYesBtn = confirmationContainer.querySelector('.confirm-yes-button');
+                        const confirmNoBtn = confirmationContainer.querySelector('.confirm-no-button');
+                        
+                        if (confirmYesBtn) {{
+                            confirmYesBtn.onclick = function() {{
+                                confirmCallback();
+                                hideConfirmation();
+                            }};
+                        }}
+                        
+                        if (confirmNoBtn) {{
+                            confirmNoBtn.onclick = function() {{
+                                cancelCallback();
+                                hideConfirmation();
+                            }};
+                        }}
+                    }}
+                }}
+                
+                function hideConfirmation() {{
+                    const buyDecisionContainer = document.querySelector('.buy-decision-container');
+                    const confirmationContainer = document.querySelector('.confirmation-container');
+                    
+                    if (buyDecisionContainer) buyDecisionContainer.style.display = 'flex';
+                    if (confirmationContainer) confirmationContainer.style.display = 'none';
+                }}
+
+                // Buy decision functions with confirmation
+                function buyYes() {{
+                    showConfirmation(
+                        'Are you sure you want to buy this listing?',
+                        function() {{
+                            var urlElement = document.querySelector('.content-url');
+                            var url = urlElement ? urlElement.textContent.trim() : '';
+                            
+                            if (url && url !== 'No URL Available') {{
+                                console.log('User confirmed: wants to buy listing: ' + url);
+                                
+                                fetch('/vinted-button-clicked', {{
+                                    method: 'POST',
+                                    headers: {{
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                    }},
+                                    body: `url=${{encodeURIComponent(url)}}&action=buy_yes`
+                                }})
+                                .then(response => {{
+                                    if (response.ok) {{
+                                        console.log('Vinted YES button confirmed and sent successfully');
+                                    }} else {{
+                                        console.error('Failed to process Vinted YES button');
+                                    }}
+                                }})
+                                .catch(error => {{
+                                    console.error('Error with Vinted YES button:', error);
+                                }});
+                            }} else {{
+                                console.log('User confirmed: wants to buy listing but no URL available');
+                            }}
+                        }},
+                        function() {{
+                            console.log('User cancelled buying decision');
+                        }}
+                    );
+                }}
+
+                function buyNo() {{
+                    showConfirmation(
+                        'Are you sure you don\\'t want to buy this listing?',
+                        function() {{
+                            var urlElement = document.querySelector('.content-url');
+                            var url = urlElement ? urlElement.textContent.trim() : '';
+                            
+                            if (url && url !== 'No URL Available') {{
+                                console.log('User confirmed: does not want to buy listing: ' + url);
+                                
+                                fetch('/vinted-button-clicked', {{
+                                    method: 'POST',
+                                    headers: {{
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                    }},
+                                    body: `url=${{encodeURIComponent(url)}}&action=buy_no`
+                                }})
+                                .then(response => {{
+                                    if (response.ok) {{
+                                        console.log('Vinted NO button confirmed and sent successfully');
+                                    }} else {{
+                                        console.error('Failed to process Vinted NO button');
+                                    }}
+                                }})
+                                .catch(error => {{
+                                    console.error('Error with Vinted NO button:', error);
+                                }});
+                            }} else {{
+                                console.log('User confirmed: does not want to buy listing but no URL available');
+                            }}
+                        }},
+                        function() {{
+                            console.log('User cancelled buying decision');
+                        }}
+                    );
+                }}
 
                 // Initialize display on page load
                 window.onload = () => {{
@@ -774,17 +1146,27 @@ def render_main_page():
                     }} else {{
                         console.log('No listings to display');
                     }}
+                    
+                    // Start stopwatch update interval
+                    setInterval(updateStopwatch, 1000);
                 }};
             </script>
         </head>
         <body>
             <div class="container listing-container">
-                <div class="button-row">
-                    <button class="custom-button" onclick="refreshPage()" style="background-color:rgb(108,178,209);">Refresh Page</button>
+                <!-- NEW: Top bar with three colored rectangles -->
+                <div class="top-bar">
+                    <button class="top-bar-item refresh-button" onclick="refreshPage()">
+                        Refresh Page
+                    </button>
+                    <div class="top-bar-item listing-counter" id="listing-counter">
+                        1 of 1
+                    </div>
+                    <div class="top-bar-item stopwatch-display" id="stopwatch-display">
+                        No stopwatch - listing unbookmarked
+                    </div>
                 </div>
-                <div class="listing-counter" id="listing-counter">
-                    Listing 1 of 1
-                </div>
+                
                 <div class="section-box">
                     <p><span class="content-title">{title}</span></p>
                 </div>
@@ -800,11 +1182,36 @@ def render_main_page():
                     <p><span class="content-description">{description}</span></p>
                 </div>
                 
-                <!-- MODIFIED: Single button instead of 4 small buttons -->
+                <!-- Single button for opening listing -->
                 <div class="single-button-container">
                     <button class="custom-button open-listing-button" onclick="openListing()">
-                        🔗 Open Listing in New Tab
+                        Open Listing in New Tab
                     </button>
+                </div>
+                
+                <!-- Buy decision buttons -->
+                <div class="buy-decision-container">
+                    <button class="buy-yes-button" onclick="buyYes()">
+                        Yes - Buy now
+                    </button>
+                    <button class="buy-no-button" onclick="buyNo()">
+                        No - Do not purchase
+                    </button>
+                </div>
+                
+                <!-- Confirmation dialog (initially hidden) -->
+                <div class="confirmation-container">
+                    <div class="confirmation-text">
+                        Are you sure?
+                    </div>
+                    <div class="confirmation-buttons">
+                        <button class="confirm-yes-button">
+                            Yes
+                        </button>
+                        <button class="confirm-no-button">
+                            No
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="details-row">
@@ -855,7 +1262,7 @@ class FacebookScraper:
         Starts your existing Cloudflare Tunnel for fk43b0p45crc03r.xyz
         """
         #pc
-        cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
+        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
         #laptop
         #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
         
@@ -1791,410 +2198,3 @@ class FacebookScraper:
                         drag_rect = None
             # Handle dragging and resizing
             if dragging and drag_rect is not None:
-                rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
-                rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
-            elif resizing and drag_rect is not None:
-                if resize_edge == 'bottom-right':
-                    width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
-                    height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
-                    rectangles[drag_rect].size = (width, height)
-            screen.fill((204, 210, 255))
-            for i, rect in enumerate(rectangles):
-                pygame.draw.rect(screen, (0, 0, 0), rect, 2)
-                number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
-                number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
-                screen.blit(number_text, number_rect)
-
-                if i == 2:  # Rectangle 3 (index 2) - Title
-                    self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
-                elif i == 1:  # Rectangle 2 (index 1) - Price
-                    self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
-                elif i == 7:  # Rectangle 8 (index 7) - Description
-                    self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
-                elif i == 8:  # Rectangle 9 (index 8) - Join Date
-                    self.render_text_in_rect(screen, fonts['join_date'], current_listing_join_date, rect, (0, 0, 0))
-                elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
-                    self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
-                elif i == 9:  # Rectangle 10 (index 9) - Profit
-                    self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
-                elif i == 0:  # Rectangle 1 (index 0) - Detected Items
-                    self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
-                elif i == 10:  # Rectangle 11 (index 10) - Images
-                    self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
-                elif i == 3:  # Rectangle 4 (index 3) - Click to open
-                    click_text = "CLICK TO OPEN LISTING IN CHROME"
-                    self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
-                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
-                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
-
-
-            screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
-
-            if suitable_listings:
-                listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
-                screen.blit(listing_counter, (10, 40))
-
-            pygame.display.flip()
-            clock.tick(30)
-
-        self.save_rectangle_config(rectangles)
-        pygame.quit()
-
-    def setup_chrome_profile_driver(self):
-        # CRITICAL: Ensure NO Chrome instances are open before running
-        
-        # Comprehensive Chrome options
-        chrome_options = webdriver.ChromeOptions()
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,  # Disable notifications
-            "profile.default_content_setting_values.popups": 0,         # Block popups (default = 0)
-            "download.prompt_for_download": False,                      # Disable download prompt
-        }
-        chrome_options.add_experimental_option("prefs", prefs)
-        
-        # Use a dedicated, isolated user data directory to prevent conflicts.
-        chrome_options.add_argument(f"user-data-dir={SCRAPER_USER_DATA_DIR}")
-        chrome_options.add_argument("profile-directory=Profile 2")
-        #profile 10 is blue orchid
-        #default = laptop
-        #profile 2 = pc
-        
-        # Additional safety options
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--log-level=3")
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        
-        try:
-            # Use specific Chrome driver path
-            service = Service(ChromeDriverManager().install(), log_path=os.devnull)
-            
-            # Create driver with robust error handling
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            
-            # Verify driver is functional
-            print("Scraper Chrome driver successfully initialized!")
-            
-            return driver
-        
-        except Exception as e:
-            print(f"CRITICAL CHROME DRIVER ERROR: {e}")
-            print("Possible solutions:")
-            print("1. Close all Chrome instances")
-            print("2. Verify Chrome profile exists")
-            print("3. Check Chrome and WebDriver versions")
-            sys.exit(1)
-
-
-    def setup_chrome_messaging_driver(self):
-        chrome_options = webdriver.ChromeOptions()
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,  # Disable notifications
-            "profile.default_content_setting_values.popups": 0,         # Block popups (default = 0)
-            "download.prompt_for_download": False,                      # Disable download prompt
-        }
-        chrome_options.add_experimental_option("prefs", prefs)
-        # Use a separate, dedicated user data directory for the second driver.
-        chrome_options.add_argument(f"user-data-dir={MESSAGING_USER_DATA_DIR}")
-        chrome_options.add_argument("profile-directory=Profile 11")
-        #profile 11 = pc
-        #profile 1 = laptop
-
-
-        # Additional options to improve stability
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--log-level=3")
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-
-        try:
-            # Use specific Chrome driver path
-            service = Service(ChromeDriverManager().install(), log_path=os.devnull)
-            
-            # Create driver with robust error handling
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            
-            # Verify driver is functional
-            print("Messaging Chrome driver successfully initialized!")
-            
-            return driver
-
-        except Exception as e:
-            print(f"CRITICAL CHROME DRIVER ERROR: {e}")
-            print("Possible solutions:")
-            print("1. Ensure Google Chrome is closed")
-            print("2. Verify Chrome profile path is correct")
-            print("3. Check Chrome and WebDriver versions")
-            return None  # Return None instead of sys.exit(1)
-            
-    def initialize_pygame_window(self):
-        pygame.init()
-        screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
-        pygame.display.set_caption("Facebook Marketplace Scanner")
-        return screen, pygame.time.Clock()
-
-    def load_rectangle_config(self):
-        return json.load(open(CONFIG_FILE, 'r')) if os.path.exists(CONFIG_FILE) else None
-
-    def save_rectangle_config(self, rectangles):
-        json.dump([(rect.x, rect.y, rect.width, rect.height) for rect in rectangles], open(CONFIG_FILE, 'w'))
-
-    def render_text_in_rect(self, screen, font, text, rect, color):
-        words = text.split()
-        lines = []
-        current_line = []
-        for word in words:
-            test_line = ' '.join(current_line + [word])
-            test_width, _ = font.size(test_line)
-            if test_width <= rect.width - 10:
-                current_line.append(word)
-            else:
-                if current_line:
-                    lines.append(' '.join(current_line))
-                    current_line = [word]
-                else:
-                    lines.append(word)
-        if current_line:
-            lines.append(' '.join(current_line))
-
-        total_height = sum(font.size(line)[1] for line in lines)
-        if total_height > rect.height:
-            scale_factor = rect.height / total_height
-            new_font_size = max(1, int(font.get_height() * scale_factor))
-            try:
-                font = pygame.font.Font(None, new_font_size)  # Use default font
-            except pygame.error:
-                print(f"Error creating font with size {new_font_size}")
-                return  # Skip rendering if font creation fails
-
-        y = rect.top + 5
-        for line in lines:
-            try:
-                text_surface = font.render(line, True, color)
-                text_rect = text_surface.get_rect(centerx=rect.centerx, top=y)
-                screen.blit(text_surface, text_rect)
-                y += font.get_linesize()
-            except pygame.error as e:
-                print(f"Error rendering text: {e}")
-                continue  # Skip this line if rendering fails
-
-    def render_multiline_text(self, screen, font, text, rect, color):
-        # Convert dictionary to formatted string if needed
-        if isinstance(text, dict):
-            text_lines = []
-            for key, value in text.items():
-                text_lines.append(f"{key}: {value}")
-            text = '\n'.join(text_lines)
-        
-        # Rest of the existing function remains the same
-        words = text.split()
-        lines = []
-        current_line = []
-        for word in words:
-            test_line = ' '.join(current_line + [word])
-            test_width, _ = font.size(test_line)
-            if test_width <= rect.width - 20:
-                current_line.append(word)
-            else:
-                if current_line:
-                    lines.append(' '.join(current_line))
-                    current_line = [word]
-                else:
-                    lines.append(word)
-        if current_line:
-            lines.append(' '.join(current_line))
-
-        total_height = sum(font.size(line)[1] for line in lines)
-        if total_height > rect.height:
-            scale_factor = rect.height / total_height
-            new_font_size = max(1, int(font.get_height() * scale_factor))
-            try:
-                font = pygame.font.Font(None, new_font_size)  # Use default font
-            except pygame.error:
-                print(f"Error creating font with size {new_font_size}")
-                return  # Skip rendering if font creation fails
-
-        y_offset = rect.top + 10
-        for line in lines:
-            try:
-                text_surface = font.render(line, True, color)
-                text_rect = text_surface.get_rect(centerx=rect.centerx, top=y_offset)
-                screen.blit(text_surface, text_rect)
-                y_offset += font.get_linesize()
-                if y_offset + font.get_linesize() > rect.bottom - 10:
-                    break
-            except pygame.error as e:
-                print(f"Error rendering text: {e}")
-                continue  # Skip this line if rendering fails
-        
-    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None):
-        global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
-        global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
-        global current_bounding_boxes, current_listing_url, current_suitability 
-
-        # Close and clear existing images
-        if 'current_listing_images' in globals():
-            for img in current_listing_images:
-                try:
-                    img.close()  # Explicitly close the image
-                except Exception as e:
-                    print(f"Error closing image: {str(e)}")
-            current_listing_images.clear()
-
-        if processed_images:
-            for img in processed_images:
-                try:
-                    img_copy = img.copy()  # Create a fresh copy
-                    current_listing_images.append(img_copy)
-                except Exception as e:
-                    print(f"Error copying image: {str(e)}")
-        
-        # Store bounding boxes with more robust handling
-        current_bounding_boxes = {
-            'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
-            'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
-        }
-
-        # Handle price formatting
-        if isinstance(price, str) and price.startswith("Price:\n£"):
-            formatted_price = price
-        else:
-            try:
-                float_price = float(price) if price is not None else 0.00
-                formatted_price = f"Price:\n£{float_price:.2f}"
-            except ValueError:
-                formatted_price = "Price:\n£0.00"
-
-        # Handle expected_revenue formatting
-        if isinstance(expected_revenue, float):
-            formatted_expected_revenue = f"Rev:\n£{expected_revenue:.2f}"
-        elif isinstance(expected_revenue, str) and expected_revenue.startswith("Rev:\n£"):
-            formatted_expected_revenue = expected_revenue
-        else:
-            formatted_expected_revenue = "Rev:\n£0.00"
-
-        # Handle profit formatting
-        if isinstance(profit, float):
-            formatted_profit = f"Profit:\n£{profit:.2f}"
-        elif isinstance(profit, str) and profit.startswith("Profit:\n£"):
-            formatted_profit = profit
-        else:
-            formatted_profit = "Profit:\n£0.00"
-
-        # Handle detected_items with individual revenues
-            # Handle detected_items with individual revenues
-        if isinstance(detected_items, dict):
-            all_prices = self.fetch_all_prices()
-            formatted_detected_items = {}
-            for item, count in detected_items.items():
-                if count > 0:
-                    item_price = all_prices.get(item, 0) * float(count)
-                    formatted_detected_items[item] = f"{count} (£{item_price:.2f})"
-        else:
-            formatted_detected_items = {"no_items": "No items detected"}
-
-        # Explicitly set the global variable
-        current_detected_items = formatted_detected_items
-        current_listing_title = title[:50] + '...' if len(title) > 50 else title
-        current_listing_description = description[:200] + '...' if len(description) > 200 else description
-        current_listing_join_date = join_date
-        current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
-        current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
-        current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
-        current_listing_url = url
-        current_suitability = suitability if suitability else "Suitability unknown"
-
-    def update_pygame_window(self, title, description, join_date, price):
-        self.update_listing_details(title, description, join_date, price)
-        # No need to do anything else here, as the Pygame loop will use the updated global variables
-
-    def clear_output_file(self):
-        with open(OUTPUT_FILE_PATH, 'w') as f:
-            f.write('')  # This will clear the file
-        print(f"Cleared the content of {OUTPUT_FILE_PATH}")
-
-    def write_to_file(self, message, summary=False):
-        with open(OUTPUT_FILE_PATH, 'a') as f:
-            f.write(message + '\n')
-        if summary:
-            print(message)
-
-    def render_images(self, screen, images, rect, bounding_boxes):
-        if not images:
-            return
-
-        num_images = len(images)
-        if num_images == 1:
-            grid_size = 1
-        elif 2 <= num_images <= 4:
-            grid_size = 2
-        else:
-            grid_size = 3
-
-        cell_width = rect.width // grid_size
-        cell_height = rect.height // grid_size
-
-        for i, img in enumerate(images):
-            if i >= grid_size * grid_size:
-                break
-            row = i // grid_size
-            col = i % grid_size
-            img = img.resize((cell_width, cell_height))
-            img_surface = pygame.image.fromstring(img.tobytes(), img.size, img.mode)
-            screen.blit(img_surface, (rect.left + col * cell_width, rect.top + row * cell_height))
-
-        # Display suitability reason
-        if FAILURE_REASON_LISTED:
-            font = pygame.font.Font(None, 24)
-            suitability_text = font.render(current_suitability, True, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
-            screen.blit(suitability_text, (rect.left + 10, rect.bottom - 30))
-
-    def process_suitable_listing(self, listing_info, all_prices, listing_index):
-        # Default values to ensure the variable always exists
-        processed_images = []
-        image_paths = []
-        suitability_reason = "Not processed"
-        profit_suitability = False
-        display_objects = {}  # Initialize as empty dictionary
-
-        if listing_info["image_urls"]:
-            for j, image_url in enumerate(listing_info["image_urls"]):
-                save_path = os.path.join(r"C:\Users\zacha\Downloads", f"listing_{listing_index+1}_photo_{j+1}.jpg")
-                if self.save_image(image_url, save_path):
-                    image_paths.append(save_path)
-        else:
-            print("No product images found to save.")
-
-        detected_objects = {}
-        processed_images = []
-        total_revenue = 0
-        expected_profit = 0
-        profit_percentage = 0
-        
-        if image_paths:
-            print("Performing object detection...")
-            detected_objects, processed_images = self.perform_object_detection(image_paths, listing_info["title"], listing_info["description"])
-            listing_price = float(listing_info["price"])
-            total_revenue, expected_profit, profit_percentage, display_objects = self.calculate_revenue(
-                detected_objects, all_prices, listing_price, listing_info["title"], listing_info["description"])
-            listing_info['processed_images'] = processed_images.copy()
-
-        # Remove 'controller' from display_objects to prevent comparison issues    
-        # Store the processed images in listing_info, instead of creating copies
-        listing_info['processed_images'] = processed_images
-        
-        # Game classes for detection
-        game_classes = [
-    '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
-    'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
-    'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
-    'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
-    'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
-    'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
-    'sword_p', 'tears_z', 'violet_p'
-    ]
-        
-        # Count detected games
-        game_count = sum(detected_objects.get(game, 0) for game in game_classes)
