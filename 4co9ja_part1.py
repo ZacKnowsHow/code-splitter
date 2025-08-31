@@ -74,14 +74,14 @@ BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
 TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
 
-PRICE_THRESHOLD = 25.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
+PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
     'controller','tv_black', 
     'tv_white', 'comfort_h',
-    'comfort_h_joy'
+    'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = True
+VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
 print_images_backend_info = False
 test_bookmark_function = False

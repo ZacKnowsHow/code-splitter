@@ -1301,6 +1301,19 @@
                 messaging_driver.quit()
 
 class VintedScraper:
+
+    def restart_driver_if_dead(self, driver):
+        """If driver is dead, create a new one. That's it."""
+        try:
+            driver.current_url  # Simple test
+            return driver  # Driver is fine
+        except:
+            print("🔄 Driver crashed, restarting...")
+            try:
+                driver.quit()
+            except:
+                pass
+            return self.setup_driver()
     # Add this method to the VintedScraper class
     def send_pushover_notification(self, title, message, api_token, user_key):
         """
@@ -2186,16 +2199,3 @@ class VintedScraper:
                 
                 if not pay_button:
                     log_step("pay_button_not_found", False, "Payment interface not available")
-                    try:
-                        driver.close()
-                        if len(driver.window_handles) > 0:
-                            driver.switch_to.window(driver.window_handles[0])
-                    except:
-                        pass
-                    log_final_result()
-                    return
-
-                log_step("pay_button_found", True)
-                process_log['critical_operations'].append("pay_button_found")
-
-                # PURCHASE LOOP - Attempt purchase with error handling
