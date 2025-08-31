@@ -1,4 +1,62 @@
 # Continuation from line 6601
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+            else:
+                print("📄 No more pages and no max reached - refreshing for new listings")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+
+            refresh_cycle += 1
+            cycles_since_restart += 1  # NEW: Increment counter after each cycle
+            is_first_refresh = False
+
+    def start_cloudflare_tunnel(self, port=5000):
+        """
+        Starts a Cloudflare Tunnel using the cloudflared binary.
+        Adjust the cloudflared_path if your executable is in a different location.
+        """
+        # Path to the cloudflared executable
+        #pc
+        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #laptop
+        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
+        
+        # Start the tunnel with the desired command-line arguments
+        process = subprocess.Popen(
+            [cloudflared_path, "tunnel", "--url", f"http://localhost:{port}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Function to read and print cloudflared output asynchronously
+        def read_output(proc):
+            for line in proc.stdout:
+                print("[cloudflared]", line.strip())
+        
+        # Start a thread to print cloudflared output so you can see the public URL and any errors
+        threading.Thread(target=read_output, args=(process,), daemon=True).start()
+        
+        # Wait a few seconds for the tunnel to establish (adjust if needed).
+        time.sleep(5)
+        return process
+
+    def run_flask_app(self):
+        try:
+            print("Starting Flask app for https://fk43b0p45crc03r.xyz/")
+            
+            # Run Flask locally - your domain should be configured to tunnel to this
+            app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+            
+        except Exception as e:
+            print(f"Error starting Flask app: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def bookmark_driver(self, listing_url, username=None):
+        """
+        ENHANCED ROBUST bookmark driver with success rate logging, selector alternatives, and failure fast-path
+        CRITICAL: Preserves the exact 0.25 second wait and tab closing sequence after pay button click
+        """
+        
         # SUCCESS RATE LOGGING - Track exactly where and when things break
         step_log = {
             'start_time': time.time(),
@@ -263,6 +321,40 @@
             if first_buy_element:
                 log_step("first_buy_button_clicked", True, f"Used: {first_buy_selector[:30]}...")
                 
+                # NEW: Add "Ship to home" button click here - VERY QUICK
+                try:
+                    print("🏠 QUICK: Looking for Ship to home button...")
+                    
+                    # Try to find and click "Ship to home" button quickly (2 second timeout only)
+                    ship_to_home_selectors = [
+                        '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]',
+                        '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to home"]',
+                        '//h2[text()="Ship to home"]',
+                        '//*[text()="Ship to home"]'
+                    ]
+                    
+                    ship_home_clicked = False
+                    for selector in ship_to_home_selectors:
+                        try:
+                            ship_element = WebDriverWait(self.persistent_bookmark_driver, 2).until(
+                                EC.element_to_be_clickable((By.XPATH, selector))
+                            )
+                            ship_element.click()
+                            print("✅ QUICK: Ship to home button clicked successfully")
+                            ship_home_clicked = True
+                            time.sleep(2.75) # takes a while to load after clicking
+                            break
+                        except:
+                            continue
+                    
+                    if not ship_home_clicked:
+                        print("⚠️ QUICK: Ship to home button not found - continuing...")
+                
+                except Exception as ship_error:
+                    print(f"⚠️ QUICK: Ship to home click failed: {ship_error}")
+                    # Continue regardless - don't let this stop the bookmark process
+                
+                # EXISTING CODE CONTINUES HERE (look for Pay button)
                 # Look for Pay button with enhanced selectors
                 pay_element, pay_selector = try_selectors(
                     self.persistent_bookmark_driver,

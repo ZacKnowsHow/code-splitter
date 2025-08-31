@@ -1,4 +1,17 @@
 # Continuation from line 4401
+                    try:
+                        driver.close()
+                        if len(driver.window_handles) > 0:
+                            driver.switch_to.window(driver.window_handles[0])
+                    except:
+                        pass
+                    log_final_result()
+                    return
+
+                log_step("pay_button_found", True)
+                process_log['critical_operations'].append("pay_button_found")
+
+                # PURCHASE LOOP - Attempt purchase with error handling
                 purchase_successful = False
                 max_attempts = 250
                 attempt = 0
@@ -1942,7 +1955,7 @@
     def search_vinted_with_refresh(self, driver, search_query):
         """
         Enhanced search_vinted method with refresh and rescan functionality
-        UPDATED: Now prints username alongside other listing details
+        UPDATED: Now restarts the main driver every 250 cycles to prevent freezing
         """
         global suitable_listings, current_listing_index
         
@@ -1970,42 +1983,86 @@
                 print("✅ Model loaded successfully.")
             except Exception as e:
                 print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
+        
         print(f"CUDA available: {torch.cuda.is_available()}")
         print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
 
         # Load model with explicit GPU usage
         if torch.cuda.is_available():
-            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
+            model = YOLO(MODEL_WEIGHTS).cuda()
             print("✅ YOLO model loaded on GPU")
         else:
-            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
+            model = YOLO(MODEL_WEIGHTS).cpu()
             print("⚠️ YOLO model loaded on CPU (no CUDA available)")
 
-        # Initial page setup
-        params = {
-            "search_text": search_query,
-            "price_from": PRICE_FROM,
-            "price_to": PRICE_TO,
-            "currency": CURRENCY,
-            "order": ORDER,
-        }
-        driver.get(f"{BASE_URL}?{urlencode(params)}")
-        main = driver.current_window_handle
-
-        # Load previously scanned listing IDs (this will now be empty since we cleared the file)
+        # Store original driver reference
+        current_driver = driver
+        
+        # Load previously scanned listing IDs
         scanned_ids = self.load_scanned_vinted_ids()
         print(f"📚 Loaded {len(scanned_ids)} previously scanned listing IDs")
 
         page = 1
-        overall_listing_counter = 0  # Total listings processed across all cycles
+        overall_listing_counter = 0
         refresh_cycle = 1
         is_first_refresh = True
+        
+        # NEW: Driver restart tracking
+        DRIVER_RESTART_INTERVAL = 250
+        cycles_since_restart = 0
 
-        # Main scanning loop with refresh functionality
+        # Main scanning loop with refresh functionality AND driver restart
         while True:
             print(f"\n{'='*60}")
             print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
+            print(f"🔄 Cycles since last driver restart: {cycles_since_restart}")
             print(f"{'='*60}")
+            
+            # NEW: Check if we need to restart the driver
+            if cycles_since_restart >= DRIVER_RESTART_INTERVAL:
+                print(f"\n🔄 DRIVER RESTART: Reached {DRIVER_RESTART_INTERVAL} cycles")
+                print("🔄 RESTARTING: Main scraping driver to prevent freezing...")
+                
+                try:
+                    # Close current driver safely
+                    print("🔄 CLOSING: Current driver...")
+                    current_driver.quit()
+                    time.sleep(2)  # Give time for cleanup
+                    
+                    # Create new driver
+                    print("🔄 CREATING: New driver...")
+                    current_driver = self.setup_driver()
+                    
+                    if current_driver is None:
+                        print("❌ CRITICAL: Failed to create new driver after restart")
+                        break
+                    
+                    print("✅ DRIVER RESTART: Successfully restarted main driver")
+                    cycles_since_restart = 0  # Reset counter
+                    
+                    # Re-navigate to search page after restart
+                    params = {
+                        "search_text": search_query,
+                        "price_from": PRICE_FROM,
+                        "price_to": PRICE_TO,
+                        "currency": CURRENCY,
+                        "order": ORDER,
+                    }
+                    current_driver.get(f"{BASE_URL}?{urlencode(params)}")
+                    
+                    # Wait for page to load after restart
+                    try:
+                        WebDriverWait(current_driver, 20).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                        )
+                        print("✅ RESTART: Page loaded successfully after driver restart")
+                    except TimeoutException:
+                        print("⚠️ RESTART: Timeout waiting for page after driver restart")
+                    
+                except Exception as restart_error:
+                    print(f"❌ RESTART ERROR: Failed to restart driver: {restart_error}")
+                    print("💥 CRITICAL: Cannot continue without working driver")
+                    break
             
             cycle_listing_counter = 0  # Listings processed in this cycle
             found_already_scanned = False
@@ -2015,7 +2072,7 @@
             
             while True:  # Page loop
                 try:
-                    WebDriverWait(driver, 20).until(
+                    WebDriverWait(current_driver, 20).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                     )
                 except TimeoutException:
@@ -2023,7 +2080,7 @@
                     break
 
                 # Get listing URLs from current page
-                els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
+                els = current_driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
                 urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
                 
                 if not urls:
@@ -2055,21 +2112,21 @@
 
                     overall_listing_counter += 1
 
-                    # Process the listing (same as original logic)
-                    driver.execute_script("window.open();")
-                    driver.switch_to.window(driver.window_handles[-1])
-                    driver.get(url)
+                    # Process the listing (using current_driver instead of driver)
+                    current_driver.execute_script("window.open();")
+                    current_driver.switch_to.window(current_driver.window_handles[-1])
+                    current_driver.get(url)
 
                     try:
                         listing_start_time = time.time()
-                        details = self.scrape_item_details(driver)
+                        details = self.scrape_item_details(current_driver)
                         second_price = self.extract_price(details["second_price"])
                         postage = self.extract_price(details["postage"])
                         total_price = second_price + postage
 
                         print(f"  Link:         {url}")
                         print(f"  Title:        {details['title']}")
-                        print(f"  Username:     {details.get('username', 'Username not found')}")  # NEW: Print username
+                        print(f"  Username:     {details.get('username', 'Username not found')}")
                         print(f"  Price:        {details['price']}")
                         print(f"  Second price: {details['second_price']} ({second_price:.2f})")
                         print(f"  Postage:      {details['postage']} ({postage:.2f})")
@@ -2078,7 +2135,7 @@
 
                         # Download images for the current listing
                         listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
-                        image_paths = self.download_images_for_listing(driver, listing_dir)
+                        image_paths = self.download_images_for_listing(current_driver, listing_dir)
 
                         # Perform object detection and get processed images
                         detected_objects = {}
@@ -2115,8 +2172,8 @@
                             self.save_vinted_listing_id(listing_id)
 
                     finally:
-                        driver.close()
-                        driver.switch_to.window(main)
+                        current_driver.close()
+                        current_driver.switch_to.window(current_driver.window_handles[0])  # Use index 0 instead of main
 
                 # Check if we need to break out of page loop
                 if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
@@ -2124,8 +2181,8 @@
 
                 # Try to go to next page
                 try:
-                    nxt = driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
-                    driver.execute_script("arguments[0].click();", nxt)
+                    nxt = current_driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
+                    current_driver.execute_script("arguments[0].click();", nxt)
                     page += 1
                     time.sleep(2)
                 except NoSuchElementException:
@@ -2139,63 +2196,6 @@
             
             if found_already_scanned:
                 print(f"🔁 Found already scanned listing - refreshing immediately")
-                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
             elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
                 print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
-                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
-            else:
-                print("📄 No more pages and no max reached - refreshing for new listings")
-                self.refresh_vinted_page_and_wait(driver, is_first_refresh)
-
-            refresh_cycle += 1
-            is_first_refresh = False
-
-    def start_cloudflare_tunnel(self, port=5000):
-        """
-        Starts a Cloudflare Tunnel using the cloudflared binary.
-        Adjust the cloudflared_path if your executable is in a different location.
-        """
-        # Path to the cloudflared executable
-        #pc
-        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
-        #laptop
-        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
-        
-        # Start the tunnel with the desired command-line arguments
-        process = subprocess.Popen(
-            [cloudflared_path, "tunnel", "--url", f"http://localhost:{port}"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        
-        # Function to read and print cloudflared output asynchronously
-        def read_output(proc):
-            for line in proc.stdout:
-                print("[cloudflared]", line.strip())
-        
-        # Start a thread to print cloudflared output so you can see the public URL and any errors
-        threading.Thread(target=read_output, args=(process,), daemon=True).start()
-        
-        # Wait a few seconds for the tunnel to establish (adjust if needed).
-        time.sleep(5)
-        return process
-
-    def run_flask_app(self):
-        try:
-            print("Starting Flask app for https://fk43b0p45crc03r.xyz/")
-            
-            # Run Flask locally - your domain should be configured to tunnel to this
-            app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
-            
-        except Exception as e:
-            print(f"Error starting Flask app: {e}")
-            import traceback
-            traceback.print_exc()
-
-    def bookmark_driver(self, listing_url, username=None):
-        """
-        ENHANCED ROBUST bookmark driver with success rate logging, selector alternatives, and failure fast-path
-        CRITICAL: Preserves the exact 0.25 second wait and tab closing sequence after pay button click
-        """
-        
