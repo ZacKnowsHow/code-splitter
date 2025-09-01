@@ -1,4 +1,13 @@
 # Continuation from line 4401
+                                EC.presence_of_element_located((By.XPATH, selector))
+                            )
+                    else:
+                        if operation == 'click':
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                            )
+                        else:
+                            element = WebDriverWait(driver, timeout).until(
                                 EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                             )
                     
@@ -2190,12 +2199,3 @@
                         print("❌ CRITICAL: Failed to create new driver after restart")
                         break
                     
-                    print("✅ DRIVER RESTART: Successfully restarted main driver")
-                    cycles_since_restart = 0  # Reset counter
-                    
-                    # Re-navigate to search page after restart
-                    params = {
-                        "search_text": search_query,
-                        "price_from": PRICE_FROM,
-                        "price_to": PRICE_TO,
-                        "currency": CURRENCY,

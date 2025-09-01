@@ -2111,6 +2111,15 @@ class VintedScraper:
 
         # SELECTOR ALTERNATIVES - Multiple backup selectors for each critical element
         SELECTOR_SETS = {
+
+            'purchase_unsuccessful': [
+                 "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+                "//*[text()='Purchase unsuccessful']"
+            ],
+            
             'buy_button': [
                 'button[data-testid="item-buy-button"]',
                 'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
@@ -2187,15 +2196,6 @@ class VintedScraper:
                         if operation == 'click':
                             element = WebDriverWait(driver, timeout).until(
                                 EC.element_to_be_clickable((By.XPATH, selector))
-                            )
-                        else:
-                            element = WebDriverWait(driver, timeout).until(
-                                EC.presence_of_element_located((By.XPATH, selector))
-                            )
-                    else:
-                        if operation == 'click':
-                            element = WebDriverWait(driver, timeout).until(
-                                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                             )
                         else:
                             element = WebDriverWait(driver, timeout).until(
