@@ -62,7 +62,7 @@ TEST_SUITABLE_URLS = [
 TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
-BOOKMARK_TEST_MODE = True
+BOOKMARK_TEST_MODE = False
 BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6988862870-empty-pokemon-sword-and-shield?homepage_session_id=6236105e-1b45-4229-bf26-dfcfca3f4f82"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
