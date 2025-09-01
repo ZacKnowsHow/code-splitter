@@ -71,8 +71,8 @@ BUYING_TEST_MODE = False
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
 
 #tests both the bookmark and buying functionality
-TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6979387938-montblanc-explorer-extreme-parfum?referrer=catalog"
+TEST_BOOKMARK_BUYING_FUNCTIONALITY = True
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6989925386-green-and-yellow-chunky-bracelet?referrer=catalog"
 
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
@@ -97,6 +97,8 @@ test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 should_send_fail_bookmark_notification = True
 
+
+purchase_unsuccessful_detected_urls = {}  # Track URLs waiting for "Purchase unsuccessful" detection
 # Config
 PROFILE_DIR = "Default"
 PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default2"
@@ -4265,6 +4267,361 @@ class VintedScraper:
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
 
+    def handle_post_payment_logic(self, driver, driver_num, url):
+        """
+        Handle the logic after payment is clicked - check for success/errors
+        """
+        print(f"💳 DRIVER {driver_num}: Handling post-payment logic...")
+        
+        max_attempts = 250
+        attempt = 0
+        purchase_successful = False
+        
+        while not purchase_successful and attempt < max_attempts:
+            attempt += 1
+            
+            if attempt % 10 == 0:  # Print progress every 10 attempts
+                print(f"💳 DRIVER {driver_num}: Payment attempt {attempt}/{max_attempts}")
+            
+            # Check for error first (appears quickly)
+            try:
+                error_element = WebDriverWait(driver, 2).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//span[contains(text(), \"Sorry, we couldn't process your payment\")]"))
+                )
+                
+                if error_element:
+                    print(f"❌ DRIVER {driver_num}: Payment error detected, retrying...")
+                    
+                    # Click OK to dismiss error
+                    try:
+                        ok_button = WebDriverWait(driver, 3).until(
+                            EC.element_to_be_clickable((By.XPATH, "//button[contains(.//text(), 'OK, close')]"))
+                        )
+                        ok_button.click()
+                        print(f"✅ DRIVER {driver_num}: Error dismissed")
+                    except:
+                        print(f"⚠️ DRIVER {driver_num}: Could not dismiss error")
+                    
+                    # Wait and try to click pay again
+                    time.sleep(buying_driver_click_pay_wait_time)
+                    
+                    # Re-find and click pay button
+                    try:
+                        pay_button = driver.find_element(By.CSS_SELECTOR, 
+                            'button[data-testid="single-checkout-order-summary-purchase-button"]')
+                        pay_button.click()
+                    except:
+                        print(f"❌ DRIVER {driver_num}: Could not re-click pay button")
+                        break
+                    
+                    continue
+            
+            except TimeoutException:
+                pass  # No error found, continue
+            
+            # Check for success
+            try:
+                success_element = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//h2[text()='Purchase successful']"))
+                )
+                
+                if success_element:
+                    print(f"🎉 DRIVER {driver_num}: PURCHASE SUCCESSFUL!")
+                    purchase_successful = True
+                    
+                    # Send success notification
+                    try:
+                        self.send_pushover_notification(
+                            "Vinted Purchase Successful",
+                            f"Successfully purchased: {url}",
+                            'aks3to8guqjye193w7ajnydk9jaxh5',
+                            'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                        )
+                    except Exception as notification_error:
+                        print(f"⚠️ DRIVER {driver_num}: Notification failed: {notification_error}")
+                    
+                    break
+            
+            except TimeoutException:
+                # No success message yet, continue trying
+                continue
+        
+        if not purchase_successful:
+            print(f"❌ DRIVER {driver_num}: Purchase failed after {attempt} attempts")
+        
+        # Clean up
+        try:
+            driver.close()
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+        
+        self.release_driver(driver_num)
+        print(f"✅ DRIVER {driver_num}: Post-payment cleanup completed")
+
+
+    def monitor_for_purchase_unsuccessful(self, url, driver, driver_num, pay_button):
+        """
+        Monitor for "Purchase unsuccessful" detection from bookmark driver and click pay immediately
+        """
+        print(f"🔍 DRIVER {driver_num}: Starting 'Purchase unsuccessful' monitoring for {url[:50]}...")
+        
+        start_time = time.time()
+        check_interval = 0.1  # Check every 100ms for ultra-fast response
+        timeout = 25 * 60  # 25 minutes timeout
+        
+        global purchase_unsuccessful_detected_urls
+        
+        try:
+            while True:
+                elapsed = time.time() - start_time
+                
+                # Check timeout
+                if elapsed >= timeout:
+                    print(f"⏰ DRIVER {driver_num}: Monitoring timeout after {elapsed/60:.1f} minutes")
+                    break
+                
+                # Check if driver is still alive
+                try:
+                    driver.current_url
+                except:
+                    print(f"💀 DRIVER {driver_num}: Driver died during monitoring")
+                    break
+                
+                # CRITICAL: Check if "Purchase unsuccessful" was detected
+                if url in purchase_unsuccessful_detected_urls:
+                    entry = purchase_unsuccessful_detected_urls[url]
+                    if not entry.get('waiting', True):  # Flag changed by bookmark driver
+                        print(f"🎯 DRIVER {driver_num}: 'Purchase unsuccessful' detected! CLICKING PAY NOW!")
+                        
+                        # IMMEDIATELY click pay button
+                        try:
+                            # Try multiple click methods for maximum reliability
+                            pay_clicked = False
+                            
+                            # Method 1: Standard click
+                            try:
+                                pay_button.click()
+                                pay_clicked = True
+                                print(f"✅ DRIVER {driver_num}: Pay clicked using standard method")
+                            except:
+                                # Method 2: JavaScript click
+                                try:
+                                    driver.execute_script("arguments[0].click();", pay_button)
+                                    pay_clicked = True
+                                    print(f"✅ DRIVER {driver_num}: Pay clicked using JavaScript")
+                                except:
+                                    # Method 3: Force enable and click
+                                    try:
+                                        driver.execute_script("""
+                                            arguments[0].disabled = false;
+                                            arguments[0].click();
+                                        """, pay_button)
+                                        pay_clicked = True
+                                        print(f"✅ DRIVER {driver_num}: Pay clicked using force method")
+                                    except Exception as final_error:
+                                        print(f"❌ DRIVER {driver_num}: All pay click methods failed: {final_error}")
+                            
+                            if pay_clicked:
+                                print(f"💳 DRIVER {driver_num}: Payment initiated successfully!")
+                                
+                                # Continue with existing purchase logic
+                                self.handle_post_payment_logic(driver, driver_num, url)
+                            
+                            break  # Exit monitoring loop
+                            
+                        except Exception as click_error:
+                            print(f"❌ DRIVER {driver_num}: Error clicking pay button: {click_error}")
+                            break
+                
+                # Sleep briefly before next check
+                time.sleep(check_interval)
+        
+        except Exception as monitoring_error:
+            print(f"❌ DRIVER {driver_num}: Monitoring error: {monitoring_error}")
+        
+        finally:
+            # Clean up monitoring entry
+            if url in purchase_unsuccessful_detected_urls:
+                del purchase_unsuccessful_detected_urls[url]
+            
+            print(f"🧹 DRIVER {driver_num}: Monitoring cleanup completed")
+
+
+    def process_single_listing_with_driver_modified(self, url, driver_num, driver):
+        """
+        MODIFIED: Process listing that immediately navigates to buy page and waits for "Purchase unsuccessful"
+        """
+        print(f"🔥 DRIVER {driver_num}: Starting MODIFIED processing of {url[:50]}...")
+        
+        try:
+            # Driver health check
+            try:
+                current_url = driver.current_url
+                print(f"✅ DRIVER {driver_num}: Driver alive")
+            except Exception as e:
+                print(f"❌ DRIVER {driver_num}: Driver is dead: {str(e)}")
+                return
+            
+            # Open new tab
+            try:
+                driver.execute_script("window.open('');")
+                new_tab = driver.window_handles[-1]
+                driver.switch_to.window(new_tab)
+                print(f"✅ DRIVER {driver_num}: New tab opened")
+            except Exception as e:
+                print(f"❌ DRIVER {driver_num}: Failed to open new tab: {str(e)}")
+                return
+            
+            # Navigate to URL
+            actual_url = test_purchase_url if test_purchase_not_true else url
+            
+            navigation_success = False
+            for nav_attempt in range(3):
+                try:
+                    driver.get(actual_url)
+                    WebDriverWait(driver, 8).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                    navigation_success = True
+                    print(f"✅ DRIVER {driver_num}: Navigation successful")
+                    break
+                except Exception as nav_error:
+                    print(f"❌ DRIVER {driver_num}: Navigation attempt {nav_attempt+1} failed: {str(nav_error)}")
+                    if nav_attempt < 2:
+                        time.sleep(1)
+            
+            if not navigation_success:
+                print(f"❌ DRIVER {driver_num}: All navigation attempts failed")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                return
+            
+            # Click Buy now button
+            buy_button_clicked = False
+            buy_selectors = [
+                'button[data-testid="item-buy-button"]',
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]'
+            ]
+            
+            for selector in buy_selectors:
+                try:
+                    if selector.startswith('//'):
+                        buy_button = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        buy_button = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                    
+                    # Try multiple click methods
+                    for click_method in ['standard', 'javascript']:
+                        try:
+                            if click_method == 'standard':
+                                buy_button.click()
+                            else:
+                                driver.execute_script("arguments[0].click();", buy_button)
+                            
+                            buy_button_clicked = True
+                            print(f"✅ DRIVER {driver_num}: Buy button clicked using {click_method}")
+                            break
+                        except Exception as click_error:
+                            continue
+                    
+                    if buy_button_clicked:
+                        break
+                        
+                except Exception as selector_error:
+                    continue
+            
+            if not buy_button_clicked:
+                print(f"❌ DRIVER {driver_num}: Could not click buy button - item likely sold")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                return
+            
+            # MODIFIED: Find and store pay button location BUT DON'T CLICK YET
+            print(f"🔍 DRIVER {driver_num}: Finding pay button (but not clicking yet)...")
+            
+            pay_button = None
+            pay_selectors = [
+                'button[data-testid="single-checkout-order-summary-purchase-button"]',
+                '//button[@data-testid="single-checkout-order-summary-purchase-button"]'
+            ]
+            
+            for selector in pay_selectors:
+                try:
+                    if selector.startswith('//'):
+                        pay_button = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.XPATH, selector))
+                        )
+                    else:
+                        pay_button = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        )
+                    
+                    print(f"✅ DRIVER {driver_num}: Pay button found and stored")
+                    break
+                    
+                except Exception as selector_error:
+                    continue
+            
+            if not pay_button:
+                print(f"❌ DRIVER {driver_num}: Could not find pay button")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                return
+            
+            # MODIFIED: Register this URL for "Purchase unsuccessful" monitoring
+            global purchase_unsuccessful_detected_urls
+            purchase_unsuccessful_detected_urls[url] = {
+                'driver': driver,
+                'driver_num': driver_num,
+                'pay_button': pay_button,
+                'waiting': True,
+                'start_time': time.time()
+            }
+            
+            print(f"🔍 DRIVER {driver_num}: Registered for 'Purchase unsuccessful' monitoring")
+            print(f"⏱️ DRIVER {driver_num}: Will wait for bookmark driver to detect 'Purchase unsuccessful'")
+            
+            # Start monitoring thread for this specific URL
+            monitoring_thread = threading.Thread(
+                target=self.monitor_for_purchase_unsuccessful,
+                args=(url, driver, driver_num, pay_button)
+            )
+            monitoring_thread.daemon = True
+            monitoring_thread.start()
+            
+        except Exception as critical_error:
+            print(f"❌ DRIVER {driver_num}: Critical error: {str(critical_error)}")
+            # Clean up
+            try:
+                driver.close()
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+            except:
+                pass
+            self.release_driver(driver_num)
+
     def process_single_listing_with_driver(self, url, driver_num, driver):
         """
         ENHANCED: Process a single listing using the specified driver with robust error handling,
@@ -4791,7 +5148,18 @@ class VintedScraper:
         """
         remaining_time = max_total_time - elapsed_time
         return min(base_timeout, max(1, remaining_time * 0.5))  # Use half of remaining time, minimum 1s
+    def cleanup_processed_images(self, processed_images):
 
+        for img in processed_images:
+            try:
+                img.close()
+                del img
+            except:
+                pass
+        processed_images.clear()
+        import gc
+        gc.collect()  # Force garbage collection
+        
     def cleanup_all_buying_drivers(self):
         """
         FIXED: Clean up all buying drivers when program exits
@@ -4834,8 +5202,7 @@ class VintedScraper:
 
     def vinted_button_clicked_enhanced(self, url):
         """
-        FIXED: Enhanced button click handler with better error handling and driver management
-        MODIFIED: Now checks wait_for_bookmark_stopwatch_to_buy variable and waits for bookmark timer
+        MODIFIED: Enhanced button click handler that immediately opens buying driver on "yes"
         """
         print(f"🔘 VINTED BUTTON: Processing {url}")
         
@@ -4847,40 +5214,10 @@ class VintedScraper:
         # Mark as clicked immediately to prevent race conditions
         self.clicked_yes_listings.add(url)
         
-        # NEW: Check wait_for_bookmark_stopwatch_to_buy variable
-        if wait_for_bookmark_stopwatch_to_buy:
-            print(f"⏰ WAITING: wait_for_bookmark_stopwatch_to_buy is TRUE")
-            
-            # Check if this listing has a bookmark timer
-            if url in self.bookmark_timers:
-                print(f"⏰ TIMER: Found active bookmark timer for {url}")
-                
-                # Calculate how long the listing has been bookmarked
-                # We need to track when bookmarking started for each listing
-                if not hasattr(self, 'bookmark_start_times'):
-                    self.bookmark_start_times = {}
-                
-                if url in self.bookmark_start_times:
-                    elapsed_time = time.time() - self.bookmark_start_times[url]
-                    remaining_time = bookmark_stopwatch_length - elapsed_time
-                    
-                    if remaining_time > 0:
-                        print(f"⏰ WAITING: Need to wait {remaining_time:.1f} more seconds for bookmark timer")
-                        print(f"⏰ STATUS: Listing has been bookmarked for {elapsed_time:.1f} seconds")
-                        
-                        # Wait for the remaining time
-                        time.sleep(remaining_time)
-                        print(f"⏰ COMPLETE: Bookmark timer reached {bookmark_stopwatch_length} seconds")
-                    else:
-                        print(f"⏰ READY: Bookmark timer already exceeded {bookmark_stopwatch_length} seconds")
-                else:
-                    print(f"⚠️ WARNING: No bookmark start time found for {url}, proceeding immediately")
-            else:
-                print(f"⚠️ WARNING: No bookmark timer found for {url}, proceeding immediately")
-        else:
-            print(f"🚀 IMMEDIATE: wait_for_bookmark_stopwatch_to_buy is FALSE, proceeding immediately")
+        # MODIFIED: Immediately start buying process when user clicks yes
+        print(f"🚀 IMMEDIATE: Starting buying process for {url}")
         
-        # FIXED: Better driver acquisition with retry logic
+        # Get available driver
         max_retries = 3
         retry_count = 0
         
@@ -4890,7 +5227,7 @@ class VintedScraper:
             if driver is not None:
                 # Successfully got a driver, process in separate thread
                 processing_thread = threading.Thread(
-                    target=self.process_single_listing_with_driver,
+                    target=self.process_single_listing_with_driver_modified,
                     args=(url, driver_num, driver)
                 )
                 processing_thread.daemon = True
@@ -4904,8 +5241,8 @@ class VintedScraper:
         
         # If we get here, all retries failed
         print(f"❌ FAILED: Could not get available driver after {max_retries} retries")
-        # Remove from clicked list so they can try again later
         self.clicked_yes_listings.discard(url)
+
 
     def process_vinted_button_queue(self):
         """
@@ -5179,6 +5516,13 @@ class VintedScraper:
         options.add_experimental_option("prefs", prefs)
         #options.add_argument("--headless")
 
+
+        options.add_argument("--max_old_space_size=4096")  # Prevent memory crashes
+        options.add_argument("--disable-background-timer-throttling")
+        options.add_argument("--disable-renderer-backgrounding")
+        options.add_argument("--disable-backgrounding-occluded-windows")
+        options.add_argument("--disable-ipc-flooding-protection")
+        options.add_argument("--memory-pressure-off")  # Critical for long-running
         options.add_argument("--no-sandbox")
         options.add_argument("--window-size=800,600")
         options.add_argument("--disable-dev-shm-usage")
@@ -6721,6 +7065,7 @@ class VintedScraper:
                             print(f"✅ Saved listing ID: {listing_id}")
 
                         print("-" * 40)
+                        self.cleanup_processed_images(processed_images)
                         listing_end_time = time.time()
                         elapsed_time = listing_end_time - listing_start_time
                         print(f"⏱️ Listing {overall_listing_counter} processing completed in {elapsed_time:.2f} seconds")
@@ -7191,10 +7536,17 @@ class VintedScraper:
                 self.close_current_bookmark_driver()
                 print(f"🔄 CYCLING: Driver {step_log['driver_number']} processed, next will be {self.current_bookmark_driver_index + 1}/5")
 
+    def cleanup_purchase_unsuccessful_monitoring(self):
+        """
+        Clean up any active purchase unsuccessful monitoring when program exits
+        """
+        global purchase_unsuccessful_detected_urls
+        print(f"🧹 CLEANUP: Stopping purchase unsuccessful monitoring for {len(purchase_unsuccessful_detected_urls)} URLs")
+        purchase_unsuccessful_detected_urls.clear()
+
     def _monitor_purchase_unsuccessful(self, current_driver, step_log):
         """
-        Monitor for "Purchase unsuccessful" message for up to 25 minutes
-        FIXED: Properly handles driver cleanup when monitoring ends
+        MODIFIED: Monitor for "Purchase unsuccessful" message and trigger buying drivers
         """
         import time
         from selenium.webdriver.support.ui import WebDriverWait
@@ -7204,6 +7556,9 @@ class VintedScraper:
         
         # Set the monitoring flag
         self.monitoring_threads_active.set()
+        
+        # Get the current URL being monitored
+        current_url = current_driver.current_url
         
         # Start the stopwatch
         monitoring_start_time = time.time()
@@ -7221,7 +7576,8 @@ class VintedScraper:
         ]
         
         print(f"🔍 MONITORING: Watching for 'Purchase unsuccessful' for up to {max_wait_time/60:.0f} minutes...")
-        print(f"🔍 MONITORING: Tab will remain open during this time...")
+        
+        global purchase_unsuccessful_detected_urls
         
         try:
             while True:
@@ -7233,9 +7589,9 @@ class VintedScraper:
                     print(f"⏱️ STOPWATCH: Monitoring ended after {elapsed_time/60:.2f} minutes (TIMEOUT)")
                     break
                 
-                # FIXED: Check if driver is still alive before using it
+                # Check if driver is still alive
                 try:
-                    current_driver.current_url  # Test if driver is alive
+                    current_driver.current_url
                 except Exception as driver_dead:
                     print(f"💀 MONITORING: Driver died during monitoring: {driver_dead}")
                     print(f"⏱️ STOPWATCH: Monitoring ended after {elapsed_time/60:.2f} minutes (DRIVER DIED)")
@@ -7245,12 +7601,11 @@ class VintedScraper:
                 found_unsuccessful = False
                 for selector in unsuccessful_selectors:
                     try:
-                        # Use a short timeout for each check (1 second)
                         element = WebDriverWait(current_driver, 1).until(
                             EC.presence_of_element_located((By.XPATH, selector))
                         )
                         
-                        # Found it! 
+                        # Found it!
                         end_time = time.time()
                         total_elapsed = end_time - monitoring_start_time
                         
@@ -7259,7 +7614,14 @@ class VintedScraper:
                         print(f"⏱️ STOPWATCH: Monitoring completed in {total_elapsed/60:.2f} minutes ({total_elapsed:.2f} seconds)")
                         print(f"🕒 TIME: Found at {time.strftime('%H:%M:%S')}")
                         
-                        # Log the successful detection
+                        # MODIFIED: Signal all waiting buying drivers to click pay NOW
+                        print(f"🚀 TRIGGERING: All waiting buying drivers to click pay NOW!")
+                        
+                        for url, entry in purchase_unsuccessful_detected_urls.items():
+                            if entry.get('waiting', True):
+                                print(f"🎯 TRIGGERING: Buying driver for {url[:50]}...")
+                                entry['waiting'] = False  # Signal the buying driver
+                        
                         self._log_step(step_log, "purchase_unsuccessful_found", True, 
                                     f"Found after {total_elapsed:.2f}s using: {selector[:50]}...")
                         
@@ -7267,18 +7629,16 @@ class VintedScraper:
                         break
                         
                     except TimeoutException:
-                        # This selector didn't find anything, try next one
                         continue
                     except Exception as selector_error:
-                        # Log error but continue with other selectors
                         print(f"⚠️ MONITORING: Error with selector {selector}: {selector_error}")
                         continue
                 
                 if found_unsuccessful:
                     break
                     
-                # Wait a bit before checking again (don't spam the page)
-                time.sleep(2)  # Check every 2 seconds
+                # Wait a bit before checking again
+                time.sleep(0.5)  # Check every 500ms for faster response
         
         except Exception as monitoring_error:
             end_time = time.time()
@@ -7288,27 +7648,25 @@ class VintedScraper:
             self._log_step(step_log, "monitoring_error", False, str(monitoring_error))
         
         finally:
-            # FIXED: Always clean up properly when monitoring ends
+            # Clean up monitoring
             step_log['monitoring_active'] = False
-            self.monitoring_threads_active.clear()  # Clear the monitoring flag
+            self.monitoring_threads_active.clear()
             
             print(f"🗑️ MONITORING CLEANUP: Closing monitoring tab and advancing driver...")
             try:
-                # Try to close the current tab (monitoring tab)
                 current_driver.close()
                 print(f"✅ MONITORING CLEANUP: Closed monitoring tab")
             except Exception as tab_close_error:
                 print(f"⚠️ MONITORING CLEANUP: Error closing tab: {tab_close_error}")
             
             try:
-                # NOW close the bookmark driver and advance to next
-                self.close_current_bookmark_driver() 
+                self.close_current_bookmark_driver()
                 print(f"✅ MONITORING CLEANUP: Closed bookmark driver and advanced to next")
             except Exception as driver_close_error:
                 print(f"⚠️ MONITORING CLEANUP: Error closing driver: {driver_close_error}")
             
             print(f"🔄 MONITORING COMPLETE: Driver cleanup finished, ready for next bookmark")
-
+            
     def _execute_messages_sequence(self, current_driver, actual_url, username, step_log):
         """Execute the messages sequence for username validation"""
         self._log_step(step_log, "messages_sequence_start", True)
@@ -7953,6 +8311,11 @@ class VintedScraper:
         if TEST_BOOKMARK_BUYING_FUNCTIONALITY:
             print("🔖💳 TEST_BOOKMARK_BUYING_FUNCTIONALITY ENABLED")
             print(f"🔗 URL: {TEST_BOOKMARK_BUYING_URL}")
+                    
+            # Start Flask app in separate thread.
+            flask_thread = threading.Thread(target=self.run_flask_app)
+            flask_thread.daemon = True
+            flask_thread.start()
             
             # Skip all driver initialization, pygame, flask, etc.
             # Only run bookmark + buying process on the test URL
@@ -8147,7 +8510,8 @@ class VintedScraper:
             driver.quit()
             pygame.quit()
             self.cleanup_persistent_buying_driver()
-            self.cleanup_all_buying_drivers()  # NEW: Clean up buying drivers
+            self.cleanup_all_buying_drivers()
+            self.cleanup_purchase_unsuccessful_monitoring()  # NEW: Clean up buying drivers
             sys.exit(0)
 
 if __name__ == "__main__":
