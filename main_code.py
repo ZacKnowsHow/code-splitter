@@ -63,7 +63,7 @@ TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
 BOOKMARK_TEST_MODE = True
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6988848757-original-nintendo-switch-case?homepage_session_id=9843f82c-41df-4c18-bc2a-9bb84101c3f0"
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6979387938-montblanc-explorer-extreme-parfum?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 #tests the buying functionality
@@ -3586,6 +3586,7 @@ class VintedScraper:
         current_suitability = "Suitability unknown"
         suitable_listings = []
         current_listing_index = 0
+        self.monitoring_threads_active = threading.Event()
 
         self.vinted_button_queue = queue.Queue()
         self.vinted_processing_active = threading.Event()  # To track if we're currently processing
@@ -6812,6 +6813,18 @@ class VintedScraper:
             import traceback
             traceback.print_exc()
 
+    def is_monitoring_active(self):
+        """Check if any monitoring threads are still active"""
+        # Check if current bookmark driver exists (indicates monitoring might be active)
+        if hasattr(self, 'current_bookmark_driver') and self.current_bookmark_driver is not None:
+            try:
+                # Try to access the driver - if it fails, monitoring is done
+                self.current_bookmark_driver.current_url
+                return True
+            except:
+                return False
+        return False
+
     def bookmark_driver(self, listing_url, username=None):
         """
         MAIN bookmark driver function - MODIFIED to stay open and wait for "Purchase unsuccessful"
@@ -7187,6 +7200,9 @@ class VintedScraper:
         from selenium.webdriver.common.by import By
         from selenium.common.exceptions import TimeoutException
         
+        # Set the monitoring flag
+        self.monitoring_threads_active.set()
+        
         # Start the stopwatch
         monitoring_start_time = time.time()
         print(f"⏱️ STOPWATCH: Started monitoring at {time.strftime('%H:%M:%S')}")
@@ -7196,8 +7212,8 @@ class VintedScraper:
         
         # Define selectors for "Purchase unsuccessful" message
         unsuccessful_selectors = [
+            "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--staatus-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
             "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-            "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
             "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
             # Broader selectors as fallbacks
             "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
@@ -7266,6 +7282,7 @@ class VintedScraper:
         finally:
             # Always close the driver and advance to next when monitoring ends
             step_log['monitoring_active'] = False
+            self.monitoring_threads_active.clear()  # Clear the monitoring flag
             
             print(f"🗑️ CLEANUP: Closing monitoring tab and driver...")
             try:
@@ -7975,26 +7992,72 @@ class VintedScraper:
             # Exit immediately after test
             print("🔖💳 TEST_BOOKMARK_BUYING_FUNCTIONALITY COMPLETE - EXITING")
             sys.exit(0)
-        
+                
         if BOOKMARK_TEST_MODE:
             print("🧪 BOOKMARK TEST MODE ENABLED")
             print(f"🔗 URL: {BOOKMARK_TEST_URL}")
             print(f"👤 USERNAME: {BOOKMARK_TEST_USERNAME}")
             
-            # Skip all driver initialization, pygame, flask, etc.
-            # Just run the bookmark function directly
-            success = self.bookmark_driver(BOOKMARK_TEST_URL, BOOKMARK_TEST_USERNAME)
+            # Initialize all required global variables for proper operation
+            suitable_listings = []
+            current_listing_index = 0
+            recent_listings = {'listings': [], 'current_index': 0}
             
-            if success:
-                print("✅ BOOKMARK TEST SUCCESSFUL")
-            else:
-                print("❌ BOOKMARK TEST FAILED")
+            # Initialize all current listing variables
+            current_listing_title = "No title"
+            current_listing_description = "No description"
+            current_listing_join_date = "No join date"
+            current_listing_price = "0"
+            current_expected_revenue = "0"
+            current_profit = "0"
+            current_detected_items = "None"
+            current_listing_images = []
+            current_listing_url = ""
+            current_suitability = "Suitability unknown"
+            current_seller_reviews = "No reviews yet"
             
-            # Exit immediately after test
+            try:
+                # Start the bookmark process
+                success = self.bookmark_driver(BOOKMARK_TEST_URL, BOOKMARK_TEST_USERNAME)
+                
+                if success:
+                    print("✅ BOOKMARK TEST SUCCESSFUL")
+                    
+                    # STAY ALIVE and wait for monitoring to complete
+                    print("⏳ STAYING ALIVE: Waiting for monitoring thread to complete...")
+                    
+                    # Wait for the monitoring thread to finish
+                    while self.monitoring_threads_active.is_set():
+                        time.sleep(1)
+                        print("🔍 MONITORING: Still active, waiting...")
+                    
+                    print("✅ MONITORING: Complete - all threads finished")
+                    
+                else:
+                    print("❌ BOOKMARK TEST FAILED")
+                
+            except KeyboardInterrupt:
+                print("\n🛑 BOOKMARK TEST: Stopped by user")
+                # Force cleanup if user interrupts
+                self.cleanup_all_cycling_bookmark_drivers()
+            
+            except Exception as e:
+                print(f"❌ BOOKMARK TEST ERROR: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            finally:
+                # Final cleanup
+                print("🧹 FINAL CLEANUP: Closing any remaining drivers...")
+                self.cleanup_all_cycling_bookmark_drivers()
+                self.cleanup_all_buying_drivers()
+                self.cleanup_persistent_buying_driver()
+                self.cleanup_persistent_bookmark_driver()
+            
+            # Only exit after monitoring is truly complete
             print("🧪 BOOKMARK TEST MODE COMPLETE - EXITING")
             sys.exit(0)
-        
-        # NEW: BUYING_TEST_MODE implementation
+
         if BUYING_TEST_MODE:
             print("💳 BUYING TEST MODE ENABLED")
             print(f"🔗 URL: {BUYING_TEST_URL}")
