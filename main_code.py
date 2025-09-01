@@ -62,8 +62,8 @@ TEST_SUITABLE_URLS = [
 TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
-BOOKMARK_TEST_MODE = False
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6984057857-animal-crossing-new-horizons-box-and-disk?homepage_session_id=9255cc93-e50e-4ea1-9a02-75a6594ad2b2"
+BOOKMARK_TEST_MODE = True
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6988848757-original-nintendo-switch-case?homepage_session_id=9843f82c-41df-4c18-bc2a-9bb84101c3f0"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 #tests the buying functionality
@@ -4310,6 +4310,15 @@ class VintedScraper:
 
         # SELECTOR ALTERNATIVES - Multiple backup selectors for each critical element
         SELECTOR_SETS = {
+
+            'purchase_unsuccessful': [
+                 "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+                "//*[text()='Purchase unsuccessful']"
+            ],
+            
             'buy_button': [
                 'button[data-testid="item-buy-button"]',
                 'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
@@ -6805,8 +6814,8 @@ class VintedScraper:
 
     def bookmark_driver(self, listing_url, username=None):
         """
-        MAIN bookmark driver function - orchestrates the entire bookmark process
-        Each call creates a fresh driver, uses it once, then closes it
+        MAIN bookmark driver function - MODIFIED to stay open and wait for "Purchase unsuccessful"
+        When 'processing payment' is found, keeps tab open for up to 25 minutes watching for failure message
         """
         
         # Initialize step logging
@@ -6829,7 +6838,7 @@ class VintedScraper:
             
             try:
                 # Execute the main bookmark sequences
-                success = self._execute_bookmark_sequences(current_driver, listing_url, username, step_log)
+                success = self._execute_bookmark_sequences_with_monitoring(current_driver, listing_url, username, step_log)
                 
                 if success:
                     step_log['success'] = True
@@ -6845,8 +6854,30 @@ class VintedScraper:
                 
         finally:
             # CRITICAL: Always close the current driver and advance to next
-            self.close_current_bookmark_driver()
-            print(f"🔄 CYCLING: Driver {step_log['driver_number']} processed, next will be {self.current_bookmark_driver_index + 1}/5")
+            # NOTE: If monitoring thread is active, this will close after monitoring completes
+            if not hasattr(step_log, 'monitoring_active') or not step_log['monitoring_active']:
+                self.close_current_bookmark_driver()
+                print(f"🔄 CYCLING: Driver {step_log['driver_number']} processed, next will be {self.current_bookmark_driver_index + 1}/5")
+
+    def _execute_bookmark_sequences_with_monitoring(self, current_driver, listing_url, username, step_log):
+        """Execute bookmark sequences with Purchase unsuccessful monitoring"""
+        actual_url = step_log['actual_url']
+        bookmark_start_time = time.time()
+        self._log_step(step_log, "function_start", True)
+        
+        # Create new tab and navigate
+        if not self._create_tab_and_navigate(current_driver, actual_url, step_log):
+            return False
+        
+        # Execute first buy sequence (critical sequence)
+        first_sequence_success = self._execute_first_buy_sequence(current_driver, step_log)
+        
+        if not first_sequence_success:
+            return False
+        
+        # Execute second sequence with monitoring (MODIFIED PART)
+        return self._execute_second_sequence_with_monitoring(current_driver, actual_url, username, step_log)
+
 
     def _initialize_step_logging(self):
         """Initialize the step logging dictionary"""
@@ -6883,25 +6914,6 @@ class VintedScraper:
         # Store the actual URL for later use
         step_log['actual_url'] = actual_url
         return True
-
-    def _execute_bookmark_sequences(self, current_driver, listing_url, username, step_log):
-        """Execute the main bookmark sequences"""
-        actual_url = step_log['actual_url']
-        bookmark_start_time = time.time()
-        self._log_step(step_log, "function_start", True)
-        
-        # Create new tab and navigate
-        if not self._create_tab_and_navigate(current_driver, actual_url, step_log):
-            return False
-        
-        # Execute first buy sequence (critical sequence)
-        first_sequence_success = self._execute_first_buy_sequence(current_driver, step_log)
-        
-        if not first_sequence_success:
-            return False
-        
-        # Execute second sequence (processing payment check)
-        return self._execute_second_sequence(current_driver, actual_url, username, step_log)
 
     def _create_tab_and_navigate(self, current_driver, actual_url, step_log):
         """Create new tab and navigate to the listing URL"""
@@ -7075,8 +7087,8 @@ class VintedScraper:
             self._log_step(step_log, "critical_sequence_error", False, str(critical_error))
             return False
 
-    def _execute_second_sequence(self, current_driver, actual_url, username, step_log):
-        """Execute the second sequence - processing payment check and messages"""
+    def _execute_second_sequence_with_monitoring(self, current_driver, actual_url, username, step_log):
+        """Execute second sequence with Purchase unsuccessful monitoring"""
         self._log_step(step_log, "second_sequence_start", True)
         
         try:
@@ -7104,28 +7116,33 @@ class VintedScraper:
                 self._log_step(step_log, "second_buy_button_clicked", True, f"Used: {second_buy_selector[:30]}...")
                 
                 # Check for processing payment success
-                success = self._check_processing_payment(current_driver, step_log)
+                success = self._check_processing_payment_with_monitoring(current_driver, step_log)
                 
-                # Close second tab
-                current_driver.close()
-                if len(current_driver.window_handles) > 0:
-                    current_driver.switch_to.window(current_driver.window_handles[0])
-                self._log_step(step_log, "second_tab_closed", True)
+                # MODIFIED: Don't close second tab here if monitoring is active
+                if not (success and step_log.get('monitoring_active', False)):
+                    # Close second tab only if not monitoring
+                    current_driver.close()
+                    if len(current_driver.window_handles) > 0:
+                        current_driver.switch_to.window(current_driver.window_handles[0])
+                    self._log_step(step_log, "second_tab_closed", True)
                 
                 if success:
                     return True
             else:
                 self._log_step(step_log, "second_buy_button_not_found", False, "Proceeding with messages")
             
-            # Execute messages sequence
-            return self._execute_messages_sequence(current_driver, actual_url, username, step_log)
-            
+            # Execute messages sequence (only if not monitoring)
+            if not step_log.get('monitoring_active', False):
+                return self._execute_messages_sequence(current_driver, actual_url, username, step_log)
+            else:
+                return True  # Return true if monitoring started
+                
         except Exception as second_sequence_error:
             self._log_step(step_log, "second_sequence_error", False, str(second_sequence_error))
             return True  # Return True as this isn't a critical failure
 
-    def _check_processing_payment(self, current_driver, step_log):
-        """Check for processing payment message"""
+    def _check_processing_payment_with_monitoring(self, current_driver, step_log):
+        """Check for processing payment message and start monitoring if found"""
         processing_element, processing_selector = self._try_selectors(
             current_driver,
             'processing_payment',
@@ -7138,12 +7155,129 @@ class VintedScraper:
             element_text = processing_element.text.strip()
             self._log_step(step_log, "processing_payment_found", True, f"Text: {element_text}")
             print('SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+            
+            # START MONITORING FOR "Purchase unsuccessful" - NEW FUNCTIONALITY
+            print('🔍 MONITORING: Starting "Purchase unsuccessful" detection...')
             step_log['success'] = True
+            step_log['monitoring_active'] = True
+            
+            # Start monitoring in separate thread so other processing can continue
+            monitoring_thread = threading.Thread(
+                target=self._monitor_purchase_unsuccessful,
+                args=(current_driver, step_log)
+            )
+            monitoring_thread.daemon = True  # Don't block program exit
+            monitoring_thread.start()
+            
             return True
         else:
             self._log_step(step_log, "processing_payment_not_found", False, "Processing payment message not found")
             print('listing likely bookmarked by another')
             return False
+
+
+    def _monitor_purchase_unsuccessful(self, current_driver, step_log):
+        """
+        Monitor for "Purchase unsuccessful" message for up to 25 minutes
+        This runs in a separate thread and keeps the tab open
+        """
+        import time
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.by import By
+        from selenium.common.exceptions import TimeoutException
+        
+        # Start the stopwatch
+        monitoring_start_time = time.time()
+        print(f"⏱️ STOPWATCH: Started monitoring at {time.strftime('%H:%M:%S')}")
+        
+        # Maximum wait time: 25 minutes (1500 seconds)
+        max_wait_time = 25 * 60  # 1500 seconds
+        
+        # Define selectors for "Purchase unsuccessful" message
+        unsuccessful_selectors = [
+            "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+            "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+            "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+            # Broader selectors as fallbacks
+            "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+            "//*[text()='Purchase unsuccessful']"
+        ]
+        
+        print(f"🔍 MONITORING: Watching for 'Purchase unsuccessful' for up to {max_wait_time/60:.0f} minutes...")
+        print(f"🔍 MONITORING: Tab will remain open during this time...")
+        
+        try:
+            while True:
+                elapsed_time = time.time() - monitoring_start_time
+                
+                # Check if we've exceeded the maximum wait time
+                if elapsed_time >= max_wait_time:
+                    print(f"⏰ TIMEOUT: Maximum wait time of {max_wait_time/60:.0f} minutes reached")
+                    print(f"⏱️ STOPWATCH: Monitoring ended after {elapsed_time/60:.2f} minutes (TIMEOUT)")
+                    break
+                
+                # Try each selector to find "Purchase unsuccessful"
+                found_unsuccessful = False
+                for selector in unsuccessful_selectors:
+                    try:
+                        # Use a short timeout for each check (1 second)
+                        element = WebDriverWait(current_driver, 1).until(
+                            EC.presence_of_element_located((By.XPATH, selector))
+                        )
+                        
+                        # Found it! 
+                        end_time = time.time()
+                        total_elapsed = end_time - monitoring_start_time
+                        
+                        print(f"🎯 FOUND! 'Purchase unsuccessful' detected!")
+                        print(f"📍 ELEMENT: Found using selector: {selector}")
+                        print(f"⏱️ STOPWATCH: Monitoring completed in {total_elapsed/60:.2f} minutes ({total_elapsed:.2f} seconds)")
+                        print(f"🕒 TIME: Found at {time.strftime('%H:%M:%S')}")
+                        
+                        # Log the successful detection
+                        self._log_step(step_log, "purchase_unsuccessful_found", True, 
+                                    f"Found after {total_elapsed:.2f}s using: {selector[:50]}...")
+                        
+                        found_unsuccessful = True
+                        break
+                        
+                    except TimeoutException:
+                        # This selector didn't find anything, try next one
+                        continue
+                    except Exception as selector_error:
+                        # Log error but continue with other selectors
+                        print(f"⚠️ MONITORING: Error with selector {selector}: {selector_error}")
+                        continue
+                
+                if found_unsuccessful:
+                    break
+                    
+                # Wait a bit before checking again (don't spam the page)
+                time.sleep(2)  # Check every 2 seconds
+        
+        except Exception as monitoring_error:
+            end_time = time.time()
+            total_elapsed = end_time - monitoring_start_time
+            print(f"❌ MONITORING ERROR: {monitoring_error}")
+            print(f"⏱️ STOPWATCH: Monitoring ended after {total_elapsed/60:.2f} minutes (ERROR)")
+            self._log_step(step_log, "monitoring_error", False, str(monitoring_error))
+        
+        finally:
+            # Always close the driver and advance to next when monitoring ends
+            step_log['monitoring_active'] = False
+            
+            print(f"🗑️ CLEANUP: Closing monitoring tab and driver...")
+            try:
+                # Close the driver
+                current_driver.close()
+                
+                # Close current bookmark driver and advance to next
+                self.close_current_bookmark_driver()
+                print(f"🔄 CYCLING: Monitoring complete, advanced to next driver")
+                
+            except Exception as cleanup_error:
+                print(f"⚠️ CLEANUP ERROR: {cleanup_error}")
 
     def _execute_messages_sequence(self, current_driver, actual_url, username, step_log):
         """Execute the messages sequence for username validation"""
@@ -7256,6 +7390,15 @@ class VintedScraper:
     def _try_selectors(self, driver, selector_set_name, operation='find', timeout=5, click_method='standard', step_log=None):
         """Try selectors with quick timeouts and fail fast"""
         SELECTOR_SETS = {
+
+            'purchase_unsuccessful': [
+                "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+                "//*[text()='Purchase unsuccessful']"
+            ],
+
             'buy_button': [
                 "button[data-testid='item-buy-button']",
                 "button.web_ui__Button__primary[data-testid='item-buy-button']",
@@ -7377,7 +7520,6 @@ class VintedScraper:
             print("🔍 FAILURE DETAILS:")
             for failure in step_log['failures'][:3]:  # Show first 3 failures
                 print(f"  • {failure}")
-
     def cleanup_all_cycling_bookmark_drivers(self):
         """
         Clean up any remaining cycling bookmark driver when program exits
