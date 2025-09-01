@@ -1044,7 +1044,7 @@
         chrome_opts.add_argument("--headless")  # Try without headless first
         
         # Keep some logging for debugging
-        chrome_opts.add_argument("--log-level=1")  # More detailed logging
+        chrome_opts.add_argument("--log-level=3")  # More detailed logging
         chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
         
         try:
