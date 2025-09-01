@@ -1,4 +1,5 @@
 # Continuation from line 4401
+                            element = WebDriverWait(driver, timeout).until(
                                 EC.presence_of_element_located((By.XPATH, selector))
                             )
                     else:
@@ -2198,4 +2199,3 @@
                     if current_driver is None:
                         print("❌ CRITICAL: Failed to create new driver after restart")
                         break
-                    

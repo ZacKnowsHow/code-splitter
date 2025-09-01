@@ -1387,6 +1387,7 @@ class VintedScraper:
         current_suitability = "Suitability unknown"
         suitable_listings = []
         current_listing_index = 0
+        self.monitoring_threads_active = threading.Event()
 
         self.vinted_button_queue = queue.Queue()
         self.vinted_processing_active = threading.Event()  # To track if we're currently processing
@@ -2198,4 +2199,3 @@ class VintedScraper:
                                 EC.element_to_be_clickable((By.XPATH, selector))
                             )
                         else:
-                            element = WebDriverWait(driver, timeout).until(
