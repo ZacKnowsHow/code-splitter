@@ -62,8 +62,8 @@ TEST_SUITABLE_URLS = [
 TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
-BOOKMARK_TEST_MODE = False
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6984057857-animal-crossing-new-horizons-box-and-disk?homepage_session_id=9255cc93-e50e-4ea1-9a02-75a6594ad2b2"
+BOOKMARK_TEST_MODE = True
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6988848757-original-nintendo-switch-case?homepage_session_id=9843f82c-41df-4c18-bc2a-9bb84101c3f0"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 #tests the buying functionality
