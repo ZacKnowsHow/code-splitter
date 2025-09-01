@@ -63,7 +63,7 @@ TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
 BOOKMARK_TEST_MODE = True
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6979387938-montblanc-explorer-extreme-parfum?referrer=catalog"
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6988862870-empty-pokemon-sword-and-shield?homepage_session_id=6236105e-1b45-4229-bf26-dfcfca3f4f82"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 #tests the buying functionality
@@ -6825,53 +6825,6 @@ class VintedScraper:
                 return False
         return False
 
-    def bookmark_driver(self, listing_url, username=None):
-        """
-        MAIN bookmark driver function - MODIFIED to stay open and wait for "Purchase unsuccessful"
-        When 'processing payment' is found, keeps tab open for up to 25 minutes watching for failure message
-        """
-        
-        # Initialize step logging
-        step_log = self._initialize_step_logging()
-        
-        # Validate inputs and setup
-        if not self._validate_bookmark_inputs(listing_url, username, step_log):
-            self._log_final_bookmark_result(step_log)
-            return False
-        
-        try:
-            # Get the cycling driver
-            current_driver = self.get_next_bookmark_driver()
-            if current_driver is None:
-                self._log_step(step_log, "driver_creation_failed", False, "Could not create cycling driver")
-                self._log_final_bookmark_result(step_log)
-                return False
-            
-            self._log_step(step_log, "cycling_driver_created", True, f"Driver {step_log['driver_number']} ready")
-            
-            try:
-                # Execute the main bookmark sequences
-                success = self._execute_bookmark_sequences_with_monitoring(current_driver, listing_url, username, step_log)
-                
-                if success:
-                    step_log['success'] = True
-                    self._log_step(step_log, "bookmark_function_success", True)
-                
-                self._log_final_bookmark_result(step_log)
-                return success
-                
-            except Exception as main_error:
-                self._log_step(step_log, "main_function_error", False, str(main_error))
-                self._log_final_bookmark_result(step_log)
-                return False
-                
-        finally:
-            # CRITICAL: Always close the current driver and advance to next
-            # NOTE: If monitoring thread is active, this will close after monitoring completes
-            if not hasattr(step_log, 'monitoring_active') or not step_log['monitoring_active']:
-                self.close_current_bookmark_driver()
-                print(f"🔄 CYCLING: Driver {step_log['driver_number']} processed, next will be {self.current_bookmark_driver_index + 1}/5")
-
     def _execute_bookmark_sequences_with_monitoring(self, current_driver, listing_url, username, step_log):
         """Execute bookmark sequences with Purchase unsuccessful monitoring"""
         actual_url = step_log['actual_url']
@@ -7189,10 +7142,59 @@ class VintedScraper:
             return False
 
 
+    def bookmark_driver(self, listing_url, username=None):
+        """
+        MAIN bookmark driver function - FIXED to properly handle monitoring cleanup
+        """
+        
+        # Initialize step logging
+        step_log = self._initialize_step_logging()
+        
+        # Validate inputs and setup
+        if not self._validate_bookmark_inputs(listing_url, username, step_log):
+            self._log_final_bookmark_result(step_log)
+            return False
+        
+        try:
+            # Get the cycling driver
+            current_driver = self.get_next_bookmark_driver()
+            if current_driver is None:
+                self._log_step(step_log, "driver_creation_failed", False, "Could not create cycling driver")
+                self._log_final_bookmark_result(step_log)
+                return False
+            
+            self._log_step(step_log, "cycling_driver_created", True, f"Driver {step_log['driver_number']} ready")
+            
+            try:
+                # Execute the main bookmark sequences
+                success = self._execute_bookmark_sequences_with_monitoring(current_driver, listing_url, username, step_log)
+                
+                if success:
+                    step_log['success'] = True
+                    self._log_step(step_log, "bookmark_function_success", True)
+                
+                self._log_final_bookmark_result(step_log)
+                return success
+                
+            except Exception as main_error:
+                self._log_step(step_log, "main_function_error", False, str(main_error))
+                self._log_final_bookmark_result(step_log)
+                return False
+                
+        finally:
+            # FIXED: Only close driver if monitoring is NOT active
+            if step_log.get('monitoring_active', False):
+                print(f"🔍 MONITORING: Active - driver cleanup will be handled by monitoring thread")
+                # The monitoring thread will handle driver cleanup when it completes
+            else:
+                print(f"🗑️ CYCLING: No monitoring active - closing driver normally")
+                self.close_current_bookmark_driver()
+                print(f"🔄 CYCLING: Driver {step_log['driver_number']} processed, next will be {self.current_bookmark_driver_index + 1}/5")
+
     def _monitor_purchase_unsuccessful(self, current_driver, step_log):
         """
         Monitor for "Purchase unsuccessful" message for up to 25 minutes
-        This runs in a separate thread and keeps the tab open
+        FIXED: Properly handles driver cleanup when monitoring ends
         """
         import time
         from selenium.webdriver.support.ui import WebDriverWait
@@ -7212,10 +7214,8 @@ class VintedScraper:
         
         # Define selectors for "Purchase unsuccessful" message
         unsuccessful_selectors = [
-            "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--staatus-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-            "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
             "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-            # Broader selectors as fallbacks
+            "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
             "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
             "//*[text()='Purchase unsuccessful']"
         ]
@@ -7231,6 +7231,14 @@ class VintedScraper:
                 if elapsed_time >= max_wait_time:
                     print(f"⏰ TIMEOUT: Maximum wait time of {max_wait_time/60:.0f} minutes reached")
                     print(f"⏱️ STOPWATCH: Monitoring ended after {elapsed_time/60:.2f} minutes (TIMEOUT)")
+                    break
+                
+                # FIXED: Check if driver is still alive before using it
+                try:
+                    current_driver.current_url  # Test if driver is alive
+                except Exception as driver_dead:
+                    print(f"💀 MONITORING: Driver died during monitoring: {driver_dead}")
+                    print(f"⏱️ STOPWATCH: Monitoring ended after {elapsed_time/60:.2f} minutes (DRIVER DIED)")
                     break
                 
                 # Try each selector to find "Purchase unsuccessful"
@@ -7280,21 +7288,26 @@ class VintedScraper:
             self._log_step(step_log, "monitoring_error", False, str(monitoring_error))
         
         finally:
-            # Always close the driver and advance to next when monitoring ends
+            # FIXED: Always clean up properly when monitoring ends
             step_log['monitoring_active'] = False
             self.monitoring_threads_active.clear()  # Clear the monitoring flag
             
-            print(f"🗑️ CLEANUP: Closing monitoring tab and driver...")
+            print(f"🗑️ MONITORING CLEANUP: Closing monitoring tab and advancing driver...")
             try:
-                # Close the driver
+                # Try to close the current tab (monitoring tab)
                 current_driver.close()
-                
-                # Close current bookmark driver and advance to next
-                self.close_current_bookmark_driver()
-                print(f"🔄 CYCLING: Monitoring complete, advanced to next driver")
-                
-            except Exception as cleanup_error:
-                print(f"⚠️ CLEANUP ERROR: {cleanup_error}")
+                print(f"✅ MONITORING CLEANUP: Closed monitoring tab")
+            except Exception as tab_close_error:
+                print(f"⚠️ MONITORING CLEANUP: Error closing tab: {tab_close_error}")
+            
+            try:
+                # NOW close the bookmark driver and advance to next
+                self.close_current_bookmark_driver() 
+                print(f"✅ MONITORING CLEANUP: Closed bookmark driver and advanced to next")
+            except Exception as driver_close_error:
+                print(f"⚠️ MONITORING CLEANUP: Error closing driver: {driver_close_error}")
+            
+            print(f"🔄 MONITORING COMPLETE: Driver cleanup finished, ready for next bookmark")
 
     def _execute_messages_sequence(self, current_driver, actual_url, username, step_log):
         """Execute the messages sequence for username validation"""
