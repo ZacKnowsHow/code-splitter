@@ -72,7 +72,7 @@ BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle
 
 #tests both the bookmark and buying functionality
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = True
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6989925386-green-and-yellow-chunky-bracelet?referrer=catalog"
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6990013682-white-denim-shorts?referrer=catalog"
 
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
@@ -91,7 +91,7 @@ test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?
 bookmark_stopwatch_length = 540
 buying_driver_click_pay_wait_time = 7.5
 actually_purchase_listing = True
-wait_for_bookmark_stopwatch_to_buy = True
+wait_for_bookmark_stopwatch_to_buy = False
 test_purchase_not_true = False #uses the url below rather than the one from the web page
 test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
@@ -8329,32 +8329,33 @@ class VintedScraper:
                 bookmark_success = self.bookmark_driver(TEST_BOOKMARK_BUYING_URL, test_username)
                 
                 if bookmark_success:
+                    print("✅ BOOKMARK: Successfully bookmarked the item")
+                    
+                    # MODIFIED: Automatically simulate "yes" button press immediately after bookmark
+                    print("🤖 AUTO-SIM: Simulating user pressed 'YES' on website...")
+                    
+                    # Add the URL to clicked listings to simulate user interaction
+                    self.clicked_yes_listings.add(TEST_BOOKMARK_BUYING_URL)
+                    
+                    # MODIFIED: Call the enhanced button functionality directly
+                    # This simulates what happens when user clicks "yes" on the website
+                    print("🚀 AUTO-SIM: Triggering buying process immediately (as if user clicked YES)...")
+                    self.vinted_button_clicked_enhanced(TEST_BOOKMARK_BUYING_URL)
+                    
                     if wait_for_bookmark_stopwatch_to_buy:
-                        print("✅ BOOKMARK: Successfully bookmarked the item")
                         print(f"⏱️ WAITING: Waiting {bookmark_stopwatch_length} seconds for bookmark timer...")
                         
                         # Wait for the full bookmark stopwatch duration
+                        # During this time, the buying driver is already working in the background
                         time.sleep(bookmark_stopwatch_length)
                         
-                        print("✅ WAIT COMPLETE: Bookmark timer finished, starting buying process...")
-                        
-                    # Now start the buying process using process_single_listing_with_driver
-                    driver_num, driver = self.get_available_driver()
+                        print("✅ WAIT COMPLETE: Bookmark timer finished")
                     
-                    if driver is not None:
-                        print(f"✅ BUYING: Got driver {driver_num}")
-                        print("💳 STARTING: Buying process...")
-                        
-                        # Execute the purchase process
-                        self.process_single_listing_with_driver(TEST_BOOKMARK_BUYING_URL, driver_num, driver)
-                        
-                        print("✅ TEST COMPLETE: Bookmark + Buying process finished")
-                    else:
-                        print("❌ BUYING ERROR: Could not get available driver")
-                        
+                    print("✅ TEST COMPLETE: Bookmark + Auto-YES + Buying process finished")
+                            
                 else:
                     print("❌ BOOKMARK FAILED: Could not bookmark the item, skipping buying process")
-                    
+                            
             except Exception as e:
                 print(f"❌ TEST ERROR: {e}")
                 import traceback
@@ -8364,6 +8365,7 @@ class VintedScraper:
                 self.cleanup_all_buying_drivers()
                 self.cleanup_persistent_buying_driver()
                 self.cleanup_persistent_bookmark_driver()
+                self.cleanup_all_cycling_bookmark_drivers()
             
             # Exit immediately after test
             print("🔖💳 TEST_BOOKMARK_BUYING_FUNCTIONALITY COMPLETE - EXITING")
