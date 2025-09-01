@@ -6805,12 +6805,52 @@ class VintedScraper:
 
     def bookmark_driver(self, listing_url, username=None):
         """
-        MODIFIED: Enhanced bookmark driver now using cycling driver system
+        MAIN bookmark driver function - orchestrates the entire bookmark process
         Each call creates a fresh driver, uses it once, then closes it
         """
         
-        # SUCCESS RATE LOGGING - Track exactly where and when things break
-        step_log = {
+        # Initialize step logging
+        step_log = self._initialize_step_logging()
+        
+        # Validate inputs and setup
+        if not self._validate_bookmark_inputs(listing_url, username, step_log):
+            self._log_final_bookmark_result(step_log)
+            return False
+        
+        try:
+            # Get the cycling driver
+            current_driver = self.get_next_bookmark_driver()
+            if current_driver is None:
+                self._log_step(step_log, "driver_creation_failed", False, "Could not create cycling driver")
+                self._log_final_bookmark_result(step_log)
+                return False
+            
+            self._log_step(step_log, "cycling_driver_created", True, f"Driver {step_log['driver_number']} ready")
+            
+            try:
+                # Execute the main bookmark sequences
+                success = self._execute_bookmark_sequences(current_driver, listing_url, username, step_log)
+                
+                if success:
+                    step_log['success'] = True
+                    self._log_step(step_log, "bookmark_function_success", True)
+                
+                self._log_final_bookmark_result(step_log)
+                return success
+                
+            except Exception as main_error:
+                self._log_step(step_log, "main_function_error", False, str(main_error))
+                self._log_final_bookmark_result(step_log)
+                return False
+                
+        finally:
+            # CRITICAL: Always close the current driver and advance to next
+            self.close_current_bookmark_driver()
+            print(f"🔄 CYCLING: Driver {step_log['driver_number']} processed, next will be {self.current_bookmark_driver_index + 1}/5")
+
+    def _initialize_step_logging(self):
+        """Initialize the step logging dictionary"""
+        return {
             'start_time': time.time(),
             'driver_number': self.current_bookmark_driver_index + 1,
             'steps_completed': [],
@@ -6818,34 +6858,403 @@ class VintedScraper:
             'success': False,
             'critical_sequence_completed': False
         }
+
+    def _validate_bookmark_inputs(self, listing_url, username, step_log):
+        """Validate inputs for bookmark function"""
+        print(f'🔖 CYCLING: Starting bookmark process with driver {step_log["driver_number"]}/5')
         
-        def log_step(step_name, success=True, error_msg=None):
-            """Log each step for debugging and success rate analysis"""
-            if success:
-                step_log['steps_completed'].append(f"{step_name} - {time.time() - step_log['start_time']:.2f}s")
-                print(f"✅ DRIVER {step_log['driver_number']}: {step_name}")
-            else:
-                step_log['failures'].append(f"{step_name}: {error_msg} - {time.time() - step_log['start_time']:.2f}s")
-                print(f"❌ DRIVER {step_log['driver_number']}: {step_name} - {error_msg}")
+        # Test mode handling
+        if test_bookmark_function:
+            actual_url = test_bookmark_link
+            self._log_step(step_log, "test_mode_activated", True, f"Using test URL: {actual_url}")
+        else:
+            actual_url = listing_url
+            self._log_step(step_log, "normal_mode_activated", True)
         
-        def log_final_result():
-            """Log final results for success rate analysis"""
-            total_time = time.time() - step_log['start_time']
-            print(f"\n📊 BOOKMARK ANALYSIS - Driver {step_log['driver_number']}")
-            print(f"🔗 URL: {listing_url[:60]}...")
-            print(f"⏱️  Total time: {total_time:.2f}s")
-            print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
-            print(f"❌ Failures: {len(step_log['failures'])}")
-            print(f"🎯 Critical sequence: {'YES' if step_log['critical_sequence_completed'] else 'NO'}")
-            print(f"🏆 Overall success: {'YES' if step_log['success'] else 'NO'}")
+        # Username validation
+        if not username:
+            self._log_step(step_log, "username_validation", False, "No username provided")
+            print("⚠️ Could not extract username, possible unable to detect false buy, exiting.")
+            sys.exit(0)
+        
+        self._log_step(step_log, "username_validation", True, f"Username: {username}")
+        print(f"🔖 Looking at listing {actual_url} posted by {username}")
+        
+        # Store the actual URL for later use
+        step_log['actual_url'] = actual_url
+        return True
+
+    def _execute_bookmark_sequences(self, current_driver, listing_url, username, step_log):
+        """Execute the main bookmark sequences"""
+        actual_url = step_log['actual_url']
+        bookmark_start_time = time.time()
+        self._log_step(step_log, "function_start", True)
+        
+        # Create new tab and navigate
+        if not self._create_tab_and_navigate(current_driver, actual_url, step_log):
+            return False
+        
+        # Execute first buy sequence (critical sequence)
+        first_sequence_success = self._execute_first_buy_sequence(current_driver, step_log)
+        
+        if not first_sequence_success:
+            return False
+        
+        # Execute second sequence (processing payment check)
+        return self._execute_second_sequence(current_driver, actual_url, username, step_log)
+
+    def _create_tab_and_navigate(self, current_driver, actual_url, step_log):
+        """Create new tab and navigate to the listing URL"""
+        try:
+            # ENHANCED TAB MANAGEMENT
+            stopwatch_start = time.time()
+            print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
+            current_driver.execute_script("window.open('');")
+            new_tab = current_driver.window_handles[-1]
+            current_driver.switch_to.window(new_tab)
+            self._log_step(step_log, "new_tab_created", True, f"Total tabs: {len(current_driver.window_handles)}")
             
-            # Log failures for analysis
-            if step_log['failures']:
-                print("🔍 FAILURE DETAILS:")
-                for failure in step_log['failures'][:3]:  # Show first 3 failures
-                    print(f"  • {failure}")
+            # ROBUST NAVIGATION with retry
+            navigation_success = False
+            for nav_attempt in range(3):
+                try:
+                    self._log_step(step_log, f"navigation_attempt_{nav_attempt+1}", True)
+                    current_driver.get(actual_url)
+                    navigation_success = True
+                    self._log_step(step_log, "navigation_complete", True)
+                    break
+                except Exception as nav_error:
+                    self._log_step(step_log, f"navigation_attempt_{nav_attempt+1}", False, str(nav_error))
+                    if nav_attempt == 2:
+                        self._log_step(step_log, "navigation_final_failure", False, "All navigation attempts failed")
+                        break
+                    time.sleep(1)
+            
+            if not navigation_success:
+                self._log_step(step_log, "navigation_failed", False, "Could not navigate to listing")
+                return False
+                
+            return True
+            
+        except Exception as e:
+            self._log_step(step_log, "tab_creation_error", False, str(e))
+            return False
+
+    def _execute_first_buy_sequence(self, current_driver, step_log):
+        """Execute the first buy sequence - the critical bookmark sequence"""
+        self._log_step(step_log, "first_sequence_start", True)
         
-        # SELECTOR ALTERNATIVES - (keep existing selectors)
+        # Find and click first buy button
+        first_buy_element, first_buy_selector = self._try_selectors(
+            current_driver, 
+            'buy_button', 
+            operation='click', 
+            timeout=5, 
+            click_method='all',
+            step_log=step_log
+        )
+        
+        if not first_buy_element:
+            self._log_step(step_log, "first_buy_button_not_found", False, "Item likely already sold")
+            print('🔖 FIRST SEQUENCE: Buy button not found - this means ALREADY SOLD!!!')
+            return False
+        
+        self._log_step(step_log, "first_buy_button_clicked", True, f"Used: {first_buy_selector[:30]}...")
+        
+        # Find pay button
+        pay_element, pay_selector = self._try_selectors(
+            current_driver,
+            'pay_button',
+            operation='find',
+            timeout=10,
+            step_log=step_log
+        )
+        
+        if not pay_element:
+            self._log_step(step_log, "pay_button_not_found", False, "Payment interface not available")
+            return False
+        
+        self._log_step(step_log, "pay_button_found", True, f"Used: {pay_selector[:30]}...")
+        
+        # Execute the critical sequence
+        return self._execute_critical_pay_sequence(current_driver, step_log)
+
+    def _execute_critical_pay_sequence(self, current_driver, step_log):
+        """Execute the critical pay sequence - CANNOT be modified!"""
+        try:
+            # FORCE-click the pay button using multiple aggressive methods
+            pay_clicked = False
+            
+            # Method 1: Click the inner span directly
+            try:
+                pay_span = current_driver.find_element(By.XPATH, "//button[@data-testid='single-checkout-order-summary-purchase-button']//span[text()='Pay']")
+                pay_span.click()
+                self._log_step(step_log, "pay_button_click_span", True, "Clicked Pay span directly")
+                pay_clicked = True
+            except Exception as span_error:
+                self._log_step(step_log, "pay_button_click_span", False, str(span_error))
+            
+            # Method 2: Force enable button and click via JS
+            if not pay_clicked:
+                try:
+                    current_driver.execute_script("""
+                        var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
+                        if (button) {
+                            button.disabled = false;
+                            button.setAttribute('aria-disabled', 'false');
+                            button.click();
+                        }
+                    """)
+                    self._log_step(step_log, "pay_button_click_force_js", True, "Force-enabled and clicked via JS")
+                    pay_clicked = True
+                except Exception as js_error:
+                    self._log_step(step_log, "pay_button_click_force_js", False, str(js_error))
+            
+            # Method 3: Dispatch click event directly
+            if not pay_clicked:
+                try:
+                    current_driver.execute_script("""
+                        var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
+                        if (button) {
+                            var event = new MouseEvent('click', {
+                                view: window,
+                                bubbles: true,
+                                cancelable: true
+                            });
+                            button.dispatchEvent(event);
+                        }
+                    """)
+                    self._log_step(step_log, "pay_button_click_dispatch_event", True, "Dispatched click event directly")
+                    pay_clicked = True
+                except Exception as dispatch_error:
+                    self._log_step(step_log, "pay_button_click_dispatch_event", False, str(dispatch_error))
+            
+            # Method 4: Form submission
+            if not pay_clicked:
+                try:
+                    current_driver.execute_script("""
+                        var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
+                        var form = button ? button.closest('form') : null;
+                        if (form) {
+                            form.submit();
+                        }
+                    """)
+                    self._log_step(step_log, "pay_button_form_submit", True, "Submitted form directly")
+                    pay_clicked = True
+                except Exception as form_error:
+                    self._log_step(step_log, "pay_button_form_submit", False, str(form_error))
+            
+            if not pay_clicked:
+                self._log_step(step_log, "pay_button_click_all_failed", False, "All 4 aggressive methods failed")
+                return False
+            
+            # ⚠️ CRITICAL: Exact 0.25 second wait - DO NOT MODIFY! ⚠️
+            print("🔖 CRITICAL: Waiting exactly 0.25 seconds...")
+            time.sleep(0.25)
+            
+            # ⚠️ CRITICAL: Immediate tab close - DO NOT MODIFY! ⚠️ 
+            print("🔖 CRITICAL: Closing tab immediately...")
+            current_driver.close()
+
+            stopwatch_end = time.time()
+            elapsed = stopwatch_end - step_log['start_time']
+            print(f"⏱️ STOPWATCH: First sequence completed in {elapsed:.3f} seconds")
+                            
+            step_log['critical_sequence_completed'] = True
+            self._log_step(step_log, "critical_sequence_completed", True, "0.25s wait + tab close")
+            
+            # Switch back to main tab
+            if len(current_driver.window_handles) > 0:
+                current_driver.switch_to.window(current_driver.window_handles[0])
+                self._log_step(step_log, "return_to_main_tab", True)
+            
+            self._log_step(step_log, "first_sequence_complete", True)
+            return True
+            
+        except Exception as critical_error:
+            self._log_step(step_log, "critical_sequence_error", False, str(critical_error))
+            return False
+
+    def _execute_second_sequence(self, current_driver, actual_url, username, step_log):
+        """Execute the second sequence - processing payment check and messages"""
+        self._log_step(step_log, "second_sequence_start", True)
+        
+        try:
+            # Open new tab for second sequence
+            current_driver.execute_script("window.open('');")
+            second_tab = current_driver.window_handles[-1]
+            current_driver.switch_to.window(second_tab)
+            self._log_step(step_log, "second_tab_created", True)
+            
+            # Navigate again
+            current_driver.get(actual_url)
+            self._log_step(step_log, "second_navigation", True)
+            
+            # Look for buy button again
+            second_buy_element, second_buy_selector = self._try_selectors(
+                current_driver,
+                'buy_button',
+                operation='click',
+                timeout=15,
+                click_method='all',
+                step_log=step_log
+            )
+            
+            if second_buy_element:
+                self._log_step(step_log, "second_buy_button_clicked", True, f"Used: {second_buy_selector[:30]}...")
+                
+                # Check for processing payment success
+                success = self._check_processing_payment(current_driver, step_log)
+                
+                # Close second tab
+                current_driver.close()
+                if len(current_driver.window_handles) > 0:
+                    current_driver.switch_to.window(current_driver.window_handles[0])
+                self._log_step(step_log, "second_tab_closed", True)
+                
+                if success:
+                    return True
+            else:
+                self._log_step(step_log, "second_buy_button_not_found", False, "Proceeding with messages")
+            
+            # Execute messages sequence
+            return self._execute_messages_sequence(current_driver, actual_url, username, step_log)
+            
+        except Exception as second_sequence_error:
+            self._log_step(step_log, "second_sequence_error", False, str(second_sequence_error))
+            return True  # Return True as this isn't a critical failure
+
+    def _check_processing_payment(self, current_driver, step_log):
+        """Check for processing payment message"""
+        processing_element, processing_selector = self._try_selectors(
+            current_driver,
+            'processing_payment',
+            operation='find',
+            timeout=3,
+            step_log=step_log
+        )
+        
+        if processing_element:
+            element_text = processing_element.text.strip()
+            self._log_step(step_log, "processing_payment_found", True, f"Text: {element_text}")
+            print('SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+            step_log['success'] = True
+            return True
+        else:
+            self._log_step(step_log, "processing_payment_not_found", False, "Processing payment message not found")
+            print('listing likely bookmarked by another')
+            return False
+
+    def _execute_messages_sequence(self, current_driver, actual_url, username, step_log):
+        """Execute the messages sequence for username validation"""
+        self._log_step(step_log, "messages_sequence_start", True)
+        
+        try:
+            # Open messages tab
+            current_driver.execute_script("window.open('');")
+            messages_tab = current_driver.window_handles[-1]
+            current_driver.switch_to.window(messages_tab)
+            self._log_step(step_log, "messages_tab_created", True)
+            
+            # Navigate to URL for messages
+            current_driver.get(actual_url)
+            self._log_step(step_log, "messages_navigation", True)
+            
+            # Find and click messages button
+            messages_element, messages_selector = self._try_selectors(
+                current_driver,
+                'messages_button',
+                operation='click',
+                timeout=1,
+                click_method='all',
+                step_log=step_log
+            )
+            
+            if messages_element:
+                self._log_step(step_log, "messages_button_clicked", True, f"Used: {messages_selector[:30]}...")
+                
+                # Search for username
+                self._search_for_username(current_driver, username, actual_url, step_log)
+            else:
+                self._log_step(step_log, "messages_button_not_found", False, "Messages button not found with any selector")
+            
+            # Close messages tab
+            current_driver.close()
+            if len(current_driver.window_handles) > 0:
+                current_driver.switch_to.window(current_driver.window_handles[0])
+            self._log_step(step_log, "messages_tab_closed", True)
+            
+            return True
+            
+        except Exception as messages_error:
+            self._log_step(step_log, "messages_sequence_error", False, str(messages_error))
+            # Clean up messages tab
+            try:
+                current_driver.close()
+                if len(current_driver.window_handles) > 0:
+                    current_driver.switch_to.window(current_driver.window_handles[0])
+            except:
+                pass
+            return True
+
+    def _search_for_username(self, current_driver, username, actual_url, step_log):
+        """Search for username in messages to detect accidental purchases"""
+        if not username:
+            self._log_step(step_log, "no_username_for_search", False, "No username available")
+            time.sleep(3)
+            return
+        
+        self._log_step(step_log, "username_search_start", True, f"Searching for: {username}")
+        time.sleep(2)  # Wait for messages page to load
+        
+        try:
+            username_element = WebDriverWait(current_driver, 3).until(
+                EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
+            )
+            
+            self._log_step(step_log, "username_found_on_messages", True, f"Found: {username}")
+            
+            # Try to click username
+            username_clicked = self._click_username_element(current_driver, username_element, step_log)
+            
+            if username_clicked:
+                self._log_step(step_log, "accidental_purchase_detected", True, "ABORT - username found in messages")
+                print("USERNAME FOUND, POSSIBLE ACCIDENTAL PURCHASE, ABORT")
+                time.sleep(3)
+                self._log_final_bookmark_result(step_log)
+                sys.exit(0)
+            else:
+                self._log_step(step_log, "username_click_failed", False, "Could not click username")
+                
+        except TimeoutException:
+            self._log_step(step_log, "username_not_found_in_messages", True, f"Username {username} not in messages - likely bookmarked!")
+            print(f"📧 NOT FOUND: Username '{username}' not found on messages page")
+            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
+        except Exception as search_error:
+            self._log_step(step_log, "username_search_error", False, str(search_error))
+            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
+
+    def _click_username_element(self, current_driver, username_element, step_log):
+        """Try to click the username element with multiple methods"""
+        username_clicked = False
+        for click_method in ['standard', 'javascript', 'actionchains']:
+            try:
+                if click_method == 'standard':
+                    username_element.click()
+                elif click_method == 'javascript':
+                    current_driver.execute_script("arguments[0].click();", username_element)
+                elif click_method == 'actionchains':
+                    ActionChains(current_driver).move_to_element(username_element).click().perform()
+                
+                username_clicked = True
+                self._log_step(step_log, f"username_clicked_{click_method}", True)
+                break
+            except:
+                continue
+        return username_clicked
+
+    def _try_selectors(self, driver, selector_set_name, operation='find', timeout=5, click_method='standard', step_log=None):
+        """Try selectors with quick timeouts and fail fast"""
         SELECTOR_SETS = {
             'buy_button': [
                 "button[data-testid='item-buy-button']",
@@ -6877,415 +7286,97 @@ class VintedScraper:
             ]
         }
         
-        def try_selectors(driver, selector_set_name, operation='find', timeout=5, click_method='standard'):
-            """Try selectors with quick timeouts and fail fast"""
-            selectors = SELECTOR_SETS.get(selector_set_name, [])
-            if not selectors:
-                log_step(f"try_selectors_{selector_set_name}", False, "No selectors defined")
-                return None, None
-            
-            for i, selector in enumerate(selectors):
-                try:
-                    if selector.startswith('//'):
-                        element = WebDriverWait(driver, timeout).until(
-                            EC.element_to_be_clickable((By.XPATH, selector)) if operation == 'click' 
-                            else EC.presence_of_element_located((By.XPATH, selector))
-                        )
-                    else:
-                        element = WebDriverWait(driver, timeout).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector)) if operation == 'click'
-                            else EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                        )
-                    
-                    if operation == 'click':
-                        click_success = False
-                        click_methods = ['standard', 'javascript', 'actionchains'] if click_method == 'all' else [click_method]
-                        
-                        for method in click_methods:
-                            try:
-                                if method == 'standard':
-                                    element.click()
-                                elif method == 'javascript':
-                                    driver.execute_script("arguments[0].click();", element)
-                                elif method == 'actionchains':
-                                    ActionChains(driver).move_to_element(element).click().perform()
-                                
-                                click_success = True
-                                log_step(f"click_{selector_set_name}_{method}", True)
-                                break
-                            except Exception as click_error:
-                                log_step(f"click_{selector_set_name}_{method}", False, str(click_error))
-                                continue
-                        
-                        if not click_success:
-                            continue
-                    
-                    log_step(f"selector_{selector_set_name}_success", True, f"Used selector #{i+1}")
-                    return element, selector
-                    
-                except TimeoutException:
-                    log_step(f"selector_{selector_set_name}_{i+1}_timeout", False, f"Timeout after {timeout}s")
-                    continue
-                except Exception as e:
-                    log_step(f"selector_{selector_set_name}_{i+1}_error", False, str(e))
-                    continue
-            
-            log_step(f"all_selectors_{selector_set_name}_failed", False, f"All {len(selectors)} selectors failed")
+        selectors = SELECTOR_SETS.get(selector_set_name, [])
+        if not selectors:
+            if step_log:
+                self._log_step(step_log, f"try_selectors_{selector_set_name}", False, "No selectors defined")
             return None, None
         
-        # START OF MAIN FUNCTION LOGIC
-        print(f'🔖 CYCLING: Starting bookmark process with driver {self.current_bookmark_driver_index + 1}/5')
-        
-        # Test mode handling
-        if test_bookmark_function:
-            actual_url = test_bookmark_link
-            log_step("test_mode_activated", True, f"Using test URL: {actual_url}")
-        else:
-            actual_url = listing_url
-            log_step("normal_mode_activated", True)
-        
-        # Username validation
-        if not username:
-            log_step("username_validation", False, "No username provided")
-            log_final_result()
-            print("⚠️ Could not extract username, possible unable to detect false buy, exiting.")
-            sys.exit(0)
-        
-        log_step("username_validation", True, f"Username: {username}")
-        print(f"🔖 Looking at listing {actual_url} posted by {username}")
-        
-        try:
-            bookmark_start_time = time.time()
-            log_step("function_start", True)
-            
-            # CRITICAL CHANGE: Get fresh driver from cycling system
-            current_driver = self.get_next_bookmark_driver()
-            if current_driver is None:
-                log_step("driver_creation_failed", False, "Could not create cycling driver")
-                log_final_result()
-                return False
-            
-            log_step("cycling_driver_created", True, f"Driver {step_log['driver_number']} ready")
-            
+        for i, selector in enumerate(selectors):
             try:
-                # ENHANCED TAB MANAGEMENT
-                stopwatch_start = time.time()
-                print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
-                current_driver.execute_script("window.open('');")
-                new_tab = current_driver.window_handles[-1]
-                current_driver.switch_to.window(new_tab)
-                log_step("new_tab_created", True, f"Total tabs: {len(current_driver.window_handles)}")
-                
-                # ROBUST NAVIGATION with retry
-                navigation_success = False
-                for nav_attempt in range(3):
-                    try:
-                        log_step(f"navigation_attempt_{nav_attempt+1}", True)
-                        current_driver.get(actual_url)
-                        navigation_success = True
-                        log_step("navigation_complete", True)
-                        break
-                    except Exception as nav_error:
-                        log_step(f"navigation_attempt_{nav_attempt+1}", False, str(nav_error))
-                        if nav_attempt == 2:
-                            log_step("navigation_final_failure", False, "All navigation attempts failed")
-                            break
-                        time.sleep(1)
-                
-                if not navigation_success:
-                    log_step("navigation_failed", False, "Could not navigate to listing")
-                    return False
-                
-                # FIRST BUY NOW SEQUENCE
-                log_step("first_sequence_start", True)
-                
-                first_buy_element, first_buy_selector = try_selectors(
-                    current_driver, 
-                    'buy_button', 
-                    operation='click', 
-                    timeout=5, 
-                    click_method='all'
-                )
-                
-                if first_buy_element:
-                    log_step("first_buy_button_clicked", True, f"Used: {first_buy_selector[:30]}...")
-                    
-                    pay_element, pay_selector = try_selectors(
-                        current_driver,
-                        'pay_button',
-                        operation='find',
-                        timeout=10
+                if selector.startswith('//'):
+                    element = WebDriverWait(driver, timeout).until(
+                        EC.element_to_be_clickable((By.XPATH, selector)) if operation == 'click' 
+                        else EC.presence_of_element_located((By.XPATH, selector))
                     )
-                    
-                    if pay_element:
-                        log_step("pay_button_found", True, f"Used: {pay_selector[:30]}...")
-                        # CRITICAL SEQUENCE - This is the part that CANNOT be touched!
-                        try:
-                            # FORCE-click the pay button using multiple aggressive methods
-                            pay_clicked = False
-                            
-                            # Method 1: Click the inner span directly
-                            try:
-                                pay_span = current_driver.find_element(By.XPATH, "//button[@data-testid='single-checkout-order-summary-purchase-button']//span[text()='Pay']")
-                                pay_span.click()
-                                log_step("pay_button_click_span", True, "Clicked Pay span directly")
-                                pay_clicked = True
-                            except Exception as span_error:
-                                log_step("pay_button_click_span", False, str(span_error))
-                            
-                            # Method 2: Force enable button and click via JS
-                            if not pay_clicked:
-                                try:
-                                    current_driver.execute_script("""
-                                        var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
-                                        if (button) {
-                                            button.disabled = false;
-                                            button.setAttribute('aria-disabled', 'false');
-                                            button.click();
-                                        }
-                                    """)
-                                    log_step("pay_button_click_force_js", True, "Force-enabled and clicked via JS")
-                                    pay_clicked = True
-                                except Exception as js_error:
-                                    log_step("pay_button_click_force_js", False, str(js_error))
-                            
-                            # Method 3: Dispatch click event directly
-                            if not pay_clicked:
-                                try:
-                                    current_driver.execute_script("""
-                                        var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
-                                        if (button) {
-                                            var event = new MouseEvent('click', {
-                                                view: window,
-                                                bubbles: true,
-                                                cancelable: true
-                                            });
-                                            button.dispatchEvent(event);
-                                        }
-                                    """)
-                                    log_step("pay_button_click_dispatch_event", True, "Dispatched click event directly")
-                                    pay_clicked = True
-                                except Exception as dispatch_error:
-                                    log_step("pay_button_click_dispatch_event", False, str(dispatch_error))
-                            
-                            # Method 4: Form submission
-                            if not pay_clicked:
-                                try:
-                                    current_driver.execute_script("""
-                                        var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
-                                        var form = button ? button.closest('form') : null;
-                                        if (form) {
-                                            form.submit();
-                                        }
-                                    """)
-                                    log_step("pay_button_form_submit", True, "Submitted form directly")
-                                    pay_clicked = True
-                                except Exception as form_error:
-                                    log_step("pay_button_form_submit", False, str(form_error))
-                            
-                            if pay_clicked:
-                                # ⚠️ CRITICAL: Exact 0.25 second wait - DO NOT MODIFY! ⚠️
-                                print("🔖 CRITICAL: Waiting exactly 0.25 seconds...")
-                                time.sleep(0.25)
-                                
-                                # ⚠️ CRITICAL: Immediate tab close - DO NOT MODIFY! ⚠️ 
-                                print("🔖 CRITICAL: Closing tab immediately...")
-                                current_driver.close()
-
-                                stopwatch_end = time.time()
-                                elapsed = stopwatch_end - stopwatch_start
-                                print(f"⏱️ STOPWATCH: First sequence completed in {elapsed:.3f} seconds")
-                                                
-                                step_log['critical_sequence_completed'] = True
-                                log_step("critical_sequence_completed", True, "0.25s wait + tab close")
-                                
-                                # Switch back to main tab
-                                if len(current_driver.window_handles) > 0:
-                                    current_driver.switch_to.window(current_driver.window_handles[0])
-                                    log_step("return_to_main_tab", True)
-                                
-                                log_step("first_sequence_complete", True)
-                            else:
-                                log_step("pay_button_click_all_failed", False, "All 4 aggressive methods failed")
-                                return False
-                                
-                        except Exception as critical_error:
-                            log_step("critical_sequence_error", False, str(critical_error))
-                            return False
-                    else:
-                        log_step("pay_button_not_found", False, "No pay button found with any selector")
                 else:
-                    log_step("first_buy_button_not_found", False, "Item likely already sold")
-                    print('🔖 FIRST SEQUENCE: Buy button not found - this means ALREADY SOLD!!!')
-                    return False
-                
-                # SECOND SEQUENCE
-                log_step("second_sequence_start", True)
-                
-                try:
-                    # Open new tab for second sequence
-                    current_driver.execute_script("window.open('');")
-                    second_tab = current_driver.window_handles[-1]
-                    current_driver.switch_to.window(second_tab)
-                    log_step("second_tab_created", True)
-                    
-                    # Navigate again
-                    current_driver.get(actual_url)
-                    log_step("second_navigation", True)
-                    
-                    # Look for buy button again
-                    second_buy_element, second_buy_selector = try_selectors(
-                        current_driver,
-                        'buy_button',
-                        operation='click',
-                        timeout=15,
-                        click_method='all'
+                    element = WebDriverWait(driver, timeout).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector)) if operation == 'click'
+                        else EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                     )
-                    
-                    if second_buy_element:
-                        log_step("second_buy_button_clicked", True, f"Used: {second_buy_selector[:30]}...")
-                        
-                        # Look for processing payment message
-                        processing_element, processing_selector = try_selectors(
-                            current_driver,
-                            'processing_payment',
-                            operation='find',
-                            timeout=3
-                        )
-                        
-                        if processing_element:
-                            element_text = processing_element.text.strip()
-                            log_step("processing_payment_found", True, f"Text: {element_text}")
-                            print('SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
-                            step_log['success'] = True
-                        else:
-                            log_step("processing_payment_not_found", False, "Processing payment message not found")
-                            print('listing likely bookmarked by another')
-                        
-                        # Close second tab
-                        current_driver.close()
-                        if len(current_driver.window_handles) > 0:
-                            current_driver.switch_to.window(current_driver.window_handles[0])
-                        log_step("second_tab_closed", True)
-                        
-                        log_final_result()
-                        return True
-                        
-                    else:
-                        log_step("second_buy_button_not_found", False, "Proceeding with messages")
-                        
-                        # ENHANCED MESSAGES FUNCTIONALITY (keep existing messages logic)
-                        log_step("messages_sequence_start", True)
-                        
-                        try:
-                            # Open messages tab
-                            current_driver.execute_script("window.open('');")
-                            messages_tab = current_driver.window_handles[-1]
-                            current_driver.switch_to.window(messages_tab)
-                            log_step("messages_tab_created", True)
-                            
-                            # Navigate to URL for messages
-                            current_driver.get(actual_url)
-                            log_step("messages_navigation", True)
-                            
-                            # Find messages button
-                            messages_element, messages_selector = try_selectors(
-                                current_driver,
-                                'messages_button',
-                                operation='click',
-                                timeout=1,
-                                click_method='all'
-                            )
-                            
-                            if messages_element:
-                                log_step("messages_button_clicked", True, f"Used: {messages_selector[:30]}...")
-                                
-                                # Search for username if available
-                                if username:
-                                    log_step("username_search_start", True, f"Searching for: {username}")
-                                    
-                                    time.sleep(2)  # Wait for messages page to load
-                                    
-                                    try:
-                                        username_element = WebDriverWait(current_driver, 3).until(
-                                            EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
-                                        )
-                                        
-                                        log_step("username_found_on_messages", True, f"Found: {username}")
-                                        
-                                        # Try to click username
-                                        username_clicked = False
-                                        for click_method in ['standard', 'javascript', 'actionchains']:
-                                            try:
-                                                if click_method == 'standard':
-                                                    username_element.click()
-                                                elif click_method == 'javascript':
-                                                    current_driver.execute_script("arguments[0].click();", username_element)
-                                                elif click_method == 'actionchains':
-                                                    ActionChains(current_driver).move_to_element(username_element).click().perform()
-                                                
-                                                username_clicked = True
-                                                log_step(f"username_clicked_{click_method}", True)
-                                                break
-                                            except:
-                                                continue
-                                        
-                                        if username_clicked:
-                                            log_step("accidental_purchase_detected", True, "ABORT - username found in messages")
-                                            print("USERNAME FOUND, POSSIBLE ACCIDENTAL PURCHASE, ABORT")
-                                            time.sleep(3)
-                                            log_final_result()
-                                            sys.exit(0)
-                                        else:
-                                            log_step("username_click_failed", False, "Could not click username")
-                                            
-                                    except TimeoutException:
-                                        log_step("username_not_found_in_messages", True, f"Username {username} not in messages - likely bookmarked!")
-                                        print(f"📧 NOT FOUND: Username '{username}' not found on messages page")
-                                        print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
-                                    except Exception as search_error:
-                                        log_step("username_search_error", False, str(search_error))
-                                        print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
-                                else:
-                                    log_step("no_username_for_search", False, "No username available")
-                                    time.sleep(3)
-                            else:
-                                log_step("messages_button_not_found", False, "Messages button not found with any selector")
-                            
-                            # Close messages tab
-                            current_driver.close()
-                            if len(current_driver.window_handles) > 0:
-                                current_driver.switch_to.window(current_driver.window_handles[0])
-                            log_step("messages_tab_closed", True)
-                            
-                        except Exception as messages_error:
-                            log_step("messages_sequence_error", False, str(messages_error))
-                            # Clean up messages tab
-                            try:
-                                current_driver.close()
-                                if len(current_driver.window_handles) > 0:
-                                    current_driver.switch_to.window(current_driver.window_handles[0])
-                            except:
-                                pass
                 
-                except Exception as second_sequence_error:
-                    log_step("second_sequence_error", False, str(second_sequence_error))
+                if operation == 'click':
+                    click_success = self._perform_element_click(driver, element, click_method, step_log, selector_set_name)
+                    if not click_success:
+                        continue
                 
-                # Mark overall success
-                step_log['success'] = True
-                log_step("bookmark_function_success", True)
-                log_final_result()
-                return True
+                if step_log:
+                    self._log_step(step_log, f"selector_{selector_set_name}_success", True, f"Used selector #{i+1}")
+                return element, selector
                 
-            except Exception as main_error:
-                log_step("main_function_error", False, str(main_error))
-                log_final_result()
-                return False
+            except TimeoutException:
+                if step_log:
+                    self._log_step(step_log, f"selector_{selector_set_name}_{i+1}_timeout", False, f"Timeout after {timeout}s")
+                continue
+            except Exception as e:
+                if step_log:
+                    self._log_step(step_log, f"selector_{selector_set_name}_{i+1}_error", False, str(e))
+                continue
+        
+        if step_log:
+            self._log_step(step_log, f"all_selectors_{selector_set_name}_failed", False, f"All {len(selectors)} selectors failed")
+        return None, None
+
+    def _perform_element_click(self, driver, element, click_method, step_log, selector_set_name):
+        """Perform element click with specified method(s)"""
+        click_success = False
+        click_methods = ['standard', 'javascript', 'actionchains'] if click_method == 'all' else [click_method]
+        
+        for method in click_methods:
+            try:
+                if method == 'standard':
+                    element.click()
+                elif method == 'javascript':
+                    driver.execute_script("arguments[0].click();", element)
+                elif method == 'actionchains':
+                    ActionChains(driver).move_to_element(element).click().perform()
                 
-        finally:
-            # CRITICAL: Always close the current driver and advance to next
-            self.close_current_bookmark_driver()
-            print(f"🔄 CYCLING: Driver {step_log['driver_number']} processed, next will be {self.current_bookmark_driver_index + 1}/5")
+                click_success = True
+                if step_log:
+                    self._log_step(step_log, f"click_{selector_set_name}_{method}", True)
+                break
+            except Exception as click_error:
+                if step_log:
+                    self._log_step(step_log, f"click_{selector_set_name}_{method}", False, str(click_error))
+                continue
+        
+        return click_success
+
+    def _log_step(self, step_log, step_name, success=True, error_msg=None):
+        """Log each step for debugging and success rate analysis"""
+        if success:
+            step_log['steps_completed'].append(f"{step_name} - {time.time() - step_log['start_time']:.2f}s")
+            print(f"✅ DRIVER {step_log['driver_number']}: {step_name}")
+        else:
+            step_log['failures'].append(f"{step_name}: {error_msg} - {time.time() - step_log['start_time']:.2f}s")
+            print(f"❌ DRIVER {step_log['driver_number']}: {step_name} - {error_msg}")
+
+    def _log_final_bookmark_result(self, step_log):
+        """Log comprehensive results for success rate analysis"""
+        total_time = time.time() - step_log['start_time']
+        print(f"\n📊 BOOKMARK ANALYSIS - Driver {step_log['driver_number']}")
+        print(f"🔗 URL: {step_log.get('actual_url', 'N/A')[:60]}...")
+        print(f"⏱️  Total time: {total_time:.2f}s")
+        print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
+        print(f"❌ Failures: {len(step_log['failures'])}")
+        print(f"🎯 Critical sequence: {'YES' if step_log['critical_sequence_completed'] else 'NO'}")
+        print(f"🏆 Overall success: {'YES' if step_log['success'] else 'NO'}")
+        
+        # Log failures for analysis
+        if step_log['failures']:
+            print("🔍 FAILURE DETAILS:")
+            for failure in step_log['failures'][:3]:  # Show first 3 failures
+                print(f"  • {failure}")
 
     def cleanup_all_cycling_bookmark_drivers(self):
         """
