@@ -71,8 +71,8 @@ BUYING_TEST_MODE = False
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
 
 #tests both the bookmark and buying functionality
-TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6979387938-montblanc-explorer-extreme-parfum?referrer=catalog"
+TEST_BOOKMARK_BUYING_FUNCTIONALITY = True
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6989925386-green-and-yellow-chunky-bracelet?referrer=catalog"
 
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
@@ -97,6 +97,8 @@ test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 should_send_fail_bookmark_notification = True
 
+
+purchase_unsuccessful_detected_urls = {}  # Track URLs waiting for "Purchase unsuccessful" detection
 # Config
 PROFILE_DIR = "Default"
 PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default2"
@@ -2196,5 +2198,3 @@ class FacebookScraper:
                         dragging = False
                         resizing = False
                         drag_rect = None
-            # Handle dragging and resizing
-            if dragging and drag_rect is not None:

@@ -1,4 +1,6 @@
 # Continuation from line 2201
+            # Handle dragging and resizing
+            if dragging and drag_rect is not None:
                 rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
                 rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
             elif resizing and drag_rect is not None:
@@ -2066,136 +2068,134 @@ class VintedScraper:
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
 
-    def process_single_listing_with_driver(self, url, driver_num, driver):
+    def handle_post_payment_logic(self, driver, driver_num, url):
         """
-        ENHANCED: Process a single listing using the specified driver with robust error handling,
-        success rate logging, selector alternatives, and failure fast-path
+        Handle the logic after payment is clicked - check for success/errors
         """
+        print(f"💳 DRIVER {driver_num}: Handling post-payment logic...")
         
-        # SUCCESS RATE LOGGING - Track exactly where and when things break
-        process_log = {
-            'start_time': time.time(),
-            'url': url,
-            'driver_num': driver_num,
-            'steps_completed': [],
-            'failures': [],
-            'success': False,
-            'critical_operations': []
-        }
+        max_attempts = 250
+        attempt = 0
+        purchase_successful = False
         
-        def log_step(step_name, success=True, error_msg=None, duration=None):
-            """Log each step for debugging and success rate analysis"""
-            elapsed = duration if duration else time.time() - process_log['start_time']
+        while not purchase_successful and attempt < max_attempts:
+            attempt += 1
             
-            if success:
-                process_log['steps_completed'].append(f"{step_name} - {elapsed:.2f}s")
-                if print_debug:
-                    print(f"✅ DRIVER {driver_num}: {step_name}")
-            else:
-                process_log['failures'].append(f"{step_name}: {error_msg} - {elapsed:.2f}s")
-                print(f"❌ DRIVER {driver_num}: {step_name} - {error_msg}")
-        
-        def log_final_result():
-            """Log comprehensive results for success rate analysis"""
-            total_time = time.time() - process_log['start_time']
-            print(f"\n📊 PROCESSING ANALYSIS - Driver {driver_num}")
-            print(f"🔗 URL: {url[:60]}...")
-            print(f"⏱️  Total time: {total_time:.2f}s")
-            print(f"✅ Steps completed: {len(process_log['steps_completed'])}")
-            print(f"❌ Failures: {len(process_log['failures'])}")
-            print(f"🏆 Overall success: {'YES' if process_log['success'] else 'NO'}")
+            if attempt % 10 == 0:  # Print progress every 10 attempts
+                print(f"💳 DRIVER {driver_num}: Payment attempt {attempt}/{max_attempts}")
             
-            if process_log['failures'] and print_debug:
-                print("🔍 FAILURE DETAILS:")
-                for failure in process_log['failures'][:5]:  # Show first 5 failures
-                    print(f"  • {failure}")
-
-        # SELECTOR ALTERNATIVES - Multiple backup selectors for each critical element
-        SELECTOR_SETS = {
-
-            'purchase_unsuccessful': [
-                 "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
-                "//*[text()='Purchase unsuccessful']"
-            ],
-            
-            'buy_button': [
-                'button[data-testid="item-buy-button"]',
-                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
-                'button.web_ui__Button__button[data-testid="item-buy-button"]',
-                '//button[@data-testid="item-buy-button"]',
-                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
-                '//span[text()="Buy now"]/parent::button'
-            ],
-            
-            'pay_button': [
-                'button[data-testid="single-checkout-order-summary-purchase-button"]',
-                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
-                '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
-                'button.web_ui__Button__primary[data-testid*="purchase"]',
-                '//button[contains(@data-testid, "purchase-button")]',
-                '//button[contains(@class, "web_ui__Button__primary")]'
-            ],
-            
-            'ship_to_home': [
-                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]',
-                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to home"]',
-                '//h2[text()="Ship to home"]',
-                '//*[text()="Ship to home"]'
-            ],
-            
-            'ship_to_pickup': [
-                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]',
-                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to pick-up point"]',
-                '//h2[text()="Ship to pick-up point"]',
-                '//*[text()="Ship to pick-up point"]'
-            ],
-            
-            'success_message': [
-                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Purchase successful']",
-                "//h2[contains(@class, 'web_ui__Text__title') and text()='Purchase successful']",
-                "//h2[text()='Purchase successful']",
-                "//*[contains(text(), 'Purchase successful')]"
-            ],
-            
-            'error_modal': [
-                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format']//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left' and contains(text(), 'Sorry, we couldn')]",
-                "//span[@data-testid='checkout-payment-error-modal--body']",
-                "//div[@data-testid='checkout-payment-error-modal--overlay']",
-                "//span[contains(text(), \"Sorry, we couldn't process your payment\")]",
-                "//*[contains(text(), 'Some of the items belong to another purchase')]"
-            ],
-            
-            'ok_button': [
-                "//button[@data-testid='checkout-payment-error-modal-action-button']",
-                "//button//span[@class='web_ui__Button__label' and text()='OK, close']",
-                "//button[contains(.//text(), 'OK, close')]",
-                "//button[contains(@class, 'web_ui__Button__primary')]",
-                "//*[text()='OK, close']"
-            ]
-        }
-        
-        def try_selectors_fast_fail(driver, selector_set_name, operation='find', timeout=3, click_method='standard'):
-            """
-            FAILURE FAST-PATH - Try selectors with quick timeouts and fail quickly
-            Returns (element, selector_used) or (None, None) if all fail
-            """
-            selectors = SELECTOR_SETS.get(selector_set_name, [])
-            if not selectors:
-                log_step(f"no_selectors_{selector_set_name}", False, "No selectors defined")
-                return None, None
-            
-            for i, selector in enumerate(selectors):
-                try:
-                    if print_debug:
-                        print(f"🔍 DRIVER {driver_num}: Trying selector {i+1}/{len(selectors)} for {selector_set_name}")
+            # Check for error first (appears quickly)
+            try:
+                error_element = WebDriverWait(driver, 2).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//span[contains(text(), \"Sorry, we couldn't process your payment\")]"))
+                )
+                
+                if error_element:
+                    print(f"❌ DRIVER {driver_num}: Payment error detected, retrying...")
                     
-                    # Use appropriate locator strategy
-                    if selector.startswith('//'):
-                        if operation == 'click':
-                            element = WebDriverWait(driver, timeout).until(
-                                EC.element_to_be_clickable((By.XPATH, selector))
-                            )
-                        else:
+                    # Click OK to dismiss error
+                    try:
+                        ok_button = WebDriverWait(driver, 3).until(
+                            EC.element_to_be_clickable((By.XPATH, "//button[contains(.//text(), 'OK, close')]"))
+                        )
+                        ok_button.click()
+                        print(f"✅ DRIVER {driver_num}: Error dismissed")
+                    except:
+                        print(f"⚠️ DRIVER {driver_num}: Could not dismiss error")
+                    
+                    # Wait and try to click pay again
+                    time.sleep(buying_driver_click_pay_wait_time)
+                    
+                    # Re-find and click pay button
+                    try:
+                        pay_button = driver.find_element(By.CSS_SELECTOR, 
+                            'button[data-testid="single-checkout-order-summary-purchase-button"]')
+                        pay_button.click()
+                    except:
+                        print(f"❌ DRIVER {driver_num}: Could not re-click pay button")
+                        break
+                    
+                    continue
+            
+            except TimeoutException:
+                pass  # No error found, continue
+            
+            # Check for success
+            try:
+                success_element = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//h2[text()='Purchase successful']"))
+                )
+                
+                if success_element:
+                    print(f"🎉 DRIVER {driver_num}: PURCHASE SUCCESSFUL!")
+                    purchase_successful = True
+                    
+                    # Send success notification
+                    try:
+                        self.send_pushover_notification(
+                            "Vinted Purchase Successful",
+                            f"Successfully purchased: {url}",
+                            'aks3to8guqjye193w7ajnydk9jaxh5',
+                            'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                        )
+                    except Exception as notification_error:
+                        print(f"⚠️ DRIVER {driver_num}: Notification failed: {notification_error}")
+                    
+                    break
+            
+            except TimeoutException:
+                # No success message yet, continue trying
+                continue
+        
+        if not purchase_successful:
+            print(f"❌ DRIVER {driver_num}: Purchase failed after {attempt} attempts")
+        
+        # Clean up
+        try:
+            driver.close()
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+        
+        self.release_driver(driver_num)
+        print(f"✅ DRIVER {driver_num}: Post-payment cleanup completed")
+
+
+    def monitor_for_purchase_unsuccessful(self, url, driver, driver_num, pay_button):
+        """
+        Monitor for "Purchase unsuccessful" detection from bookmark driver and click pay immediately
+        """
+        print(f"🔍 DRIVER {driver_num}: Starting 'Purchase unsuccessful' monitoring for {url[:50]}...")
+        
+        start_time = time.time()
+        check_interval = 0.1  # Check every 100ms for ultra-fast response
+        timeout = 25 * 60  # 25 minutes timeout
+        
+        global purchase_unsuccessful_detected_urls
+        
+        try:
+            while True:
+                elapsed = time.time() - start_time
+                
+                # Check timeout
+                if elapsed >= timeout:
+                    print(f"⏰ DRIVER {driver_num}: Monitoring timeout after {elapsed/60:.1f} minutes")
+                    break
+                
+                # Check if driver is still alive
+                try:
+                    driver.current_url
+                except:
+                    print(f"💀 DRIVER {driver_num}: Driver died during monitoring")
+                    break
+                
+                # CRITICAL: Check if "Purchase unsuccessful" was detected
+                if url in purchase_unsuccessful_detected_urls:
+                    entry = purchase_unsuccessful_detected_urls[url]
+                    if not entry.get('waiting', True):  # Flag changed by bookmark driver
+                        print(f"🎯 DRIVER {driver_num}: 'Purchase unsuccessful' detected! CLICKING PAY NOW!")
+                        
+                        # IMMEDIATELY click pay button
