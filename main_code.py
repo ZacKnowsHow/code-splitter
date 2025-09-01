@@ -62,12 +62,12 @@ TEST_SUITABLE_URLS = [
 TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
-BOOKMARK_TEST_MODE = True
+BOOKMARK_TEST_MODE = False
 BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6990793592-new-look-handbag-black-fake-leather?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 #tests the buying functionality
-BUYING_TEST_MODE = True
+BUYING_TEST_MODE = False
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
 
 #tests both the bookmark and buying functionality
@@ -7265,7 +7265,7 @@ class VintedScraper:
 
 
     def _execute_first_buy_sequence(self, current_driver, step_log):
-        """Execute the first buy sequence with NEW shipping validation logic"""
+        """Execute the first buy sequence with NEW pay-button-first logic"""
         self._log_step(step_log, "first_sequence_start", True)
         
         # Find and click first buy button
@@ -7285,8 +7285,48 @@ class VintedScraper:
         
         self._log_step(step_log, "first_buy_button_clicked", True, f"Used: {first_buy_selector[:30]}...")
         
-        # NEW: SHIPPING VALIDATION LOGIC (Before clicking pay)
+        # NEW LOGIC: Wait for pay button to appear (indicates page has loaded)
+        print("💳 PAY BUTTON WAIT: Waiting for pay button to determine page has loaded...")
+        
+        pay_button_found = False
+        pay_button = None
+        pay_selector = None
+        
+        # Repeatedly search for pay button until found
+        max_pay_wait_attempts = 20  # 20 attempts * 0.5s = 10 seconds max wait
+        pay_wait_attempt = 0
+        
+        while not pay_button_found and pay_wait_attempt < max_pay_wait_attempts:
+            pay_wait_attempt += 1
+            
+            pay_element, pay_sel = self._try_selectors(
+                current_driver,
+                'pay_button',
+                operation='find',
+                timeout=0.5,  # Short timeout for each attempt
+                step_log=step_log
+            )
+            
+            if pay_element:
+                pay_button_found = True
+                pay_button = pay_element
+                pay_selector = pay_sel
+                print(f"✅ PAY BUTTON FOUND: Page loaded (attempt {pay_wait_attempt})")
+                self._log_step(step_log, "pay_button_found", True, f"Found after {pay_wait_attempt} attempts")
+                break
+            
+            # Short wait between attempts
+            time.sleep(0.5)
+        
+        if not pay_button_found:
+            self._log_step(step_log, "pay_button_not_found", False, "Payment interface never loaded")
+            print("❌ PAY BUTTON: Never found - payment interface not available")
+            return False
+        
+        # NOW handle shipping options (page is confirmed loaded)
         print("🚢 SHIPPING CHECK: Starting shipping option validation...")
+        
+        pay_button_is_valid = True  # Track if our pay button reference is still valid
         
         try:
             # Check if "Ship to pick-up point" is selected (aria-checked="true")
@@ -7326,10 +7366,48 @@ class VintedScraper:
                         print("🏠 SWITCHED: Successfully clicked 'Ship to home'")
                         self._log_step(step_log, "switched_to_ship_home", True)
                         
+                        # CRITICAL: The previous pay button reference is now INVALID
+                        pay_button_is_valid = False
+                        print("⚠️ PAY BUTTON: Previous reference invalidated by shipping change")
+                        
                         # Wait 0.3 seconds as specifically requested
                         time.sleep(0.3)
                         print("⏳ WAITED: 0.3 seconds after switching to Ship to home")
                         
+                        # NOW search for pay button again
+                        print("🔍 PAY BUTTON: Searching again after shipping change...")
+                        
+                        pay_button_found_again = False
+                        max_retry_attempts = 10  # 10 attempts * 0.5s = 5 seconds max
+                        retry_attempt = 0
+                        
+                        while not pay_button_found_again and retry_attempt < max_retry_attempts:
+                            retry_attempt += 1
+                            
+                            pay_element_new, pay_sel_new = self._try_selectors(
+                                current_driver,
+                                'pay_button',
+                                operation='find',
+                                timeout=0.5,
+                                step_log=step_log
+                            )
+                            
+                            if pay_element_new:
+                                pay_button = pay_element_new
+                                pay_selector = pay_sel_new
+                                pay_button_is_valid = True
+                                pay_button_found_again = True
+                                print(f"✅ PAY BUTTON: Found again after shipping change (attempt {retry_attempt})")
+                                self._log_step(step_log, "pay_button_found_after_shipping_change", True)
+                                break
+                            
+                            time.sleep(0.5)
+                        
+                        if not pay_button_found_again:
+                            print("❌ PAY BUTTON: Could not find pay button after shipping change")
+                            self._log_step(step_log, "pay_button_not_found_after_shipping", False)
+                            return False
+                            
                     except NoSuchElementException:
                         print("❌ SWITCH ERROR: Could not find 'Ship to home' button")
                         self._log_step(step_log, "ship_home_button_not_found", False)
@@ -7352,42 +7430,42 @@ class VintedScraper:
             self._log_step(step_log, "shipping_check_error", False, str(shipping_error))
             # Continue anyway - don't fail the entire process for shipping issues
         
-        print("✅ SHIPPING CHECK: Validation completed - proceeding to find pay button")
+        print("✅ SHIPPING CHECK: Validation completed - proceeding to click pay button")
         
-        # Find pay button (AFTER shipping logic is complete)
-        pay_element, pay_selector = self._try_selectors(
-            current_driver,
-            'pay_button',
-            operation='find',
-            timeout=10,
-            step_log=step_log
-        )
-        
-        if not pay_element:
-            self._log_step(step_log, "pay_button_not_found", False, "Payment interface not available")
+        # Verify we have a valid pay button before clicking
+        if not pay_button_is_valid or not pay_button:
+            print("❌ PAY BUTTON: No valid pay button reference - cannot proceed")
+            self._log_step(step_log, "no_valid_pay_button", False)
             return False
         
-        self._log_step(step_log, "pay_button_found", True, f"Used: {pay_selector[:30]}...")
-        
-        # Execute the critical pay sequence (UNCHANGED - this is the 0.25s wait + tab close)
-        return self._execute_critical_pay_sequence(current_driver, step_log)
+        # Execute the critical pay sequence with our confirmed valid pay button
+        return self._execute_critical_pay_sequence_with_button(current_driver, pay_button, step_log)
 
-    def _execute_critical_pay_sequence(self, current_driver, step_log):
-        """Execute the critical pay sequence - CANNOT be modified!"""
+    def _execute_critical_pay_sequence_with_button(self, current_driver, pay_button, step_log):
+        """Execute the critical pay sequence using the provided pay button - CANNOT be modified!"""
         try:
             # FORCE-click the pay button using multiple aggressive methods
             pay_clicked = False
             
-            # Method 1: Click the inner span directly
+            # Method 1: Click the pay button directly
             try:
-                pay_span = current_driver.find_element(By.XPATH, "//button[@data-testid='single-checkout-order-summary-purchase-button']//span[text()='Pay']")
-                pay_span.click()
-                self._log_step(step_log, "pay_button_click_span", True, "Clicked Pay span directly")
+                pay_button.click()
+                self._log_step(step_log, "pay_button_click_direct", True, "Clicked pay button directly")
                 pay_clicked = True
-            except Exception as span_error:
-                self._log_step(step_log, "pay_button_click_span", False, str(span_error))
+            except Exception as direct_error:
+                self._log_step(step_log, "pay_button_click_direct", False, str(direct_error))
             
-            # Method 2: Force enable button and click via JS
+            # Method 2: Click the inner span directly
+            if not pay_clicked:
+                try:
+                    pay_span = current_driver.find_element(By.XPATH, "//button[@data-testid='single-checkout-order-summary-purchase-button']//span[text()='Pay']")
+                    pay_span.click()
+                    self._log_step(step_log, "pay_button_click_span", True, "Clicked Pay span directly")
+                    pay_clicked = True
+                except Exception as span_error:
+                    self._log_step(step_log, "pay_button_click_span", False, str(span_error))
+            
+            # Method 3: Force enable button and click via JS
             if not pay_clicked:
                 try:
                     current_driver.execute_script("""
@@ -7403,7 +7481,7 @@ class VintedScraper:
                 except Exception as js_error:
                     self._log_step(step_log, "pay_button_click_force_js", False, str(js_error))
             
-            # Method 3: Dispatch click event directly
+            # Method 4: Dispatch click event directly
             if not pay_clicked:
                 try:
                     current_driver.execute_script("""
@@ -7421,21 +7499,6 @@ class VintedScraper:
                     pay_clicked = True
                 except Exception as dispatch_error:
                     self._log_step(step_log, "pay_button_click_dispatch_event", False, str(dispatch_error))
-            
-            # Method 4: Form submission
-            if not pay_clicked:
-                try:
-                    current_driver.execute_script("""
-                        var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
-                        var form = button ? button.closest('form') : null;
-                        if (form) {
-                            form.submit();
-                        }
-                    """)
-                    self._log_step(step_log, "pay_button_form_submit", True, "Submitted form directly")
-                    pay_clicked = True
-                except Exception as form_error:
-                    self._log_step(step_log, "pay_button_form_submit", False, str(form_error))
             
             if not pay_clicked:
                 self._log_step(step_log, "pay_button_click_all_failed", False, "All 4 aggressive methods failed")
@@ -8695,7 +8758,9 @@ class VintedScraper:
         flask_thread.daemon = True
         flask_thread.start()
         
-        self.run_pygame_window()
+        # Start pygame window in separate thread
+        pygame_thread = threading.Thread(target=self.run_pygame_window)
+        pygame_thread.start()
         
         # Clear download folder and start scraping
         self.clear_download_folder()
