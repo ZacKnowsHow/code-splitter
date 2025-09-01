@@ -62,16 +62,16 @@ TEST_SUITABLE_URLS = [
 TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
-BOOKMARK_TEST_MODE = False
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6988862870-empty-pokemon-sword-and-shield?homepage_session_id=6236105e-1b45-4229-bf26-dfcfca3f4f82"
+BOOKMARK_TEST_MODE = True
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6990793592-new-look-handbag-black-fake-leather?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 #tests the buying functionality
-BUYING_TEST_MODE = False
+BUYING_TEST_MODE = True
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
 
 #tests both the bookmark and buying functionality
-TEST_BOOKMARK_BUYING_FUNCTIONALITY = True
+TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
 TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6989925386-green-and-yellow-chunky-bracelet?referrer=catalog"
 
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
