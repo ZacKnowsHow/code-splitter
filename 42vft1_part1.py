@@ -72,7 +72,7 @@ BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle
 
 #tests both the bookmark and buying functionality
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = True
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6990013682-white-denim-shorts?referrer=catalog"
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6989925386-green-and-yellow-chunky-bracelet?referrer=catalog"
 
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [

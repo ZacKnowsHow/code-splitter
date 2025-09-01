@@ -1730,33 +1730,32 @@
                 bookmark_success = self.bookmark_driver(TEST_BOOKMARK_BUYING_URL, test_username)
                 
                 if bookmark_success:
-                    print("✅ BOOKMARK: Successfully bookmarked the item")
-                    
-                    # MODIFIED: Automatically simulate "yes" button press immediately after bookmark
-                    print("🤖 AUTO-SIM: Simulating user pressed 'YES' on website...")
-                    
-                    # Add the URL to clicked listings to simulate user interaction
-                    self.clicked_yes_listings.add(TEST_BOOKMARK_BUYING_URL)
-                    
-                    # MODIFIED: Call the enhanced button functionality directly
-                    # This simulates what happens when user clicks "yes" on the website
-                    print("🚀 AUTO-SIM: Triggering buying process immediately (as if user clicked YES)...")
-                    self.vinted_button_clicked_enhanced(TEST_BOOKMARK_BUYING_URL)
-                    
                     if wait_for_bookmark_stopwatch_to_buy:
+                        print("✅ BOOKMARK: Successfully bookmarked the item")
                         print(f"⏱️ WAITING: Waiting {bookmark_stopwatch_length} seconds for bookmark timer...")
                         
                         # Wait for the full bookmark stopwatch duration
-                        # During this time, the buying driver is already working in the background
                         time.sleep(bookmark_stopwatch_length)
                         
-                        print("✅ WAIT COMPLETE: Bookmark timer finished")
+                        print("✅ WAIT COMPLETE: Bookmark timer finished, starting buying process...")
+                        
+                    # Now start the buying process using process_single_listing_with_driver
+                    driver_num, driver = self.get_available_driver()
                     
-                    print("✅ TEST COMPLETE: Bookmark + Auto-YES + Buying process finished")
-                            
+                    if driver is not None:
+                        print(f"✅ BUYING: Got driver {driver_num}")
+                        print("💳 STARTING: Buying process...")
+                        
+                        # Execute the purchase process
+                        self.process_single_listing_with_driver(TEST_BOOKMARK_BUYING_URL, driver_num, driver)
+                        
+                        print("✅ TEST COMPLETE: Bookmark + Buying process finished")
+                    else:
+                        print("❌ BUYING ERROR: Could not get available driver")
+                        
                 else:
                     print("❌ BOOKMARK FAILED: Could not bookmark the item, skipping buying process")
-                            
+                    
             except Exception as e:
                 print(f"❌ TEST ERROR: {e}")
                 import traceback
@@ -1766,7 +1765,6 @@
                 self.cleanup_all_buying_drivers()
                 self.cleanup_persistent_buying_driver()
                 self.cleanup_persistent_bookmark_driver()
-                self.cleanup_all_cycling_bookmark_drivers()
             
             # Exit immediately after test
             print("🔖💳 TEST_BOOKMARK_BUYING_FUNCTIONALITY COMPLETE - EXITING")
