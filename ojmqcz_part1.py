@@ -63,7 +63,7 @@ TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
 BOOKMARK_TEST_MODE = False
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6984057857-animal-crossing-new-horizons-box-and-disk?homepage_session_id=9255cc93-e50e-4ea1-9a02-75a6594ad2b2"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 #tests the buying functionality
@@ -71,7 +71,7 @@ BUYING_TEST_MODE = False
 BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
 
 #tests both the bookmark and buying functionality
-TEST_BOOKMARK_BUYING_FUNCTIONALITY = True
+TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
 TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6979387938-montblanc-explorer-extreme-parfum?referrer=catalog"
 
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
@@ -300,7 +300,7 @@ vinted_scraper_instance = None
 BASE_PRICES = {
    '1_2_switch': 6.5, 'animal_crossing': 24, 'arceus_p': 27.5, 'bow_z': 28, 'bros_deluxe_m': 23.5,
    'comfort_h': 6,
-   'controller': 15, 'crash_sand': 11, 'diamond_p': 26, 'evee': 25, 'fifa_23': 7.5, 'fifa_24': 14,
+   'controller': 8.5, 'crash_sand': 11, 'diamond_p': 26, 'evee': 25, 'fifa_23': 7.5, 'fifa_24': 14,
    'gta': 21, 'just_dance': 5, 'kart_m': 22, 'kirby': 29, 'lets_go_p': 25, 'links_z': 26,
    'lite': 52, 'luigis': 20, 'mario_maker_2': 19, 'mario_sonic': 14, 'mario_tennis': 12,
    'minecraft': 14,

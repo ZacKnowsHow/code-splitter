@@ -1,4 +1,132 @@
 # Continuation from line 4401
+                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                            )
+                    
+                    # If we need to click, try the requested click method(s)
+                    if operation == 'click':
+                        click_methods = ['standard', 'javascript', 'actionchains'] if click_method == 'all' else [click_method]
+                        
+                        for method in click_methods:
+                            try:
+                                if method == 'standard':
+                                    element.click()
+                                elif method == 'javascript':
+                                    driver.execute_script("arguments[0].click();", element)
+                                elif method == 'actionchains':
+                                    from selenium.webdriver.common.action_chains import ActionChains
+                                    ActionChains(driver).move_to_element(element).click().perform()
+                                
+                                log_step(f"click_{selector_set_name}_{method}", True)
+                                break
+                            except Exception as click_error:
+                                log_step(f"click_{selector_set_name}_{method}_attempt", False, str(click_error))
+                                continue
+                        else:
+                            continue  # All click methods failed, try next selector
+                    
+                    log_step(f"selector_{selector_set_name}_success", True, f"Used #{i+1}: {selector[:30]}...")
+                    return element, selector
+                    
+                except TimeoutException:
+                    log_step(f"selector_{selector_set_name}_{i+1}_timeout", False, f"Timeout after {timeout}s")
+                    continue
+                except Exception as e:
+                    log_step(f"selector_{selector_set_name}_{i+1}_error", False, str(e)[:100])
+                    continue
+            
+            log_step(f"all_selectors_{selector_set_name}_failed", False, f"All {len(selectors)} selectors failed")
+            return None, None
+
+        # START OF MAIN PROCESSING LOGIC
+        start_time = time.time()
+        log_step("processing_started", True)
+        
+        try:
+            print(f"🔥 DRIVER {driver_num}: Starting robust processing of {url[:50]}...")
+            
+            # DRIVER HEALTH CHECK - Verify driver is alive before using it
+            try:
+                current_url = driver.current_url
+                log_step("driver_health_check", True, f"Driver alive: {current_url[:30]}...")
+            except Exception as e:
+                log_step("driver_health_check", False, f"Driver is dead: {str(e)}")
+                log_final_result()
+                return
+            
+            # TAB MANAGEMENT - Open new tab for processing
+            try:
+                stopwatch_start = time.time()
+                print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
+                driver.execute_script("window.open('');")
+                new_tab = driver.window_handles[-1]
+                driver.switch_to.window(new_tab)
+                log_step("new_tab_opened", True, f"Total tabs: {len(driver.window_handles)}")
+            except Exception as e:
+                log_step("new_tab_creation", False, str(e))
+                log_final_result()
+                return
+
+            # URL HANDLING - Support test mode
+            if test_purchase_not_true:
+                actual_url = test_purchase_url
+                log_step("test_mode_url", True, f"Using test URL: {actual_url}")
+            else:
+                actual_url = url
+                log_step("normal_url", True)
+            
+            # NAVIGATION - Navigate to listing with retry logic
+            navigation_success = False
+            for nav_attempt in range(3):  # Try up to 3 times
+                try:
+                    log_step(f"navigation_attempt_{nav_attempt+1}", True)
+                    driver.get(actual_url)
+                    
+                    # Wait for page to load with timeout
+                    WebDriverWait(driver, 8).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                    navigation_success = True
+                    log_step("navigation_success", True)
+                    break
+                    
+                except TimeoutException:
+                    log_step(f"navigation_timeout_{nav_attempt+1}", False, "Page load timeout")
+                    if nav_attempt < 2:  # Not the last attempt
+                        time.sleep(1)
+                        continue
+                except Exception as nav_error:
+                    log_step(f"navigation_error_{nav_attempt+1}", False, str(nav_error))
+                    if nav_attempt < 2:  # Not the last attempt
+                        time.sleep(1)
+                        continue
+
+            if not navigation_success:
+                log_step("navigation_final_failure", False, "All navigation attempts failed")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                log_final_result()
+                return
+
+            # BUY BUTTON DETECTION - Look for Buy now button with multiple selectors
+            buy_button, buy_selector = try_selectors_fast_fail(
+                driver, 'buy_button', operation='click', timeout=10, click_method='all'
+            )
+            
+            if not buy_button:
+                log_step("buy_button_not_found", False, "Item likely sold or unavailable")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                log_final_result()
+                return
+
             log_step("buy_button_clicked", True, f"Used: {buy_selector[:30]}...")
             process_log['critical_operations'].append("buy_button_clicked")
 
@@ -2033,7 +2161,7 @@
         is_first_refresh = True
         
         # NEW: Driver restart tracking
-        DRIVER_RESTART_INTERVAL = 250
+        DRIVER_RESTART_INTERVAL = 100
         cycles_since_restart = 0
 
         # Main scanning loop with refresh functionality AND driver restart
@@ -2071,131 +2199,3 @@
                         "price_from": PRICE_FROM,
                         "price_to": PRICE_TO,
                         "currency": CURRENCY,
-                        "order": ORDER,
-                    }
-                    current_driver.get(f"{BASE_URL}?{urlencode(params)}")
-                    
-                    # Wait for page to load after restart
-                    try:
-                        WebDriverWait(current_driver, 20).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-                        )
-                        print("✅ RESTART: Page loaded successfully after driver restart")
-                    except TimeoutException:
-                        print("⚠️ RESTART: Timeout waiting for page after driver restart")
-                    
-                except Exception as restart_error:
-                    print(f"❌ RESTART ERROR: Failed to restart driver: {restart_error}")
-                    print("💥 CRITICAL: Cannot continue without working driver")
-                    break
-            
-            cycle_listing_counter = 0  # Listings processed in this cycle
-            found_already_scanned = False
-            
-            # Reset to first page for each cycle
-            page = 1
-            
-            while True:  # Page loop
-                try:
-                    WebDriverWait(current_driver, 20).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-                    )
-                except TimeoutException:
-                    print("⚠️ Timeout waiting for page to load - moving to next cycle")
-                    break
-
-                # Get listing URLs from current page
-                els = current_driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
-                urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
-                
-                if not urls:
-                    print(f"📄 No listings found on page {page} - moving to next cycle")
-                    break
-
-                print(f"📄 Processing page {page} with {len(urls)} listings")
-
-                for idx, url in enumerate(urls, start=1):
-                    cycle_listing_counter += 1
-                    
-                    print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
-                    
-                    # Extract listing ID and check if already scanned
-                    listing_id = self.extract_vinted_listing_id(url)
-                    
-                    if REFRESH_AND_RESCAN and listing_id:
-                        if listing_id in scanned_ids:
-                            print(f"🔁 DUPLICATE DETECTED: Listing ID {listing_id} already scanned")
-                            print(f"🔄 Initiating refresh and rescan process...")
-                            found_already_scanned = True
-                            break
-                    
-                    # Check if we've hit the maximum listings for this cycle
-                    if REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
-                        print(f"📊 Reached MAX_LISTINGS_VINTED_TO_SCAN ({MAX_LISTINGS_VINTED_TO_SCAN})")
-                        print(f"🔄 Initiating refresh cycle...")
-                        break
-
-                    overall_listing_counter += 1
-
-                    # Process the listing (using current_driver instead of driver)
-                    current_driver.execute_script("window.open();")
-                    current_driver.switch_to.window(current_driver.window_handles[-1])
-                    current_driver.get(url)
-
-                    try:
-                        listing_start_time = time.time()
-                        details = self.scrape_item_details(current_driver)
-                        second_price = self.extract_price(details["second_price"])
-                        postage = self.extract_price(details["postage"])
-                        total_price = second_price + postage
-
-                        print(f"  Link:         {url}")
-                        print(f"  Title:        {details['title']}")
-                        print(f"  Username:     {details.get('username', 'Username not found')}")
-                        print(f"  Price:        {details['price']}")
-                        print(f"  Second price: {details['second_price']} ({second_price:.2f})")
-                        print(f"  Postage:      {details['postage']} ({postage:.2f})")
-                        print(f"  Total price:  £{total_price:.2f}")
-                        print(f"  Uploaded:     {details['uploaded']}")
-
-                        # Download images for the current listing
-                        listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
-                        image_paths = self.download_images_for_listing(current_driver, listing_dir)
-
-                        # Perform object detection and get processed images
-                        detected_objects = {}
-                        processed_images = []
-                        if model and image_paths:
-                            detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
-                            
-                            # Print detected objects
-                            detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
-                            if detected_classes:
-                                for cls in sorted(detected_classes):
-                                    print(f"  • {cls}: {detected_objects[cls]}")
-
-                        # Process listing for pygame display
-                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
-
-                        # Mark this listing as scanned
-                        if listing_id:
-                            scanned_ids.add(listing_id)
-                            self.save_vinted_listing_id(listing_id)
-                            print(f"✅ Saved listing ID: {listing_id}")
-
-                        print("-" * 40)
-                        listing_end_time = time.time()
-                        elapsed_time = listing_end_time - listing_start_time
-                        print(f"⏱️ Listing {overall_listing_counter} processing completed in {elapsed_time:.2f} seconds")
-
-                        
-                    except Exception as e:
-                        print(f"  ❌ ERROR scraping listing: {e}")
-                        # Still mark as scanned even if there was an error
-                        if listing_id:
-                            scanned_ids.add(listing_id)
-                            self.save_vinted_listing_id(listing_id)
-
-                    finally:
-                        current_driver.close()
-                        current_driver.switch_to.window(current_driver.window_handles[0])  # Use index 0 instead of main

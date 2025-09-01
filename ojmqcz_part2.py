@@ -1415,6 +1415,134 @@ class VintedScraper:
             self.buying_drivers[i] = None
             self.driver_status[i] = 'not_created'
 
+
+        self.current_bookmark_driver_index = 0
+        self.bookmark_driver_configs = [
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default_Bookmark',
+                'profile_directory': 'Profile 4'
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default2_Bookmark', 
+                'profile_directory': 'Profile 17'
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default3_Bookmark',
+                'profile_directory': 'Profile 6' 
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default4_Bookmark',
+                'profile_directory': 'Profile 12'
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default5_Bookmark',
+                'profile_directory': 'Profile 18'
+            }
+        ]
+        self.current_bookmark_driver = None
+
+                
+    def get_next_bookmark_driver(self):
+        """
+        Get the current ready bookmark driver (already created and waiting)
+        If no driver exists (first call), create the first one
+        """
+        # If no driver exists yet (program startup), create the first one
+        if self.current_bookmark_driver is None:
+            print(f"🚀 CYCLING: Creating FIRST bookmark driver {self.current_bookmark_driver_index + 1}/5")
+            config = self.bookmark_driver_configs[self.current_bookmark_driver_index]
+            
+            try:
+                # Ensure ChromeDriver is cached
+                if not hasattr(self, '_cached_chromedriver_path'):
+                    self._cached_chromedriver_path = ChromeDriverManager().install()
+                
+                service = Service(self._cached_chromedriver_path, log_path=os.devnull)
+                
+                chrome_opts = Options()
+                chrome_opts.add_argument(f"--user-data-dir={config['user_data_dir']}")
+                chrome_opts.add_argument(f"--profile-directory={config['profile_directory']}")
+                chrome_opts.add_argument("--no-sandbox")
+                chrome_opts.add_argument("--disable-dev-shm-usage")
+                chrome_opts.add_argument("--disable-gpu")
+                chrome_opts.add_argument("--window-size=800,600")
+                chrome_opts.add_argument("--log-level=3")
+                chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+                chrome_opts.add_experimental_option('useAutomationExtension', False)
+                
+                # Create the driver
+                self.current_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
+                
+                # Set timeouts
+                self.current_bookmark_driver.implicitly_wait(1)
+                self.current_bookmark_driver.set_page_load_timeout(8)
+                self.current_bookmark_driver.set_script_timeout(3)
+                
+                # DON'T navigate anywhere - leave it blank as requested
+                print(f"✅ CYCLING: First driver {self.current_bookmark_driver_index + 1}/5 created and ready (blank page)")
+                
+            except Exception as e:
+                print(f"❌ CYCLING: Failed to create first bookmark driver: {e}")
+                return None
+        
+        # Return the current ready driver (either just created or already waiting from previous close)
+        print(f"📋 CYCLING: Using ready driver {self.current_bookmark_driver_index + 1}/5")
+        return self.current_bookmark_driver
+
+    def close_current_bookmark_driver(self):
+        """
+        Close the current bookmark driver, advance to next index, and IMMEDIATELY open the next driver
+        """
+        if self.current_bookmark_driver is not None:
+            try:
+                print(f"🗑️ CYCLING: Closing bookmark driver {self.current_bookmark_driver_index + 1}")
+                self.current_bookmark_driver.quit()
+                time.sleep(0.5)  # Brief pause for cleanup
+                print(f"✅ CYCLING: Closed bookmark driver {self.current_bookmark_driver_index + 1}")
+            except Exception as e:
+                print(f"⚠️ CYCLING: Error closing driver {self.current_bookmark_driver_index + 1}: {e}")
+            finally:
+                self.current_bookmark_driver = None
+        
+        # Advance to next driver (cycle back to 0 after 4)
+        self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
+        
+        # IMMEDIATELY open the next driver and keep it ready
+        print(f"🚀 CYCLING: IMMEDIATELY opening next driver {self.current_bookmark_driver_index + 1}/5")
+        next_config = self.bookmark_driver_configs[self.current_bookmark_driver_index]
+        
+        try:
+            # Ensure ChromeDriver is cached
+            if not hasattr(self, '_cached_chromedriver_path'):
+                self._cached_chromedriver_path = ChromeDriverManager().install()
+            
+            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
+            
+            chrome_opts = Options()
+            chrome_opts.add_argument(f"--user-data-dir={next_config['user_data_dir']}")
+            chrome_opts.add_argument(f"--profile-directory={next_config['profile_directory']}")
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+            chrome_opts.add_experimental_option('useAutomationExtension', False)
+            
+            # Create the NEXT driver immediately
+            self.current_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set timeouts
+            self.current_bookmark_driver.implicitly_wait(1)
+            self.current_bookmark_driver.set_page_load_timeout(8)
+            self.current_bookmark_driver.set_script_timeout(3)
+            
+            # DON'T navigate anywhere - leave it blank as requested
+            print(f"✅ CYCLING: Driver {self.current_bookmark_driver_index + 1}/5 is now open and ready (blank page)")
+            
+        except Exception as e:
+            print(f"❌ CYCLING: Failed to open next driver {self.current_bookmark_driver_index + 1}: {e}")
+            self.current_bookmark_driver = None
     def get_available_driver(self):
         """
         FIXED: Find and reserve the first available driver with proper initialization
@@ -2071,131 +2199,3 @@ class VintedScraper:
                             )
                         else:
                             element = WebDriverWait(driver, timeout).until(
-                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                            )
-                    
-                    # If we need to click, try the requested click method(s)
-                    if operation == 'click':
-                        click_methods = ['standard', 'javascript', 'actionchains'] if click_method == 'all' else [click_method]
-                        
-                        for method in click_methods:
-                            try:
-                                if method == 'standard':
-                                    element.click()
-                                elif method == 'javascript':
-                                    driver.execute_script("arguments[0].click();", element)
-                                elif method == 'actionchains':
-                                    from selenium.webdriver.common.action_chains import ActionChains
-                                    ActionChains(driver).move_to_element(element).click().perform()
-                                
-                                log_step(f"click_{selector_set_name}_{method}", True)
-                                break
-                            except Exception as click_error:
-                                log_step(f"click_{selector_set_name}_{method}_attempt", False, str(click_error))
-                                continue
-                        else:
-                            continue  # All click methods failed, try next selector
-                    
-                    log_step(f"selector_{selector_set_name}_success", True, f"Used #{i+1}: {selector[:30]}...")
-                    return element, selector
-                    
-                except TimeoutException:
-                    log_step(f"selector_{selector_set_name}_{i+1}_timeout", False, f"Timeout after {timeout}s")
-                    continue
-                except Exception as e:
-                    log_step(f"selector_{selector_set_name}_{i+1}_error", False, str(e)[:100])
-                    continue
-            
-            log_step(f"all_selectors_{selector_set_name}_failed", False, f"All {len(selectors)} selectors failed")
-            return None, None
-
-        # START OF MAIN PROCESSING LOGIC
-        start_time = time.time()
-        log_step("processing_started", True)
-        
-        try:
-            print(f"🔥 DRIVER {driver_num}: Starting robust processing of {url[:50]}...")
-            
-            # DRIVER HEALTH CHECK - Verify driver is alive before using it
-            try:
-                current_url = driver.current_url
-                log_step("driver_health_check", True, f"Driver alive: {current_url[:30]}...")
-            except Exception as e:
-                log_step("driver_health_check", False, f"Driver is dead: {str(e)}")
-                log_final_result()
-                return
-            
-            # TAB MANAGEMENT - Open new tab for processing
-            try:
-                stopwatch_start = time.time()
-                print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
-                driver.execute_script("window.open('');")
-                new_tab = driver.window_handles[-1]
-                driver.switch_to.window(new_tab)
-                log_step("new_tab_opened", True, f"Total tabs: {len(driver.window_handles)}")
-            except Exception as e:
-                log_step("new_tab_creation", False, str(e))
-                log_final_result()
-                return
-
-            # URL HANDLING - Support test mode
-            if test_purchase_not_true:
-                actual_url = test_purchase_url
-                log_step("test_mode_url", True, f"Using test URL: {actual_url}")
-            else:
-                actual_url = url
-                log_step("normal_url", True)
-            
-            # NAVIGATION - Navigate to listing with retry logic
-            navigation_success = False
-            for nav_attempt in range(3):  # Try up to 3 times
-                try:
-                    log_step(f"navigation_attempt_{nav_attempt+1}", True)
-                    driver.get(actual_url)
-                    
-                    # Wait for page to load with timeout
-                    WebDriverWait(driver, 8).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
-                    navigation_success = True
-                    log_step("navigation_success", True)
-                    break
-                    
-                except TimeoutException:
-                    log_step(f"navigation_timeout_{nav_attempt+1}", False, "Page load timeout")
-                    if nav_attempt < 2:  # Not the last attempt
-                        time.sleep(1)
-                        continue
-                except Exception as nav_error:
-                    log_step(f"navigation_error_{nav_attempt+1}", False, str(nav_error))
-                    if nav_attempt < 2:  # Not the last attempt
-                        time.sleep(1)
-                        continue
-
-            if not navigation_success:
-                log_step("navigation_final_failure", False, "All navigation attempts failed")
-                try:
-                    driver.close()
-                    if len(driver.window_handles) > 0:
-                        driver.switch_to.window(driver.window_handles[0])
-                except:
-                    pass
-                log_final_result()
-                return
-
-            # BUY BUTTON DETECTION - Look for Buy now button with multiple selectors
-            buy_button, buy_selector = try_selectors_fast_fail(
-                driver, 'buy_button', operation='click', timeout=10, click_method='all'
-            )
-            
-            if not buy_button:
-                log_step("buy_button_not_found", False, "Item likely sold or unavailable")
-                try:
-                    driver.close()
-                    if len(driver.window_handles) > 0:
-                        driver.switch_to.window(driver.window_handles[0])
-                except:
-                    pass
-                log_final_result()
-                return
-
