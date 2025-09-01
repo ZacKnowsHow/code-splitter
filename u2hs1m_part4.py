@@ -1,4 +1,29 @@
 # Continuation from line 6601
+
+                # Check if we need to break out of page loop
+                if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
+                    break
+
+                # Try to go to next page
+                try:
+                    nxt = current_driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
+                    current_driver.execute_script("arguments[0].click();", nxt)
+                    page += 1
+                    time.sleep(2)
+                except NoSuchElementException:
+                    print("📄 No more pages available - moving to next cycle")
+                    break
+
+            # End of page loop - decide whether to continue or refresh
+            if not REFRESH_AND_RESCAN:
+                print("🏁 REFRESH_AND_RESCAN disabled - ending scan")
+                break
+            
+            if found_already_scanned:
+                print(f"🔁 Found already scanned listing - refreshing immediately")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+            elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
                 self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
             else:
                 print("📄 No more pages and no max reached - refreshing for new listings")
@@ -278,6 +303,8 @@
             
             # ENHANCED TAB MANAGEMENT
             try:
+                stopwatch_start = time.time()
+                print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
                 self.persistent_bookmark_driver.execute_script("window.open('');")
                 new_tab = self.persistent_bookmark_driver.window_handles[-1]
                 self.persistent_bookmark_driver.switch_to.window(new_tab)
@@ -321,41 +348,7 @@
             if first_buy_element:
                 log_step("first_buy_button_clicked", True, f"Used: {first_buy_selector[:30]}...")
                 
-                # NEW: Add "Ship to home" button click here - VERY QUICK
-                try:
-                    print("🏠 QUICK: Looking for Ship to home button...")
-                    
-                    # Try to find and click "Ship to home" button quickly (2 second timeout only)
-                    ship_to_home_selectors = [
-                        '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]',
-                        '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to home"]',
-                        '//h2[text()="Ship to home"]',
-                        '//*[text()="Ship to home"]'
-                    ]
-                    
-                    ship_home_clicked = False
-                    for selector in ship_to_home_selectors:
-                        try:
-                            ship_element = WebDriverWait(self.persistent_bookmark_driver, 2).until(
-                                EC.element_to_be_clickable((By.XPATH, selector))
-                            )
-                            ship_element.click()
-                            print("✅ QUICK: Ship to home button clicked successfully")
-                            ship_home_clicked = True
-                            time.sleep(2.75) # takes a while to load after clicking
-                            break
-                        except:
-                            continue
-                    
-                    if not ship_home_clicked:
-                        print("⚠️ QUICK: Ship to home button not found - continuing...")
-                
-                except Exception as ship_error:
-                    print(f"⚠️ QUICK: Ship to home click failed: {ship_error}")
-                    # Continue regardless - don't let this stop the bookmark process
-                
-                # EXISTING CODE CONTINUES HERE (look for Pay button)
-                # Look for Pay button with enhanced selectors
+     
                 pay_element, pay_selector = try_selectors(
                     self.persistent_bookmark_driver,
                     'pay_button',
@@ -438,7 +431,11 @@
                             # ⚠️ CRITICAL: Immediate tab close - DO NOT MODIFY! ⚠️
                             print("🔖 CRITICAL: Closing tab immediately...")
                             self.persistent_bookmark_driver.close()
-                            
+
+                            stopwatch_end = time.time()
+                            elapsed = stopwatch_end - stopwatch_start
+                            print(f"⏱️ STOPWATCH: First sequence completed in {elapsed:.3f} seconds")
+                                            
                             step_log['critical_sequence_completed'] = True
                             log_step("critical_sequence_completed", True, "0.25s wait + tab close")
                             

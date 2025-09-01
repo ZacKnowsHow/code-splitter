@@ -1,4 +1,29 @@
 # Continuation from line 4401
+            log_step("buy_button_clicked", True, f"Used: {buy_selector[:30]}...")
+            process_log['critical_operations'].append("buy_button_clicked")
+
+            # PURCHASE FLOW BRANCHING - Different logic based on actually_purchase_listing
+            if actually_purchase_listing:
+                log_step("purchase_mode_enabled", True, "Starting actual purchase process")
+                
+                # SHIPPING SELECTION - Click "Ship to home" first if available
+                ship_home_element, ship_home_selector = try_selectors_fast_fail(
+                    driver, 'ship_to_home', operation='click', timeout=15, click_method='all'
+                )
+                
+                if ship_home_element:
+                    log_step("ship_to_home_clicked", True)
+                    time.sleep(2)  # Brief wait as requested
+                else:
+                    log_step("ship_to_home_not_found", False, "Continuing without shipping selection")
+                
+                # PAY BUTTON DETECTION - Look for pay button
+                pay_button, pay_selector = try_selectors_fast_fail(
+                    driver, 'pay_button', operation='find', timeout=15
+                )
+                
+                if not pay_button:
+                    log_step("pay_button_not_found", False, "Payment interface not available")
                     try:
                         driver.close()
                         if len(driver.window_handles) > 0:
@@ -2174,28 +2199,3 @@
                     finally:
                         current_driver.close()
                         current_driver.switch_to.window(current_driver.window_handles[0])  # Use index 0 instead of main
-
-                # Check if we need to break out of page loop
-                if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
-                    break
-
-                # Try to go to next page
-                try:
-                    nxt = current_driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
-                    current_driver.execute_script("arguments[0].click();", nxt)
-                    page += 1
-                    time.sleep(2)
-                except NoSuchElementException:
-                    print("📄 No more pages available - moving to next cycle")
-                    break
-
-            # End of page loop - decide whether to continue or refresh
-            if not REFRESH_AND_RESCAN:
-                print("🏁 REFRESH_AND_RESCAN disabled - ending scan")
-                break
-            
-            if found_already_scanned:
-                print(f"🔁 Found already scanned listing - refreshing immediately")
-                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
-            elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
-                print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
