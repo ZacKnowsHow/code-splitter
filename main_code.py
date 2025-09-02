@@ -49,6 +49,7 @@ import logging
 from ultralytics import YOLO
 import random
 import torch
+from threading import Thread, Lock, Event
 
 
 # tests whether the listing is suitable for buying based on URL rather than scanning
@@ -6478,29 +6479,117 @@ class VintedScraper:
         # Initialize pygame display with default values
         self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
         
-        
         # Start Flask app in separate thread.
         flask_thread = threading.Thread(target=self.run_flask_app)
         flask_thread.daemon = True
         flask_thread.start()
         
-        
         # Start pygame window in separate thread
         #pygame_thread = threading.Thread(target=self.run_pygame_window)
         #pygame_thread.start()
         
-        # Clear download folder and start scraping
-        self.clear_download_folder()
-        driver = self.setup_driver()
-        self.setup_persistent_buying_driver()
+        # NEW: Start thread monitoring system
+        def thread_monitor():
+            while not self.shutdown_event.is_set():
+                self.monitor_driver_threads()
+                time.sleep(5)
+
+        monitor_thread = Thread(target=thread_monitor, name="Thread-Monitor")
+        monitor_thread.daemon = True
+        monitor_thread.start()
+
+        print("🧵 MONITOR: Thread monitoring started")
+        
+        # NEW: Main scraping driver thread - THIS IS THE KEY CHANGE
+        def main_scraping_driver():
+            """Main scraping driver function that runs in its own thread"""
+            print("🚀 SCRAPING THREAD: Starting main scraping driver thread")
+            
+            # Clear download folder and start scraping
+            self.clear_download_folder()
+            driver = self.setup_driver()
+            
+            if driver is None:
+                print("❌ SCRAPING THREAD: Failed to setup main driver")
+                return
+                
+            try:
+                print("🔍 SCRAPING THREAD: Setting up persistent buying driver...")
+                self.setup_persistent_buying_driver()
+                
+                print("🚀 SCRAPING THREAD: Starting Vinted search with refresh...")
+                self.search_vinted_with_refresh(driver, SEARCH_QUERY)
+                
+            except Exception as scraping_error:
+                print(f"❌ SCRAPING THREAD ERROR: {scraping_error}")
+                import traceback
+                traceback.print_exc()
+                
+            finally:
+                print("🧹 SCRAPING THREAD: Cleaning up...")
+                try:
+                    driver.quit()
+                    print("✅ SCRAPING THREAD: Main driver closed")
+                except:
+                    print("⚠️ SCRAPING THREAD: Error closing main driver")
+                    
+                # Clean up all other drivers and resources
+                pygame.quit()
+                self.cleanup_persistent_buying_driver()
+                self.cleanup_all_buying_drivers()
+                self.cleanup_purchase_unsuccessful_monitoring()
+                self.cleanup_all_cycling_bookmark_drivers()  # Clean up bookmark drivers too
+                
+                time.sleep(2)
+                
+                active_count = self.get_active_thread_count()
+                if active_count > 0:
+                    print(f"⚠️ SCRAPING THREAD: {active_count} threads still active after cleanup")
+                else:
+                    print("✅ SCRAPING THREAD: All threads cleaned up successfully")
+                
+                print("🏁 SCRAPING THREAD: Main scraping thread completed")
+        
+        # Create and start the main scraping thread
+        print("🧵 MAIN: Creating main scraping driver thread...")
+        scraping_thread = Thread(target=main_scraping_driver, name="Main-Scraping-Thread")
+        scraping_thread.daemon = False  # Don't make it daemon so program waits for it
+        scraping_thread.start()
+        
+        print("🧵 MAIN: Main scraping driver thread started")
+        print("🧵 MAIN: Main thread will now wait for scraping thread to complete...")
+        
         try:
-            self.search_vinted_with_refresh(driver, SEARCH_QUERY)
+            # Wait for the scraping thread to complete
+            scraping_thread.join()
+            print("✅ MAIN: Scraping thread completed successfully")
+            
+        except KeyboardInterrupt:
+            print("\n🛑 MAIN: Keyboard interrupt received")
+            print("🛑 MAIN: Setting shutdown event...")
+            self.shutdown_event.set()
+            
+            print("⏳ MAIN: Waiting for scraping thread to finish...")
+            scraping_thread.join(timeout=30)  # Wait up to 30 seconds
+            
+            if scraping_thread.is_alive():
+                print("⚠️ MAIN: Scraping thread still alive after timeout")
+            else:
+                print("✅ MAIN: Scraping thread finished cleanly")
+        
+        except Exception as main_error:
+            print(f"❌ MAIN THREAD ERROR: {main_error}")
+            self.shutdown_event.set()
+            
         finally:
-            driver.quit()
-            pygame.quit()
-            self.cleanup_persistent_buying_driver()
+            print("🏁 MAIN: Program ending, final cleanup...")
+            # Force cleanup if anything is still running
             self.cleanup_all_buying_drivers()
-            self.cleanup_purchase_unsuccessful_monitoring()  # NEW: Clean up buying drivers
+            self.cleanup_persistent_buying_driver()
+            self.cleanup_all_cycling_bookmark_drivers()
+            self.cleanup_purchase_unsuccessful_monitoring()
+            
+            print("🏁 MAIN: Program exit")
             sys.exit(0)
 
 if __name__ == "__main__":
