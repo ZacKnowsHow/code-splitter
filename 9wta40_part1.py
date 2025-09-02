@@ -49,7 +49,7 @@ import logging
 from ultralytics import YOLO
 import random
 import torch
-from threading import Thread, Lock, Event
+
 
 # tests whether the listing is suitable for buying based on URL rather than scanning
 TEST_WHETHER_SUITABLE = False
@@ -82,7 +82,6 @@ NINTENDO_SWITCH_CLASSES = [
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-debug_threads = True
 VINTED_SHOW_ALL_LISTINGS = True
 print_debug = False
 print_images_backend_info = False
@@ -1325,15 +1324,7 @@ class VintedScraper:
         self.bookmark_timers = {}
         self.buying_drivers = {}  # Dictionary to store drivers {1: driver_object, 2: driver_object, etc.}
         self.driver_status = {}   # Track driver status {1: 'free'/'busy', 2: 'free'/'busy', etc.}
-        self.driver_lock = threading.Lock()
-        
-        self.driver_threads = {}  # Store active threads for each driver
-        self.thread_lock = Lock()  # Thread safety
-        self.shutdown_event = Event()  # Global shutdown signal
-        
-        # Initialize driver thread tracking
-        for i in range(1, 6):
-            self.driver_threads[i] = None  # Thread safety for driver management
+        self.driver_lock = threading.Lock()  # Thread safety for driver management
         # Check if CUDA is available
         
         print(f"CUDA available: {torch.cuda.is_available()}")
@@ -1480,21 +1471,15 @@ class VintedScraper:
         except Exception as e:
             print(f"❌ CYCLING: Failed to open next driver {self.current_bookmark_driver_index + 1}: {e}")
             self.current_bookmark_driver = None
-    
     def get_available_driver(self):
         """
-        THREADED: Find and reserve the first available driver with threading support
-        Each driver runs in its own dedicated thread
+        FIXED: Find and reserve the first available driver with proper initialization
+        Driver 1 uses the persistent_buying_driver, drivers 2-5 are created on demand
         """
         with self.driver_lock:
             for driver_num in range(1, 6):  # Check drivers 1-5
                 # Skip drivers that are currently busy
                 if self.driver_status[driver_num] == 'busy':
-                    continue
-                
-                # Check if thread is still active
-                if (self.driver_threads[driver_num] and 
-                    self.driver_threads[driver_num].is_alive()):
                     continue
                     
                 # Reserve this driver slot
@@ -1502,7 +1487,7 @@ class VintedScraper:
                 
                 # SPECIAL HANDLING FOR DRIVER 1 - use persistent_buying_driver
                 if driver_num == 1:
-                    print(f"🚗 DRIVER 1: Using persistent buying driver in thread")
+                    print(f"🚗 DRIVER 1: Using persistent buying driver")
                     
                     # Check if persistent driver exists and is alive
                     if self.persistent_buying_driver is None or self.is_persistent_driver_dead():
@@ -1512,13 +1497,13 @@ class VintedScraper:
                             self.driver_status[driver_num] = 'not_created'
                             continue
                     
-                    print(f"✅ RESERVED: Persistent buying driver (driver 1) for threading")
+                    print(f"✅ RESERVED: Persistent buying driver (driver 1)")
                     return driver_num, self.persistent_buying_driver
                     
-                # For drivers 2-5, create on demand
+                # For drivers 2-5, create on demand as before
                 else:
                     if self.buying_drivers[driver_num] is None or self.is_driver_dead(driver_num):
-                        print(f"🚗 CREATING: Buying driver {driver_num} for threading")
+                        print(f"🚗 CREATING: Buying driver {driver_num}")
                         new_driver = self.setup_buying_driver(driver_num)
                         
                         if new_driver is None:
@@ -1527,46 +1512,13 @@ class VintedScraper:
                             continue
                             
                         self.buying_drivers[driver_num] = new_driver
-                        print(f"✅ CREATED: Buying driver {driver_num} successfully for threading")
+                        print(f"✅ CREATED: Buying driver {driver_num} successfully")
                     
-                    print(f"✅ RESERVED: Buying driver {driver_num} for threading")
+                    print(f"✅ RESERVED: Buying driver {driver_num}")
                     return driver_num, self.buying_drivers[driver_num]
             
             print("❌ ERROR: All 5 buying drivers are currently busy")
             return None, None
-   
-    def process_listing_in_thread(self, url, driver_num, driver):
-        """
-        NEW: Process a single listing in a dedicated thread
-        This ensures each driver runs independently without blocking others
-        """
-        thread_id = threading.current_thread().ident
-        print(f"🧵 THREAD {thread_id}: Starting processing on driver {driver_num}")
-        
-        try:
-            # Set thread-local data
-            threading.current_thread().driver_num = driver_num
-            threading.current_thread().processing_url = url
-            
-            # Call the existing processing method
-            if wait_for_bookmark_stopwatch_to_buy:
-                self.process_single_listing_with_driver_modified(url, driver_num, driver)
-            else:
-                self.process_single_listing_with_driver(url, driver_num, driver)
-                
-            print(f"🧵 THREAD {thread_id}: Completed processing on driver {driver_num}")
-            
-        except Exception as thread_error:
-            print(f"🧵 THREAD {thread_id}: Error on driver {driver_num}: {thread_error}")
-            
-        finally:
-            # Clean up thread reference
-            with self.thread_lock:
-                if driver_num in self.driver_threads:
-                    self.driver_threads[driver_num] = None
-            
-            print(f"🧵 THREAD {thread_id}: Thread cleanup completed for driver {driver_num}")
-
     
     def is_persistent_driver_dead(self):
         """
@@ -1600,14 +1552,10 @@ class VintedScraper:
 
     def release_driver(self, driver_num):
         """
-        THREADED: Release a driver back to the free pool with thread safety
+        FIXED: Release a driver back to the free pool with special handling for driver 1
         """
         with self.driver_lock:
             print(f"🔓 RELEASING: Buying driver {driver_num}")
-            
-            # Mark thread as completed (it will be cleaned up by monitor)
-            if driver_num in self.driver_threads and self.driver_threads[driver_num]:
-                print(f"🧵 MARKING: Thread for driver {driver_num} as completed")
             
             if driver_num == 1:
                 # Driver 1 is the persistent driver - keep it alive, just mark as free
@@ -2198,3 +2146,55 @@ class VintedScraper:
                                             arguments[0].disabled = false;
                                             arguments[0].click();
                                         """, pay_button)
+                                        pay_clicked = True
+                                        print(f"✅ DRIVER {driver_num}: Pay clicked using force method")
+                                    except Exception as final_error:
+                                        print(f"❌ DRIVER {driver_num}: All pay click methods failed: {final_error}")
+                            
+                            if pay_clicked:
+                                print(f"💳 DRIVER {driver_num}: Payment initiated successfully!")
+                                
+                                # Continue with existing purchase logic
+                                self.handle_post_payment_logic(driver, driver_num, url)
+                            
+                            break  # Exit monitoring loop
+                            
+                        except Exception as click_error:
+                            print(f"❌ DRIVER {driver_num}: Error clicking pay button: {click_error}")
+                            break
+                
+                # Sleep briefly before next check
+                time.sleep(check_interval)
+        
+        except Exception as monitoring_error:
+            print(f"❌ DRIVER {driver_num}: Monitoring error: {monitoring_error}")
+        
+        finally:
+            # Clean up monitoring entry
+            if url in purchase_unsuccessful_detected_urls:
+                del purchase_unsuccessful_detected_urls[url]
+            
+            print(f"🧹 DRIVER {driver_num}: Monitoring cleanup completed")
+
+
+    def process_single_listing_with_driver_modified(self, url, driver_num, driver):
+        """
+        MODIFIED: Process listing that immediately navigates to buy page and waits for "Purchase unsuccessful"
+        """
+        print(f"🔥 DRIVER {driver_num}: Starting MODIFIED processing of {url[:50]}...")
+        
+        try:
+            # Driver health check
+            try:
+                current_url = driver.current_url
+                print(f"✅ DRIVER {driver_num}: Driver alive")
+            except Exception as e:
+                print(f"❌ DRIVER {driver_num}: Driver is dead: {str(e)}")
+                return
+            
+            # Open new tab
+            try:
+                driver.execute_script("window.open('');")
+                new_tab = driver.window_handles[-1]
+                driver.switch_to.window(new_tab)
+                print(f"✅ DRIVER {driver_num}: New tab opened")

@@ -1,116 +1,4 @@
 # Continuation from line 4401
-        if print_images_backend_info:
-            print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
-        
-        for img in imgs:  # REMOVED [:8] limit here
-            src = img.get_attribute("src")
-            parent_classes = ""
-            
-            # Get parent element classes to check for profile picture indicators
-            try:
-                parent = img.find_element(By.XPATH, "..")
-                parent_classes = parent.get_attribute("class") or ""
-            except:
-                pass
-            
-            # Check if this is a valid product image
-            if src and src.startswith('http'):
-                # FIXED: Better duplicate detection using URL normalization
-                # Remove query parameters and fragments for duplicate detection
-                normalized_url = src.split('?')[0].split('#')[0]
-                
-                if normalized_url in seen_urls:
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
-                    continue
-                
-                seen_urls.add(normalized_url)
-                
-                # Exclude profile pictures and small icons based on URL patterns
-                if (
-                    # Skip small profile pictures (50x50, 75x75, etc.)
-                    '/50x50/' in src or 
-                    '/75x75/' in src or 
-                    '/100x100/' in src or
-                    # Skip if parent has circle class (usually profile pics)
-                    'circle' in parent_classes.lower() or
-                    # Skip SVG icons
-                    src.endswith('.svg') or
-                    # Skip very obviously small images by checking dimensions in URL
-                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
-                ):
-                    print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
-                    continue
-                
-                # Only include images that look like product photos
-                if (
-                    # Vinted product images typically have f800, f1200, etc.
-                    '/f800/' in src or 
-                    '/f1200/' in src or 
-                    '/f600/' in src or
-                    # Or contain vinted/cloudinary and are likely product images
-                    (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
-                    # And don't have small size indicators
-                    not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
-                ):
-                    valid_urls.append(src)
-                    if print_images_backend_info:
-                        print(f"    ✅ Added valid image URL: {src[:50]}...")
-
-        if not valid_urls:
-            print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
-            return []
-
-        if print_images_backend_info:
-            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
-        
-        os.makedirs(listing_dir, exist_ok=True)
-        
-        # FIXED: Enhanced duplicate detection using content hashes
-        def download_single_image(args):
-            """Download a single image with enhanced duplicate detection"""
-            url, index = args
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Cache-Control': 'no-cache',
-                'Referer': driver.current_url
-            }
-            
-            try:
-                resp = requests.get(url, timeout=10, headers=headers)
-                resp.raise_for_status()
-                
-                # FIXED: Use content hash to detect identical images with different URLs
-                content_hash = hashlib.md5(resp.content).hexdigest()
-                
-                # Check if we've already downloaded this exact image content
-                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
-                if os.path.exists(hash_file):
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
-                    return None
-                
-                img = Image.open(BytesIO(resp.content))
-                
-                # Skip very small images (likely icons or profile pics that got through)
-                if img.width < 200 or img.height < 200:
-                    print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
-                    return None
-                
-                # Resize image for YOLO detection optimization
-                MAX_SIZE = (1000, 1000)  # Slightly larger for better detection
-                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
-                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
-                    print(f"    📏 Resized image to: {img.width}x{img.height}")
-                
-                # Convert to RGB if needed
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
                 
                 # Save the image
                 save_path = os.path.join(listing_dir, f"{index}.png")
@@ -456,10 +344,6 @@
                         break
 
                     overall_listing_counter += 1
-
-                    if debug_threads:
-                        self.print_thread_status()  # Shows all active threads
-                        active_count = self.get_active_thread_count()  # Returns number of active threads
 
                     # Process the listing (using current_driver instead of driver)
                     current_driver.execute_script("window.open();")
@@ -1611,27 +1495,6 @@
             
             return None
 
-    def print_thread_status(self):
-        """
-        DEBUG: Print current status of all driver threads
-        Useful for monitoring thread health
-        """
-        with self.thread_lock:
-            print("\n🧵 THREAD STATUS REPORT:")
-            for driver_num in range(1, 6):
-                thread = self.driver_threads.get(driver_num)
-                driver_status = self.driver_status.get(driver_num, 'unknown')
-                
-                if thread:
-                    thread_status = "ALIVE" if thread.is_alive() else "DEAD"
-                    print(f"  Driver {driver_num}: {driver_status} | Thread: {thread_status} | Name: {thread.name}")
-                else:
-                    print(f"  Driver {driver_num}: {driver_status} | Thread: NONE")
-            
-            active_count = self.get_active_thread_count()
-            print(f"  🧵 Total Active Threads: {active_count}")
-            print("─" * 50)
-
     def setup_persistent_buying_driver(self):
         
         """
@@ -2199,3 +2062,52 @@
         recent_listings = {
             'listings': [],
             'current_index': 0
+        }
+        
+        # Initialize all current listing variables
+        current_listing_title = "No title"
+        current_listing_description = "No description"
+        current_listing_join_date = "No join date"
+        current_listing_price = "0"
+        current_expected_revenue = "0"
+        current_profit = "0"
+        current_detected_items = "None"
+        current_listing_images = []
+        current_listing_url = ""
+        current_suitability = "Suitability unknown"
+        
+        # Initialize pygame display with default values
+        self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
+        
+        
+        # Start Flask app in separate thread.
+        flask_thread = threading.Thread(target=self.run_flask_app)
+        flask_thread.daemon = True
+        flask_thread.start()
+        
+        
+        # Start pygame window in separate thread
+        #pygame_thread = threading.Thread(target=self.run_pygame_window)
+        #pygame_thread.start()
+        
+        # Clear download folder and start scraping
+        self.clear_download_folder()
+        driver = self.setup_driver()
+        self.setup_persistent_buying_driver()
+        try:
+            self.search_vinted_with_refresh(driver, SEARCH_QUERY)
+        finally:
+            driver.quit()
+            pygame.quit()
+            self.cleanup_persistent_buying_driver()
+            self.cleanup_all_buying_drivers()
+            self.cleanup_purchase_unsuccessful_monitoring()  # NEW: Clean up buying drivers
+            sys.exit(0)
+
+if __name__ == "__main__":
+
+    scraper = VintedScraper()
+
+    globals()['vinted_scraper_instance'] = scraper
+        
+    scraper.run()

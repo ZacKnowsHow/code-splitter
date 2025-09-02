@@ -1,56 +1,4 @@
 # Continuation from line 2201
-                                        pay_clicked = True
-                                        print(f"✅ DRIVER {driver_num}: Pay clicked using force method")
-                                    except Exception as final_error:
-                                        print(f"❌ DRIVER {driver_num}: All pay click methods failed: {final_error}")
-                            
-                            if pay_clicked:
-                                print(f"💳 DRIVER {driver_num}: Payment initiated successfully!")
-                                
-                                # Continue with existing purchase logic
-                                self.handle_post_payment_logic(driver, driver_num, url)
-                            
-                            break  # Exit monitoring loop
-                            
-                        except Exception as click_error:
-                            print(f"❌ DRIVER {driver_num}: Error clicking pay button: {click_error}")
-                            break
-                
-                # Sleep briefly before next check
-                time.sleep(check_interval)
-        
-        except Exception as monitoring_error:
-            print(f"❌ DRIVER {driver_num}: Monitoring error: {monitoring_error}")
-        
-        finally:
-            # Clean up monitoring entry
-            if url in purchase_unsuccessful_detected_urls:
-                del purchase_unsuccessful_detected_urls[url]
-            
-            print(f"🧹 DRIVER {driver_num}: Monitoring cleanup completed")
-
-
-    def process_single_listing_with_driver_modified(self, url, driver_num, driver):
-        """
-        MODIFIED: Process listing that immediately navigates to buy page and waits for "Purchase unsuccessful"
-        """
-        print(f"🔥 DRIVER {driver_num}: Starting MODIFIED processing of {url[:50]}...")
-        
-        try:
-            # Driver health check
-            try:
-                current_url = driver.current_url
-                print(f"✅ DRIVER {driver_num}: Driver alive")
-            except Exception as e:
-                print(f"❌ DRIVER {driver_num}: Driver is dead: {str(e)}")
-                return
-            
-            # Open new tab
-            try:
-                driver.execute_script("window.open('');")
-                new_tab = driver.window_handles[-1]
-                driver.switch_to.window(new_tab)
-                print(f"✅ DRIVER {driver_num}: New tab opened")
             except Exception as e:
                 print(f"❌ DRIVER {driver_num}: Failed to open new tab: {str(e)}")
                 return
@@ -741,48 +689,25 @@
         
     def cleanup_all_buying_drivers(self):
         """
-        THREADED: Clean up all buying drivers and their threads when program exits
+        FIXED: Clean up all buying drivers when program exits
         """
-        print("🧹 CLEANUP: Stopping all driver threads and closing drivers")
+        print("🧹 CLEANUP: Closing all buying drivers")
         
-        # Set shutdown event
-        self.shutdown_event.set()
-        
-        # Wait for all threads to complete (with timeout)
-        with self.thread_lock:
-            active_threads = [thread for thread in self.driver_threads.values() 
-                            if thread and thread.is_alive()]
-        
-        if active_threads:
-            print(f"🧵 WAITING: For {len(active_threads)} active threads to complete...")
-            for thread in active_threads:
-                try:
-                    thread.join(timeout=10)  # Wait up to 10 seconds per thread
-                    if thread.is_alive():
-                        print(f"⚠️ TIMEOUT: Thread {thread.name} did not complete in time")
-                    else:
-                        print(f"✅ JOINED: Thread {thread.name} completed")
-                except Exception as e:
-                    print(f"⚠️ THREAD JOIN ERROR: {e}")
-        
-        # Now close all drivers
         with self.driver_lock:
             for driver_num in range(1, 6):
                 if self.buying_drivers[driver_num] is not None:
                     try:
                         print(f"🗑️ CLEANUP: Closing buying driver {driver_num}")
                         self.buying_drivers[driver_num].quit()
-                        time.sleep(0.2)
+                        time.sleep(0.2)  # Brief pause between closures
                         print(f"✅ CLEANUP: Closed buying driver {driver_num}")
                     except Exception as e:
                         print(f"⚠️ CLEANUP: Error closing driver {driver_num}: {e}")
                     finally:
                         self.buying_drivers[driver_num] = None
                         self.driver_status[driver_num] = 'not_created'
-                        if driver_num in self.driver_threads:
-                            self.driver_threads[driver_num] = None
         
-        print("✅ CLEANUP: All buying drivers and threads closed")
+        print("✅ CLEANUP: All buying drivers closed")
 
     def check_all_drivers_health(self):
         """
@@ -804,8 +729,7 @@
 
     def vinted_button_clicked_enhanced(self, url):
         """
-        THREADED: Enhanced button click handler that creates a new thread for each purchase
-        Each driver will run in its own thread independently
+        MODIFIED: Enhanced button click handler that immediately opens buying driver on "yes"
         """
         print(f"🔘 VINTED BUTTON: Processing {url}")
         
@@ -817,8 +741,8 @@
         # Mark as clicked immediately to prevent race conditions
         self.clicked_yes_listings.add(url)
         
-        # THREADED: Immediately start buying process in dedicated thread
-        print(f"🚀 THREADED: Starting buying process for {url}")
+        # MODIFIED: Immediately start buying process when user clicks yes
+        print(f"🚀 IMMEDIATE: Starting buying process for {url}")
         
         # Get available driver
         max_retries = 3
@@ -828,23 +752,13 @@
             driver_num, driver = self.get_available_driver()
             
             if driver is not None:
-                # Successfully got a driver, create dedicated thread
-                print(f"🧵 CREATING THREAD: Driver {driver_num} for URL {url}")
-                
-                processing_thread = Thread(
-                    target=self.process_listing_in_thread,
-                    args=(url, driver_num, driver),
-                    name=f"Driver-{driver_num}-Thread"
+                # Successfully got a driver, process in separate thread
+                processing_thread = threading.Thread(
+                    target=self.process_single_listing_with_driver_modified,
+                    args=(url, driver_num, driver)
                 )
                 processing_thread.daemon = True
-                
-                # Store thread reference
-                with self.thread_lock:
-                    self.driver_threads[driver_num] = processing_thread
-                
-                # Start the thread
                 processing_thread.start()
-                print(f"🧵 THREAD STARTED: Driver {driver_num} processing {url}")
                 return
             
             # No driver available, wait and retry
@@ -855,32 +769,6 @@
         # If we get here, all retries failed
         print(f"❌ FAILED: Could not get available driver after {max_retries} retries")
         self.clicked_yes_listings.discard(url)
-
-
-    def monitor_driver_threads(self):
-        """
-        NEW: Monitor all driver threads and clean up completed ones
-        Call this periodically to prevent thread buildup
-        """
-        with self.thread_lock:
-            for driver_num, thread in list(self.driver_threads.items()):
-                if thread and not thread.is_alive():
-                    print(f"🧵 CLEANUP: Thread for driver {driver_num} has completed")
-                    self.driver_threads[driver_num] = None
-                    
-                    # Release the driver if it's not the persistent one
-                    if driver_num != 1:  # Don't release persistent driver
-                        if driver_num in self.driver_status:
-                            self.driver_status[driver_num] = 'not_created'
-    def get_active_thread_count(self):
-        """
-        NEW: Get count of currently active driver threads
-        """
-        with self.thread_lock:
-            active_threads = sum(1 for thread in self.driver_threads.values() 
-                            if thread and thread.is_alive())
-        return active_threads
-
 
 
     def process_vinted_button_queue(self):
@@ -2199,3 +2087,115 @@
         valid_urls = []
         seen_urls = set()  # Track URLs to prevent duplicates
         
+        if print_images_backend_info:
+            print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
+        
+        for img in imgs:  # REMOVED [:8] limit here
+            src = img.get_attribute("src")
+            parent_classes = ""
+            
+            # Get parent element classes to check for profile picture indicators
+            try:
+                parent = img.find_element(By.XPATH, "..")
+                parent_classes = parent.get_attribute("class") or ""
+            except:
+                pass
+            
+            # Check if this is a valid product image
+            if src and src.startswith('http'):
+                # FIXED: Better duplicate detection using URL normalization
+                # Remove query parameters and fragments for duplicate detection
+                normalized_url = src.split('?')[0].split('#')[0]
+                
+                if normalized_url in seen_urls:
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
+                    continue
+                
+                seen_urls.add(normalized_url)
+                
+                # Exclude profile pictures and small icons based on URL patterns
+                if (
+                    # Skip small profile pictures (50x50, 75x75, etc.)
+                    '/50x50/' in src or 
+                    '/75x75/' in src or 
+                    '/100x100/' in src or
+                    # Skip if parent has circle class (usually profile pics)
+                    'circle' in parent_classes.lower() or
+                    # Skip SVG icons
+                    src.endswith('.svg') or
+                    # Skip very obviously small images by checking dimensions in URL
+                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
+                ):
+                    print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
+                    continue
+                
+                # Only include images that look like product photos
+                if (
+                    # Vinted product images typically have f800, f1200, etc.
+                    '/f800/' in src or 
+                    '/f1200/' in src or 
+                    '/f600/' in src or
+                    # Or contain vinted/cloudinary and are likely product images
+                    (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
+                    # And don't have small size indicators
+                    not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
+                ):
+                    valid_urls.append(src)
+                    if print_images_backend_info:
+                        print(f"    ✅ Added valid image URL: {src[:50]}...")
+
+        if not valid_urls:
+            print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
+            return []
+
+        if print_images_backend_info:
+            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
+        
+        os.makedirs(listing_dir, exist_ok=True)
+        
+        # FIXED: Enhanced duplicate detection using content hashes
+        def download_single_image(args):
+            """Download a single image with enhanced duplicate detection"""
+            url, index = args
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
+                'Referer': driver.current_url
+            }
+            
+            try:
+                resp = requests.get(url, timeout=10, headers=headers)
+                resp.raise_for_status()
+                
+                # FIXED: Use content hash to detect identical images with different URLs
+                content_hash = hashlib.md5(resp.content).hexdigest()
+                
+                # Check if we've already downloaded this exact image content
+                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
+                if os.path.exists(hash_file):
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
+                    return None
+                
+                img = Image.open(BytesIO(resp.content))
+                
+                # Skip very small images (likely icons or profile pics that got through)
+                if img.width < 200 or img.height < 200:
+                    print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
+                    return None
+                
+                # Resize image for YOLO detection optimization
+                MAX_SIZE = (1000, 1000)  # Slightly larger for better detection
+                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
+                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
+                    print(f"    📏 Resized image to: {img.width}x{img.height}")
+                
+                # Convert to RGB if needed
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
