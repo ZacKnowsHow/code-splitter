@@ -49,6 +49,7 @@ import logging
 from ultralytics import YOLO
 import random
 import torch
+from threading import Thread, Lock, Event
 
 
 # tests whether the listing is suitable for buying based on URL rather than scanning
@@ -2197,4 +2198,3 @@ class VintedScraper:
                 driver.execute_script("window.open('');")
                 new_tab = driver.window_handles[-1]
                 driver.switch_to.window(new_tab)
-                print(f"✅ DRIVER {driver_num}: New tab opened")
