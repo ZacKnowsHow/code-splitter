@@ -192,14 +192,12 @@ recent_listings = {
 }
 
 review_min = 3
-MAX_LISTINGS_TO_SCAN = 50
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
 MAX_LISTINGS_VINTED_TO_SCAN = 5  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 0  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
 REPEAT_LISTINGS = True
-WAIT_TIME_AFTER_REFRESH = 125
 LOCK_POSITION = True
 SHOW_ALL_LISTINGS = False
 SHOW_PARTIALLY_SUITABLE = False
@@ -207,7 +205,6 @@ setup_website = False
 send_message = True
 current_listing_url = ""
 send_notification = True
-WAIT_TIME_FOR_WEBSITE_MESSAGE = 25
 request_processing_event = threading.Event()
 
 GAME_CLASSES = [
@@ -220,8 +217,6 @@ GAME_CLASSES = [
    'sword_p', 'tears_z', 'violet_p'
 ]
 
-ngrok_auth_code = "ngrok config add-authtoken 2roTu5SuJVRTFYSd2d1JBTyhjXA_5qNzmjZBn5EHVA2dwMfrZ"
-ngrok_static_website_command = "ngrok http --url=equal-ape-sincerely.ngrok-free.app 5000 --region=eu"
 
 title_must_contain = ["nintendo", "pokemon", "zelda", "mario", "animal crossing", "minecraft", 'oled', 'lite', 'pokémon', 'switch game',
                     'switch bundle', 'nintendo bundle', 'switch with games', 'modded switch']
@@ -409,30 +404,6 @@ def index():
 def logout():
     session.pop("authenticated", None)
     return redirect(url_for("index"))
-
-@app.route('/button-clicked', methods=['POST'])
-def button_clicked():
-    if print_debug:
-        print("DEBUG: Received a button-click POST request")
-    global messaging_driver, website_static_price
-    url = request.form.get('url')
-    website_static_price_str = request.form.get('website_price')
-    price_increment = int(request.form.get('price_increment', 5))
-    
-    if not url:
-        return 'NO URL PROVIDED', 400
-    
-    # Put the request in the queue
-    request_queue.put((url, website_static_price_str, price_increment))
-    
-    # Start processing the queue if not already processing
-    if not hasattr(button_clicked, 'is_processing') or not button_clicked.is_processing:
-        button_clicked.is_processing = True
-        # Access the scraper instance through a global variable
-        if 'scraper_instance' in globals():
-            threading.Thread(target=scraper_instance.process_request_queue).start()
-    
-    return 'REQUEST ADDED TO QUEUE', 200
 
 @app.route('/static/icon.png')
 def serve_icon():
@@ -1254,105 +1225,24 @@ def base64_encode_image(img):
     return base64.b64encode(buffered.getvalue()).decode()
 
 
-class FacebookScraper:
-    
-    def __init__(self):
-        pass
+class VintedScraper:
 
-    def start_cloudflare_tunnel(self, port=5000):
-        """
-        Starts your existing Cloudflare Tunnel for fk43b0p45crc03r.xyz
-        """
-        #pc
-        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
-        #laptop
-        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
-        
-        # Use your existing tunnel with explicit config file path
-        process = subprocess.Popen(
-            [cloudflared_path, "tunnel", "--config", r"C:\Users\zacha\.cloudflared\config.yml", "run"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW  # Run in background without window
-        )
-        
-        def read_output(proc):
-            for line in proc.stdout:
-                print("[cloudflared]", line.strip())
-                if "Registered tunnel connection" in line:
-                    print(f"✅ Tunnel connection established")
-                    print(f"🌐 Your scraper is accessible at: https://fk43b0p45crc03r.xyz")
-                elif "Starting tunnel" in line:
-                    print("🚇 Starting Cloudflare tunnel...")
-        
-        def read_errors(proc):
-            for line in proc.stderr:
-                error_line = line.strip()
-                if error_line and "WRN" not in error_line:  # Skip warnings
-                    print("[cloudflared ERROR]", error_line)
-        
-        # Start threads to read both stdout and stderr
-        threading.Thread(target=read_output, args=(process,), daemon=True).start()
-        threading.Thread(target=read_errors, args=(process,), daemon=True).start()
-        
-        print("⏳ Waiting for tunnel to establish...")
-        time.sleep(10)  # Give more time for tunnel to establish connections
-        return process
-
-    def periodically_restart_messaging_driver(self):
-        global messaging_driver
-        while True:
-            try:
-                # Sleep for 1 hour
-                time.sleep(3600)  # 3600 seconds = 1 hour
-                
-                print("🔄 Initiating periodic messaging driver restart...")
-                
-                # Safely close the existing driver if it exists
-                if messaging_driver:
-                    try:
-                        messaging_driver.quit()
-                        print("✅ Previous messaging driver closed successfully")
-                    except Exception as close_error:
-                        print(f"❌ Error closing previous driver: {close_error}")
-                
-                # Reinitialize the driver
-                messaging_driver = self.setup_chrome_messaging_driver()
-                
-                if messaging_driver is None:
-                    print("❌ Failed to reinitialize messaging driver")
-                else:
-                    print("✅ Messaging driver reinitialized successfully")
-            
-            except Exception as e:
-                print(f"❌ Error in driver restart thread: {e}")
-
-    def setup_ngrok_tunnel(self):
+    def restart_driver_if_dead(self, driver):
+        """If driver is dead, create a new one. That's it."""
         try:
-            # Open a new command prompt
-            subprocess.Popen('start cmd', shell=True)
-            time.sleep(1)  # Give the command prompt a moment to open
-
-            # Simulate keystrokes to set up ngrok
-            pyautogui.typewrite(ngrok_auth_code)
-            pyautogui.press('enter')
-            time.sleep(2)  # Wait for authentication
-
-            # Type and execute the static website command
-            pyautogui.typewrite(ngrok_static_website_command)
-            pyautogui.press('enter')
-            
-            print("✅ Ngrok tunnel setup complete")
-            return True
-        except Exception as e:
-            print(f"❌ Error setting up ngrok tunnel: {e}")
-            return False
-
+            driver.current_url  # Simple test
+            return driver  # Driver is fine
+        except:
+            print("🔄 Driver crashed, restarting...")
+            try:
+                driver.quit()
+            except:
+                pass
+            return self.setup_driver()
+    # Add this method to the VintedScraper class
     def send_pushover_notification(self, title, message, api_token, user_key):
         """
         Send a notification via Pushover
-        
         :param title: Notification title
         :param message: Notification message
         :param api_token: Pushover API token
@@ -1366,764 +1256,368 @@ class FacebookScraper:
                 "title": title,
                 "message": message
             }
-            
             response = requests.post(url, data=payload)
-            
             if response.status_code == 200:
                 print(f"Notification sent successfully: {title}")
             else:
                 print(f"Failed to send notification. Status code: {response.status_code}")
                 print(f"Response: {response.text}")
-        
         except Exception as e:
             print(f"Error sending Pushover notification: {str(e)}")
 
-    def check_driver_health(self, driver):
-        try:
-            # Multiple health check strategies
-            strategies = [
-                # Check if we can execute a simple JavaScript
-                lambda: driver.execute_script("return document.readyState") == "complete",
-                
-                # Check if we can navigate to a simple page
-                lambda: driver.get("https://www.microsoft.com") is not None,
-                
-                # Check if we can find an element
-                lambda: driver.find_element(By.TAG_NAME, 'body') is not None
-            ]
-            
-            # If any strategy fails, consider driver unhealthy
-            for strategy in strategies:
-                try:
-                    if not strategy():
-                        print(f"❌ Driver health check failed: {strategy.__name__}")
-                        return False
-                except Exception as e:
-                    print(f"❌ Driver health check error: {e}")
-                    return False
-            
-            print("✅ Driver is healthy")
-            return True
-        
-        except Exception as e:
-            print(f"❌ Comprehensive driver health check failed: {e}")
-            return False
+    def fetch_price(self, class_name):
+        if class_name in ['lite_box', 'oled_box', 'oled_in_tv', 'switch_box', 'switch_in_tv', 'other_mario']:
+            return None
+        price = BASE_PRICES.get(class_name, 0)
+        delivery_cost = 5.0 if class_name in ['lite', 'oled', 'switch'] else 3.5
+        final_price = price + delivery_cost
+        return final_price
+    def fetch_all_prices(self):
+        all_prices = {class_name: self.fetch_price(class_name) for class_name in class_names if self.fetch_price(class_name) is not None}
+        all_prices.update({
+            'lite_box': all_prices.get('lite', 0) * 1.05, 
+            'oled_box': all_prices.get('oled', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_white', 0) - 15, 
+            'oled_in_tv': all_prices.get('oled', 0) + all_prices.get('tv_white', 0) - 10, 
+            'switch_box': all_prices.get('switch', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_black', 0) - 5, 
+            'switch_in_tv': all_prices.get('switch', 0) + all_prices.get('tv_black', 0) - 3.5, 
+            'other_mario': 22.5,
+            'anonymous_games': 5  # Add price for anonymous games
+        })
+        return all_prices
+    def __init__(self):
 
-    def login_to_facebook(self, driver):
+        # Initialize pygame-related variables similar to FacebookScraper
+        global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
+        global current_expected_revenue, current_profit, current_detected_items, current_listing_images
+        global current_bounding_boxes, current_listing_url, current_suitability, suitable_listings
+        global current_listing_index, recent_listings
+        
+        # **CRITICAL FIX: Initialize recent_listings for website navigation**
+        recent_listings = {
+            'listings': [],
+            'current_index': 0
+        }
+        
+        # Initialize all current listing variables
+        current_listing_title = "No title"
+        current_listing_description = "No description"
+        current_listing_join_date = "No join date"
+        current_listing_price = "0"
+        current_expected_revenue = "0"
+        current_profit = "0"
+        current_detected_items = "None"
+        current_listing_images = []
+        current_bounding_boxes = {}
+        current_listing_url = ""
+        current_suitability = "Suitability unknown"
+        suitable_listings = []
+        current_listing_index = 0
+        self.monitoring_threads_active = threading.Event()
+
+        self.vinted_button_queue = queue.Queue()
+        self.vinted_processing_active = threading.Event()  # To track if we're currently processing
+        self.main_driver = None
+        self.persistent_buying_driver = None
+        self.main_tab_handle = None
+        self.clicked_yes_listings = set()
+        self.bookmark_timers = {}
+        self.buying_drivers = {}  # Dictionary to store drivers {1: driver_object, 2: driver_object, etc.}
+        self.driver_status = {}   # Track driver status {1: 'free'/'busy', 2: 'free'/'busy', etc.}
+        self.driver_lock = threading.Lock()  # Thread safety for driver management
+        # Check if CUDA is available
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
+
+        # Load model with explicit GPU usage
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
+        # Initialize all driver slots as not created
+        for i in range(1, 6):  # Drivers 1-5
+            self.buying_drivers[i] = None
+            self.driver_status[i] = 'not_created'
+
+
+        self.current_bookmark_driver_index = 0
+        self.bookmark_driver_configs = [
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default_Bookmark',
+                'profile_directory': 'Profile 4'
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default2_Bookmark', 
+                'profile_directory': 'Profile 17'
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default3_Bookmark',
+                'profile_directory': 'Profile 6' 
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default4_Bookmark',
+                'profile_directory': 'Profile 12'
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default5_Bookmark',
+                'profile_directory': 'Profile 18'
+            }
+        ]
+        self.current_bookmark_driver = None
+
+                
+    def get_next_bookmark_driver(self):
         """
-        Navigate directly to Facebook Marketplace instead of logging in.
-        Assumes the browser is already logged in.
-        """ 
-        print("Navigating directly to Facebook Marketplace...")
-        
-        try:
-            # Clear the listing_ids.txt file when starting
-            with open('listing_ids.txt', 'w') as f:
-                pass
-            print("Cleared listing_ids.txt")
-
-            # Navigate directly to Marketplace
-            driver.get("https://www.facebook.com/marketplace/liverpool")
+        Get the current ready bookmark driver (already created and waiting)
+        If no driver exists (first call), create the first one
+        """
+        # If no driver exists yet (program startup), create the first one
+        if self.current_bookmark_driver is None:
+            print(f"🚀 CYCLING: Creating FIRST bookmark driver {self.current_bookmark_driver_index + 1}/5")
+            config = self.bookmark_driver_configs[self.current_bookmark_driver_index]
             
-            # Wait for the Marketplace page to load
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "[role='main']"))
-            )
-            print("Successfully navigated to Facebook Marketplace.")
-        
-        except Exception as e:
-            print(f"Error navigating to Marketplace: {str(e)}")
-
-
-    def render_main_page(self):
-        try:
-            # Ensure default values if variables are None or empty 
-            title = str(current_listing_title or 'No Title Available') 
-            price = str(current_listing_price or 'No Price Available') 
-            description = str(current_listing_description or 'No Description Available') 
-            website_price = str(current_listing_price or 'No Price Available')
-            
-            detected_items = str(current_detected_items or 'No items')        
-            # Filter out items with zero count from the string 
-
-            profit = str(current_profit or 'No Profit Available') 
-            join_date = str(current_listing_join_date or 'No Join Date Available') 
-            listing_url = str(current_listing_url or 'No URL Available')
-
-            all_listings_json = json.dumps([
-                {
-                    'title': listing['title'],
-                    'description': listing['description'],
-                    'join_date': listing['join_date'],
-                    'price': listing['price'],
-                    'profit': listing['profit'],
-                    'detected_items': str(listing.get('detected_items') or 'No Items'),
-                    'processed_images': [self.base64_encode_image(img) for img in listing['processed_images']],
-                    'url': listing['url'],
-                    'suitability': listing['suitability']
-                } 
-                for listing in recent_listings['listings']
-            ])
-
-            # Convert images to base64 for web display 
-            image_html = "" 
-            if current_listing_images: 
-                image_html = "<div class='image-container'>" 
-                for img in current_listing_images: 
-                    # Convert PIL Image to base64 
-                    buffered = io.BytesIO() 
-                    img.save(buffered, format="PNG")
-                    img_str = base64.b64encode(buffered.getvalue()).decode()
-
-                    image_html += f''' 
-                    <div class="image-wrapper"> 
-                        <img src="data:image/png;base64,{img_str}" alt="Listing Image"> 
-                    </div> 
-                    ''' 
-                image_html += "</div>" 
-            else: 
-                image_html = "<p>No images available</p>" 
-
-            return f''' 
-        <html> 
-        <head> 
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-            <link rel="apple-touch-icon" href="/static/icon.png">
-            <link rel="icon" type="image/png" href="/static/icon.png">
-            <meta name="apple-mobile-web-app-capable" content="yes">
-            <meta name="apple-mobile-web-app-status-bar-style" content="black">
-            <meta name="apple-mobile-web-app-title" content="Marketplace Scanner">
-            
-            <style> 
-                * {{ 
-                    box-sizing: border-box; 
-                    margin: 0; 
-                    padding: 0; 
-                }} 
-                .price-button-container {{
-                    display: flex;
-                    flex-direction: column;
-                    gap: 5px;
-                    margin-top: 10px;
-                }}
-
-                .button-row {{
-                    display: flex;
-                    justify-content: space-between;
-                    gap: 10px;
-                }}
-
-                .button-row .custom-button {{
-                    flex: 1;  /* This ensures both buttons in a row are equal width */
-                }}
-
-                .custom-button:nth-child(1) {{ background-color: #4CAF50; }}  /* Green */
-                .custom-button:nth-child(2) {{ background-color: #2196F3; }}  /* Blue */
-                .custom-button:nth-child(3) {{ background-color: #FF9800; }}  /* Orange */
-                .custom-button:nth-child(4) {{ background-color: #9C27B0; }}
-                .container {{ 
-                    background-color: white; 
-                    padding: 25px; 
-                    border-radius: 10px; 
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-                    text-align: center; 
-                    width: 100%; 
-                    max-width: 375px; 
-                    margin: 0 auto;
-                    position: relative;
-                    height: calc(100vh - 10px);
-                    overflow-y: auto;
-                }} 
-                .section-box, .financial-row, .details-row {{ 
-                    border: 1px solid black; 
-                    border-radius: 5px; 
-                    margin-bottom: -1px; 
-                }} 
-                .section-box {{ 
-                    padding: 10px; 
-                }} 
-                .financial-row, .details-row {{ 
-                    display: flex; 
-                    justify-content: space-between; 
-                }} 
-                .financial-item, .details-item {{
-                    flex: 1; 
-                    padding: 10px; 
-                    border-right: 1px solid black; 
-                    font-weight: bold; 
-                    font-size: 19px; 
-                }} 
-                .financial-item:last-child, .details-item:last-child {{ 
-                    border-right: none; 
-                }} 
-                p {{ 
-                    word-wrap: break-word; 
-                    margin-bottom: 0; 
-                    padding: 0 10px; 
-                }} 
-                .header {{ 
-                    color: black; 
-                    font-size: 18px; 
-                    font-style: italic; 
-                    font-weight: bold; 
-                }} 
-                .image-wrapper {{
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    max-width: 100%;  /* Ensures images don't exceed container width */
-                    max-height: 200px;  /* Limit individual image height */
-                    overflow: hidden;
-                }}
-
-                .image-wrapper img {{
-                    max-width: 100%;    /* Fit horizontally */
-                    max-height: 100%;   /* Fit vertically */
-                    object-fit: contain; /* Maintain aspect ratio */
-                }}
-                .content-title {{ 
-                    color:rgb(173, 13, 144);  /* Dark Purple */ 
-                    font-weight: bold; 
-                    font-size: 1.6em;
-                }} 
-                .content-price {{ 
-                    color:rgb(19, 133, 194);  /* Saddle Brown (dark brown) */ 
-                    font-weight: bold; 
-                }} 
-                .content-description {{ 
-                    color: #006400;  /* Dark Green */ 
-                    font-weight: bold; 
-                }} 
-                .content-revenue {{ 
-                    color:rgb(124, 14, 203);  /* Indigo */ 
-                    font-weight: bold; 
-                }} 
-                .content-profit {{ 
-                    color:rgb(186, 14, 14);  /* Dark Red */ 
-                    font-weight: bold; 
-                }} 
-                .content-join-date {{ 
-                    color: #4169E1;  /* Royal Blue */ 
-                    font-weight: bold; 
-                }} 
-                .content-detected-items {{ 
-                    color: #8B008B;  /* Dark Magenta */ 
-                    font-weight: bold; 
-                }} 
-                .image-container {{
-                    display: flex;
-                    flex-wrap: wrap;
-                    justify-content: center;
-                    align-items: center;
-                    gap: 10px;
-                    max-height: 335px;  /* Increased from 300px by ~25-50% */
-                    overflow-y: auto;
-                    padding: 10px;
-                    background-color: #f9f9f9;
-                    border: 1px solid black;
-                    border-radius: 10px;
-                    margin-bottom: 10px;
-                }}
-                .listing-container {{
-                    width: 100%;
-                    height: 100%;
-                    margin: 0;
-                    padding: 0;
-                    overflow: hidden;
-                }}
-
-                .listing-container.slide-out {{
-                    transition: transform 0.3s ease;
-                    transform: translateX(100%);
-                }}
-
-                /* Prevent text selection and improve touch interaction */
-                body {{
-                    user-select: none;
-                    -webkit-user-select: none;
-                    touch-action: manipulation;
-                }}
-
-                /* Improve button and interactive element touch response */
-                .custom-button, button {{
-                    touch-action: manipulation;
-                    -webkit-tap-highlight-color: transparent;
-                }}
-                .custom-button:active, .button-clicked {{
-                    background-color: rgba(0, 0, 0, 0.2) !important;  /* Darkens the button when clicked */
-                    transform: scale(0.95);  /* Slightly shrinks the button */
-                    transition: background-color 0.3s, transform 0.3s;
-                }}
-                .custom-button {{
-                    width: 100%;
-                    padding: 10px;
-                    color: white;
-                    border: none;
-                    border-radius: 10px;
-                    font-size: 15px;
-                    touch-action: manipulation;
-                    -webkit-tap-highlight-color: transparent;
-                }}
-                body {{ 
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; 
-                    background-color: #f0f0f0; 
-                    display: flex; 
-                    justify-content: center; 
-                    align-items: center; 
-                    min-height: 100vh;  f
-                    margin: 0; 
-                    padding: 0;
-                    line-height: 1.6; 
-                    touch-action: manipulation;
-                    overscroll-behavior-y: none;
-                }} 
-                .listing-url {{ 
-                    font-size: 10px;  /* Reduced by about 75% */ 
-                    word-break: break-all; 
-                    border: 1px solid black; 
-                    border-radius: 5px; 
-                    padding: 5px; 
-                    margin-top: 10px; 
-                    font-weight: bold; 
-                }} 
-            </style> 
-            <script>
-                const allListings = {all_listings_json};
-                let currentListingIndex = 0;
-                let touchStartX = 0;
-                let touchEndX = 0;
-                const minSwipeDistance = 50; // Minimum distance to trigger swipe
-                function refreshPage() {{
-                    // Simple page reload
-                    location.reload();
-                }}
-                function handleTouchStart(event) {{
-                    touchStartX = event.touches[0].clientX;
-                    touchStartY = event.touches[0].clientY;  // Added Y coordinate tracking
-                }}
-
-                function handleTouchMove(event) {{
-                    touchEndX = event.touches[0].clientX;
-                    touchEndY = event.touches[0].clientY;
-                    
-                    // Calculate distances
-                    const verticalDistance = Math.abs(touchStartY - touchEndY);
-                    const horizontalDistance = Math.abs(touchStartX - touchEndX);
-                    
-                    // Much more permissive vertical scrolling
-                    // Allow scrolling if vertical movement is significantly more than horizontal
-                    if (horizontalDistance <= verticalDistance * 0.75) {{
-                        // Normal vertical scrolling behavior
-                        return;
-                    }} else {{
-                        // Prevent horizontal dragging if horizontal movement is too significant
-                        event.preventDefault();
-                    }}
-                }}
-
-                function handleTouchEnd(event) {{
-                    const swipeDistance = touchStartX - touchEndX;
-                    const verticalDistance = Math.abs(touchStartY - event.changedTouches[0].clientY);
-                    const horizontalDistance = Math.abs(swipeDistance);
-
-                    // Reset the listing container's transform
-                    const listingContainer = document.querySelector('.listing-container');
-                    listingContainer.style.transform = 'translateX(0)';
-                    listingContainer.style.transition = 'transform 0.3s ease';
-
-                    // Only change listing if it was a clear horizontal swipe and not a vertical scroll
-                    if (horizontalDistance > minSwipeDistance && verticalDistance < minSwipeDistance) {{
-                        if (swipeDistance > 0) {{
-                            // Swiped left (next listing)
-                            updateListingDisplay(currentListingIndex + 1);
-                        }} else {{
-                            // Swiped right (previous listing)
-                            updateListingDisplay(currentListingIndex - 1);
-                        }}
-                    }}
-                }}
-
-                function updateListingDisplay(index) {{
-                    if (index < 0) index = allListings.length - 1;
-                    if (index >= allListings.length) index = 0;
-                    
-                    currentListingIndex = index;
-                    const listing = allListings[index];
-
-                    // Update all elements with a smooth transition
-                    const listingContainer = document.querySelector('.listing-container');
-                    listingContainer.classList.add('slide-out');
-                    
-                    setTimeout(() => {{
-                        // Update content
-                        document.querySelector('.content-title').textContent = listing.title;
-                        document.querySelector('.content-price').textContent = 'Price: £' + listing.price;
-                        document.querySelector('.content-profit').textContent = `Profit:\n£${{listing.profit.toFixed(2)}}`;
-                        document.querySelector('.content-join-date').textContent = listing.join_date;
-                        document.querySelector('.content-detected-items').textContent = listing.detected_items;
-                        document.querySelector('.content-description').textContent = listing.description;
-                        document.querySelector('.content-url').textContent = listing.url;
-                        document.getElementById('listing-counter').textContent = `Listing ${{currentListingIndex + 1}} of ${{allListings.length}}`;
-
-                        // Update images
-                        const imageContainer = document.querySelector('.image-container');
-                        imageContainer.innerHTML = ''; // Clear existing images
-                        listing.processed_images.forEach(imgBase64 => {{
-                            const imageWrapper = document.createElement('div');
-                            imageWrapper.className = 'image-wrapper';
-                            const img = document.createElement('img');
-                            img.src = `data:image/png;base64,${{imgBase64}}`;
-                            img.alt = 'Listing Image';
-                            imageWrapper.appendChild(img);
-                            imageContainer.appendChild(imageWrapper);
-                        }});
-
-                        // Reset slide animation
-                        listingContainer.classList.remove('slide-out');
-                    }}, 300); // Match this with CSS transition time
-                }}
-
-                // Add touch event listeners
-                document.addEventListener('DOMContentLoaded', () => {{
-                    const listingContainer = document.querySelector('.listing-container');
-                    listingContainer.addEventListener('touchstart', handleTouchStart, false);
-                    listingContainer.addEventListener('touchmove', handleTouchMove, false);
-                    listingContainer.addEventListener('touchend', handleTouchEnd, false);
-                }});
-
-                // Initialize display on page load
-                window.onload = () => updateListingDisplay(0);
-                    function changeListingIndex(direction) {{
-                        if (direction === 'next') {{
-                            updateListingDisplay(currentListingIndex + 1);
-                        }} else if (direction === 'previous') {{
-                            updateListingDisplay(currentListingIndex - 1);
-                        }}
-                    }}
-
-                    // Initialize display on page load
-                function handleButtonClick(priceIncrement) {{
-                    var urlElement = document.querySelector('.content-url'); 
-                    var url = urlElement ? urlElement.textContent.trim() : ''; 
-
-                    var priceElement = document.querySelector('.content-price');
-                    var websitePrice = priceElement ? priceElement.textContent.trim() : '';
-
-                    // Get title and description
-                    var titleElement = document.querySelector('.content-title');
-                    var descriptionElement = document.querySelector('.content-description');
-                    
-                    var websiteTitle = titleElement ? titleElement.textContent.trim() : 'No Title';
-                    var websiteDescription = descriptionElement ? descriptionElement.textContent.trim() : 'No Description';
-
-                    // Get the clicked button
-                    var clickedButton = event.target;
-
-                    // Add a class for the click animation
-                    clickedButton.classList.add('button-clicked');
-
-                    // Remove the class after the animation
-                    setTimeout(() => {{
-                        clickedButton.classList.remove('button-clicked');
-                    }}, 300);  // Same duration as the CSS transition
-
-                    fetch('/button-clicked', {{
-                        method: 'POST', 
-                        headers: {{
-                            'Content-Type': 'application/x-www-form-urlencoded', 
-                        }}, 
-                        body: `url=${{encodeURIComponent(url)}}&website_price=${{encodeURIComponent(websitePrice)}}&website_title=${{encodeURIComponent(websiteTitle)}}&website_description=${{encodeURIComponent(websiteDescription)}}&price_increment=${{priceIncrement}}` 
-                    }}) 
-                    .then(response => {{
-                        if (response.ok) {{
-                            console.log('Button clicked successfully'); 
-                        }} else {{
-                            console.error('Failed to click button'); 
-                        }}
-                    }})
-                    .catch(error => {{
-                        console.error('Error:', error); 
-                    }});
-                }}
-
-                function handleCustomPriceClick() {{
-                    // Prompt user for custom price increment
-                    var customIncrement = prompt("Enter custom price increment (in £):", "15");
-                    
-                    // Validate input
-                if (customIncrement === null) {{
-                        return; // User cancelled
-                    }}
-                    
-                    // Convert to number and handle invalid input
-                    customIncrement = parseFloat(customIncrement);
-                    
-                    if (isNaN(customIncrement) || customIncrement <= 0) {{
-                        alert("Please enter a valid positive number.");
-                        return;
-                    }}
-
-                    var urlElement = document.querySelector('.content-url'); 
-                    var url = urlElement ? urlElement.textContent.trim() : ''; 
-
-                    var priceElement = document.querySelector('.content-price');
-                    var websitePrice = priceElement ? priceElement.textContent.trim() : '';
-
-                    // Get title and description
-                    var titleElement = document.querySelector('.content-title');
-                    var descriptionElement = document.querySelector('.content-description');
-                    
-                    var websiteTitle = titleElement ? titleElement.textContent.trim() : 'No Title';
-                    var websiteDescription = descriptionElement ? descriptionElement.textContent.trim() : 'No Description';
-
-                    fetch('/button-clicked', {{
-                        method: 'POST', 
-                        headers: {{
-                            'Content-Type': 'application/x-www-form-urlencoded', 
-                        }}, 
-                        body: `url=${{encodeURIComponent(url)}}&website_price=${{encodeURIComponent(websitePrice)}}&website_title=${{encodeURIComponent(websiteTitle)}}&website_description=${{encodeURIComponent(websiteDescription)}}&price_increment=${{customIncrement}}` 
-                    }}) 
-                    .then(response => {{
-                        if (response.ok) {{
-                            console.log('Button clicked successfully'); 
-                        }} else {{
-                            console.error('Failed to click button'); 
-                        }}
-                    }})
-                    .catch(error => {{
-                        console.error('Error:', error); 
-                    }});
-                }}
-            </script> 
-
-        </head> 
-        <body> 
-            <div class="container listing-container">
-                <div class="container">
-                    <div class="button-row">
-                        <button class="custom-button" onclick="refreshPage()" style="background-color:rgb(108,178,209);">Refresh Page</button>
-                    </div>
-                    <div class="listing-counter" id="listing-counter">
-                        Listing 1 of 1
-                    </div>
-                    <div class="section-box"> 
-                        <p><span class="header"></span><span class="content-title">{title}</span></p> 
-                    </div>
-                    <div class="financial-row"> 
-                        <div class="financial-item"> 
-                            <p><span class="header"></span><span class="content-price">{price}</span></p> 
-                        </div> 
-                        <div class="financial-item"> 
-                            <p><span class="header"></span><span class="content-profit">{profit}</span></p> 
-                        </div> 
-                    </div> 
-
-                    <div class="section-box"> 
-                        <p><span class="header"></span><span class="content-description">{description}</span></p> 
-                    </div>
-
-                    <div class="price-button-container">
-                        <div class="button-row">
-                            <button class="custom-button" onclick="handleButtonClick(5)"" style="background-color:rgb(109,171,96);">Message price + £5</button>
-                            <button class="custom-button" onclick="handleButtonClick(10)"" style="background-color:rgb(79,158,196);">Message price + £10</button>
-                        </div>
-                        <div class="button-row">
-                            <button class="custom-button" onclick="handleButtonClick(15)"" style="background-color:rgb(151,84,80);">Message price + £15</button>
-                            <button class="custom-button" onclick="handleButtonClick(20)"" style="background-color: rgb(192,132,17);">Message price + £20</button>
-                            <button class="custom-button" onclick="handleCustomPriceClick()" style="background-color: rgb(76,175,80);">Custom Price +</button>
-                        </div>
-                    </div>
-                    <div class="details-row">
-                        <div class="details-item"> 
-                            <p><span class="header"></span><span class="content-detected-items">{detected_items}</span></p> 
-                        </div> 
-                        <div class="image-container"> 
-                            {image_html} 
-                        </div> 
-                    </div>
-
-                    <div class="details-item"> 
-                            <p><span class="header"></span><span class="content-join-date">{join_date}</span></p> 
-                        </div> 
-                    <div class="navigation-buttons">
-                        <button onclick="changeListingIndex('previous')">Previous</button>
-                        <button onclick="changeListingIndex('next')">Next</button>
-                    </div>
-                    <div class="listing-url" id="listing-url"> 
-                        <p><span class="header">Listing URL: </span><span class="content-url">{listing_url}</span></p>
-                    </div>
-                </div> 
-            </div>
-        </body> 
-        </html> 
-        ''' 
-
-        except Exception as e: 
-            return f"<html><body><h1>Error</h1><p>{str(e)}</p></body></html>" 
-
-
-    
-
-    def process_request_queue(self):
-        global messaging_driver
-        while not request_queue.empty():
-            url, website_static_price_str, price_increment = request_queue.get()
-            start_time = time.time()
-            message_sent = False
             try:
-                # Parse the price from the string
-                try:
-                    cleaned_price_str = (
-                        website_static_price_str
-                        .replace('Price:', '')
-                        .replace('\n', '')
-                        .replace('£', '')
-                        .replace(' ', '')
-                        .strip()
-                    )
-                    website_static_price = float(cleaned_price_str)
-                    print(f"🏷️ Website Static Price: £{website_static_price:.2f}")
-                except (ValueError, AttributeError) as e:
-                    print(f"Error parsing price: {e}")
-                    print(f"Problematic price string: {website_static_price_str}")
-                    website_static_price = 0.00
-                    continue
-
-                # Validate the URL format
-                if not url.startswith(('http://', 'https://')):
-                    url = 'https://' + url
-
-                # Reinitialize the driver if needed
-                if not messaging_driver:
-                    messaging_driver = self.setup_chrome_messaging_driver()
-                    if not messaging_driver:
-                        print("❌ No driver available.")
-                        continue
-
-                # Navigate to the target URL
-                messaging_driver.get(url)
-                WebDriverWait(messaging_driver, 15).until(
-                    EC.presence_of_element_located((By.TAG_NAME, 'body'))
-                )
-
-                # Create the messaging string using the adjusted website price
-                website_price_adjusted = int(round(website_static_price)) + price_increment
-                message_1 = f"hi, is this still available? happy to pay £{website_price_adjusted} + shipping, if that works for you? I'm Richmond based so collection is a bit far! (id pay first obviously)"
-
-                # NEW: Search for an element containing the text "Message seller" (case-insensitive)
-                print("[Progress] Searching for 'Message seller' element on the page...")
-                elements = messaging_driver.find_elements(
-                    By.XPATH,
-                    "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'message seller')]"
-                )
-                found_button = None
-                for elem in elements:
-                    if elem.is_displayed():
-                        found_button = elem
-                        break
-
-                if found_button:
-                    print("[Success] Found the 'Message seller' element. Attempting click...")
-                    try:
-                        messaging_driver.execute_script("arguments[0].click();", found_button)
-                        print("✅ 'Message seller' button clicked successfully.")
-                        message_sent = True
-                    except Exception as js_click_err:
-                        print(f"❌ JavaScript click failed: {js_click_err}")
-                else:
-                    print("❌ Failed to locate the 'Message seller' element.")
-
-                # Allow time for the message window to load
-                time.sleep(2)
-
-                if not message_sent:
-                    print("❌ Message seller button was not clicked, skipping further processing.")
-                    continue
-
-                # Use ActionChains to clear and then type the message
-                actions = ActionChains(messaging_driver)
-                for _ in range(6):
-                    actions.send_keys(Keys.TAB)
-                actions.key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL)
-                actions.send_keys(message_1)
-                actions.perform()
-
-                # If sending is enabled, try to click the send button
-                if send_message:
-                    try:
-                        send_button = WebDriverWait(messaging_driver, 10).until(
-                            EC.element_to_be_clickable(( 
-                                By.XPATH, 
-                                "//span[contains(@class, 'x1lliihq') and contains(@class, 'x6ikm8r') "
-                                "and contains(@class, 'x10wlt62') and contains(@class, 'x1n2onr6') "
-                                "and contains(@class, 'xlyipyv') and contains(@class, 'xuxw1ft') and text()='Send Message']"
-                            ))
-                        )
-                        try:
-                            send_button.click()
-                        except Exception as e:
-                            try:
-                                messaging_driver.execute_script("arguments[0].click();", send_button)
-                            except Exception as e2:
-                                ActionChains(messaging_driver).move_to_element(send_button).click().perform()
-                        print("🚀 Message sent successfully! 🚀")
-                        message_sent = True
-                    except Exception as send_error:
-                        print(f"🚨 Failed to send message: {send_error}")
-                        if time.time() - start_time > WAIT_TIME_FOR_WEBSITE_MESSAGE:
-                            print(f"⏰ Messaging process timed out after {WAIT_TIME_FOR_WEBSITE_MESSAGE} seconds")
-                        continue
-
-                print(f"Successfully processed request for {url}")
-
+                # Ensure ChromeDriver is cached
+                if not hasattr(self, '_cached_chromedriver_path'):
+                    self._cached_chromedriver_path = ChromeDriverManager().install()
+                
+                service = Service(self._cached_chromedriver_path, log_path=os.devnull)
+                
+                chrome_opts = Options()
+                chrome_opts.add_argument(f"--user-data-dir={config['user_data_dir']}")
+                chrome_opts.add_argument(f"--profile-directory={config['profile_directory']}")
+                chrome_opts.add_argument("--no-sandbox")
+                chrome_opts.add_argument("--disable-dev-shm-usage")
+                chrome_opts.add_argument("--disable-gpu")
+                chrome_opts.add_argument("--window-size=800,600")
+                chrome_opts.add_argument("--log-level=3")
+                chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+                chrome_opts.add_experimental_option('useAutomationExtension', False)
+                
+                # Create the driver
+                self.current_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
+                
+                # Set timeouts
+                self.current_bookmark_driver.implicitly_wait(1)
+                self.current_bookmark_driver.set_page_load_timeout(8)
+                self.current_bookmark_driver.set_script_timeout(3)
+                
+                # DON'T navigate anywhere - leave it blank as requested
+                print(f"✅ CYCLING: First driver {self.current_bookmark_driver_index + 1}/5 created and ready (blank page)")
+                
             except Exception as e:
-                print(f"Error processing request for {url}: {e}")
-            finally:
-                request_queue.task_done()  # This is called exactly once per item
-                if request_queue.empty():
-                    self.button_clicked.is_processing = False
-
-
-    def base64_encode_image(self, img):
-        """Convert PIL Image to base64 string, resizing if necessary"""
-        # Resize image while maintaining aspect ratio
-        max_size = (200, 200)
-        img.thumbnail(max_size, Image.LANCZOS)
+                print(f"❌ CYCLING: Failed to create first bookmark driver: {e}")
+                return None
         
-        # Convert to base64
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode()
-    
-    def run_flask_app(self):
+        # Return the current ready driver (either just created or already waiting from previous close)
+        print(f"📋 CYCLING: Using ready driver {self.current_bookmark_driver_index + 1}/5")
+        return self.current_bookmark_driver
+
+    def close_current_bookmark_driver(self):
+        """
+        Close the current bookmark driver, advance to next index, and IMMEDIATELY open the next driver
+        """
+        if self.current_bookmark_driver is not None:
+            try:
+                print(f"🗑️ CYCLING: Closing bookmark driver {self.current_bookmark_driver_index + 1}")
+                self.current_bookmark_driver.quit()
+                time.sleep(0.5)  # Brief pause for cleanup
+                print(f"✅ CYCLING: Closed bookmark driver {self.current_bookmark_driver_index + 1}")
+            except Exception as e:
+                print(f"⚠️ CYCLING: Error closing driver {self.current_bookmark_driver_index + 1}: {e}")
+            finally:
+                self.current_bookmark_driver = None
+        
+        # Advance to next driver (cycle back to 0 after 4)
+        self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
+        
+        # IMMEDIATELY open the next driver and keep it ready
+        print(f"🚀 CYCLING: IMMEDIATELY opening next driver {self.current_bookmark_driver_index + 1}/5")
+        next_config = self.bookmark_driver_configs[self.current_bookmark_driver_index]
+        
         try:
-            print("Starting Flask app with existing Cloudflare Tunnel...")
-            print("Your website will be available at: https://fk43b0p45crc03r.xyz")
+            # Ensure ChromeDriver is cached
+            if not hasattr(self, '_cached_chromedriver_path'):
+                self._cached_chromedriver_path = ChromeDriverManager().install()
             
-            # Start your existing tunnel
-            tunnel_process = self.start_cloudflare_tunnel(port=5000)
+            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
             
-            # Run Flask on localhost - the tunnel will route external traffic to this
-            app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
+            chrome_opts = Options()
+            chrome_opts.add_argument(f"--user-data-dir={next_config['user_data_dir']}")
+            chrome_opts.add_argument(f"--profile-directory={next_config['profile_directory']}")
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+            chrome_opts.add_experimental_option('useAutomationExtension', False)
+            
+            # Create the NEXT driver immediately
+            self.current_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set timeouts
+            self.current_bookmark_driver.implicitly_wait(1)
+            self.current_bookmark_driver.set_page_load_timeout(8)
+            self.current_bookmark_driver.set_script_timeout(3)
+            
+            # DON'T navigate anywhere - leave it blank as requested
+            print(f"✅ CYCLING: Driver {self.current_bookmark_driver_index + 1}/5 is now open and ready (blank page)")
             
         except Exception as e:
-            print(f"Error starting Flask app: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            try:
-                if tunnel_process:
-                    tunnel_process.terminate()
-                    print("Tunnel terminated.")
-            except Exception as term_err:
-                print(f"Error terminating tunnel: {term_err}")
+            print(f"❌ CYCLING: Failed to open next driver {self.current_bookmark_driver_index + 1}: {e}")
+            self.current_bookmark_driver = None
+    def get_available_driver(self):
+        """
+        FIXED: Find and reserve the first available driver with proper initialization
+        Driver 1 uses the persistent_buying_driver, drivers 2-5 are created on demand
+        """
+        with self.driver_lock:
+            for driver_num in range(1, 6):  # Check drivers 1-5
+                # Skip drivers that are currently busy
+                if self.driver_status[driver_num] == 'busy':
+                    continue
+                    
+                # Reserve this driver slot
+                self.driver_status[driver_num] = 'busy'
+                
+                # SPECIAL HANDLING FOR DRIVER 1 - use persistent_buying_driver
+                if driver_num == 1:
+                    print(f"🚗 DRIVER 1: Using persistent buying driver")
+                    
+                    # Check if persistent driver exists and is alive
+                    if self.persistent_buying_driver is None or self.is_persistent_driver_dead():
+                        print(f"🚗 DRIVER 1: Persistent driver is dead, recreating...")
+                        if not self.setup_persistent_buying_driver():
+                            print(f"❌ DRIVER 1: Failed to recreate persistent driver")
+                            self.driver_status[driver_num] = 'not_created'
+                            continue
+                    
+                    print(f"✅ RESERVED: Persistent buying driver (driver 1)")
+                    return driver_num, self.persistent_buying_driver
+                    
+                # For drivers 2-5, create on demand as before
+                else:
+                    if self.buying_drivers[driver_num] is None or self.is_driver_dead(driver_num):
+                        print(f"🚗 CREATING: Buying driver {driver_num}")
+                        new_driver = self.setup_buying_driver(driver_num)
+                        
+                        if new_driver is None:
+                            print(f"❌ FAILED: Could not create buying driver {driver_num}")
+                            self.driver_status[driver_num] = 'not_created'
+                            continue
+                            
+                        self.buying_drivers[driver_num] = new_driver
+                        print(f"✅ CREATED: Buying driver {driver_num} successfully")
+                    
+                    print(f"✅ RESERVED: Buying driver {driver_num}")
+                    return driver_num, self.buying_drivers[driver_num]
+            
+            print("❌ ERROR: All 5 buying drivers are currently busy")
+            return None, None
+    
+    def is_persistent_driver_dead(self):
+        """
+        Check if the persistent buying driver is dead/unresponsive
+        """
+        if self.persistent_buying_driver is None:
+            return True
+            
+        try:
+            # Try to access current_url to test if driver is alive
+            _ = self.persistent_buying_driver.current_url
+            return False
+        except:
+            print(f"💀 DEAD: Persistent buying driver is unresponsive")
+            return True
 
+    def is_driver_dead(self, driver_num):
+        """
+        Check if a driver is dead/unresponsive
+        """
+        if self.buying_drivers[driver_num] is None:
+            return True
+            
+        try:
+            # Try to access current_url to test if driver is alive
+            _ = self.buying_drivers[driver_num].current_url
+            return False
+        except:
+            print(f"💀 DEAD: Driver {driver_num} is unresponsive")
+            return True
 
-    def get_ngrok_url(self):
-        return "equal-ape-sincerely.ngrok-free.app"
+    def release_driver(self, driver_num):
+        """
+        FIXED: Release a driver back to the free pool with special handling for driver 1
+        """
+        with self.driver_lock:
+            print(f"🔓 RELEASING: Buying driver {driver_num}")
+            
+            if driver_num == 1:
+                # Driver 1 is the persistent driver - keep it alive, just mark as free
+                self.driver_status[driver_num] = 'not_created'  # Allow it to be reused
+                print(f"🔄 KEPT ALIVE: Persistent buying driver (driver 1) marked as available")
+            else:
+                # For drivers 2-5, close them after use
+                if self.buying_drivers[driver_num] is not None:
+                    try:
+                        print(f"🗑️ CLOSING: Buying driver {driver_num}")
+                        self.buying_drivers[driver_num].quit()
+                        
+                        # Wait a moment for cleanup
+                        time.sleep(0.5)
+                        
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'not_created'
+                        print(f"✅ CLOSED: Buying driver {driver_num}")
+                    except Exception as e:
+                        print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'not_created'
 
-    def start_ngrok_and_get_url(self):
-        return "equal-ape-sincerely.ngrok-free.app"
+    def start_bookmark_stopwatch(self, listing_url):
+        """
+        Start a stopwatch for a successfully bookmarked listing
+        MODIFIED: Now tracks bookmark start time for wait_for_bookmark_stopwatch_to_buy functionality
+        """
+        print(f"⏱️ STOPWATCH: Starting timer for {listing_url}")
+        
+        # NEW: Track the start time for this listing
+        if not hasattr(self, 'bookmark_start_times'):
+            self.bookmark_start_times = {}
+        
+        # Record when the bookmark timer started
+        self.bookmark_start_times[listing_url] = time.time()
+        print(f"⏱️ RECORDED: Bookmark start time for {listing_url}")
+        
+        def stopwatch_timer():
+            time.sleep(bookmark_stopwatch_length)
+            print(f'LISTING {listing_url} HAS BEEN BOOKMARKED FOR {bookmark_stopwatch_length} SECONDS!')
+            
+            # Clean up the timer reference
+            if listing_url in self.bookmark_timers:
+                del self.bookmark_timers[listing_url]
+                
+            # Clean up the start time reference
+            if hasattr(self, 'bookmark_start_times') and listing_url in self.bookmark_start_times:
+                del self.bookmark_start_times[listing_url]
+        
+        # Start the timer thread
+        timer_thread = threading.Thread(target=stopwatch_timer)
+        timer_thread.daemon = True
+        timer_thread.start()
+        
+        # Store reference to track active timers
+        self.bookmark_timers[listing_url] = timer_thread
+
+    def cleanup_bookmark_timers(self):
+        """
+        Clean up any remaining bookmark timers when shutting down
+        """
+        print(f"🧹 CLEANUP: Stopping {len(self.bookmark_timers)} active bookmark timers")
+        self.bookmark_timers.clear()  # Timer threads are daemon threads, so they'll stop automatically
 
     def run_pygame_window(self):
         global LOCK_POSITION, current_listing_index, suitable_listings
@@ -2143,9 +1637,10 @@ class FacebookScraper:
             'revenue': pygame.font.Font(None, 36),
             'profit': pygame.font.Font(None, 36),
             'items': pygame.font.Font(None, 30),
-            'click': pygame.font.Font(None, 28),  # New font for click text
-            'suitability': pygame.font.Font(None, 28)  # New font for suitability reason
-
+            'click': pygame.font.Font(None, 28),
+            'suitability': pygame.font.Font(None, 28),
+            'reviews': pygame.font.Font(None, 28),
+            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
         }
         dragging = False
         resizing = False
@@ -2198,3 +1693,508 @@ class FacebookScraper:
                         dragging = False
                         resizing = False
                         drag_rect = None
+            
+            # Handle dragging and resizing
+            if dragging and drag_rect is not None:
+                rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
+                rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
+            elif resizing and drag_rect is not None:
+                if resize_edge == 'bottom-right':
+                    width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
+                    height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
+                    rectangles[drag_rect].size = (width, height)
+            
+            screen.fill((204, 210, 255))
+            for i, rect in enumerate(rectangles):
+                pygame.draw.rect(screen, (0, 0, 0), rect, 2)
+                number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
+                number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
+                screen.blit(number_text, number_rect)
+
+                if i == 2:  # Rectangle 3 (index 2) - Title
+                    self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
+                elif i == 1:  # Rectangle 2 (index 1) - Price
+                    self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
+                elif i == 7:  # Rectangle 8 (index 7) - Description
+                    self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
+                elif i == 8:  # Rectangle 9 (index 8) - CHANGED: Now shows exact time instead of upload date
+                    time_label = "Appended:"
+                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
+                elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
+                    self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
+                elif i == 9:  # Rectangle 10 (index 9) - Profit
+                    self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
+                elif i == 0:  # Rectangle 1 (index 0) - Detected Items
+                    self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
+                elif i == 10:  # Rectangle 11 (index 10) - Images
+                    self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
+                elif i == 3:  # Rectangle 4 (index 3) - Click to open
+                    click_text = "CLICK TO OPEN LISTING IN CHROME"
+                    self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
+                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
+                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+                elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
+                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
+
+            screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
+
+            if suitable_listings:
+                listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
+                screen.blit(listing_counter, (10, 40))
+
+            pygame.display.flip()
+            clock.tick(30)
+
+        self.save_rectangle_config(rectangles)
+        pygame.quit()
+        
+    def base64_encode_image(self, img):
+        """Convert PIL Image to base64 string, resizing if necessary"""
+        # Resize image while maintaining aspect ratio
+        max_size = (200, 200)
+        img.thumbnail(max_size, Image.LANCZOS)
+        
+        # Convert to base64
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode()
+
+    def render_images(self, screen, images, rect, bounding_boxes):
+        if not images:
+            return
+
+        num_images = len(images)
+        if num_images == 1:
+            grid_size = 1
+        elif 2 <= num_images <= 4:
+            grid_size = 2
+        else:
+            grid_size = 3
+
+        cell_width = rect.width // grid_size
+        cell_height = rect.height // grid_size
+
+        for i, img in enumerate(images):
+            if i >= grid_size * grid_size:
+                break
+            row = i // grid_size
+            col = i % grid_size
+            img = img.resize((cell_width, cell_height))
+            img_surface = pygame.image.fromstring(img.tobytes(), img.size, img.mode)
+            screen.blit(img_surface, (rect.left + col * cell_width, rect.top + row * cell_height))
+
+        # Display suitability reason
+        if FAILURE_REASON_LISTED:
+            font = pygame.font.Font(None, 24)
+            suitability_text = font.render(current_suitability, True, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+            screen.blit(suitability_text, (rect.left + 10, rect.bottom - 30))
+
+    def initialize_pygame_window(self):
+        pygame.init()
+        screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
+        pygame.display.set_caption("Facebook Marketplace Scanner")
+        return screen, pygame.time.Clock()
+
+    def load_rectangle_config(self):
+        return json.load(open(CONFIG_FILE, 'r')) if os.path.exists(CONFIG_FILE) else None
+
+    def save_rectangle_config(self, rectangles):
+        json.dump([(rect.x, rect.y, rect.width, rect.height) for rect in rectangles], open(CONFIG_FILE, 'w'))
+        
+    def render_text_in_rect(self, screen, font, text, rect, color):
+        words = text.split()
+        lines = []
+        current_line = []
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            test_width, _ = font.size(test_line)
+            if test_width <= rect.width - 10:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                    current_line = [word]
+                else:
+                    lines.append(word)
+        if current_line:
+            lines.append(' '.join(current_line))
+
+        total_height = sum(font.size(line)[1] for line in lines)
+        if total_height > rect.height:
+            scale_factor = rect.height / total_height
+            new_font_size = max(1, int(font.get_height() * scale_factor))
+            try:
+                font = pygame.font.Font(None, new_font_size)  # Use default font
+            except pygame.error:
+                print(f"Error creating font with size {new_font_size}")
+                return  # Skip rendering if font creation fail
+
+        y = rect.top + 5
+        for line in lines:
+            try:
+                text_surface = font.render(line, True, color)
+                text_rect = text_surface.get_rect(centerx=rect.centerx, top=y)
+                screen.blit(text_surface, text_rect)
+                y += font.get_linesize()
+            except pygame.error as e:
+                print(f"Error rendering text: {e}")
+                continue  # Skip this line if rendering fails
+
+    def extract_price(self, text):
+        import re
+        """
+        Extracts a float from a string like '£4.50' or '4.50 GBP'
+        Returns 0.0 if nothing is found or text is None
+        """
+        if not text:
+            return 0.0
+        match = re.search(r"[\d,.]+", text)
+        if match:
+            return float(match.group(0).replace(",", ""))
+        return 0.0
+    
+    def render_multiline_text(self, screen, font, text, rect, color):
+        # Convert dictionary to formatted string if need
+        if isinstance(text, dict):
+            text_lines = []
+            for key, value in text.items():
+                text_lines.append(f"{key}: {value}")
+            text = '\n'.join(text_lines)
+        
+        # Rest of the existing function remains the same
+        words = text.split()
+        lines = []
+        current_line = []
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            test_width, _ = font.size(test_line)
+            if test_width <= rect.width - 20:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                    current_line = [word]
+                else:
+                    lines.append(word)
+        if current_line:
+            lines.append(' '.join(current_line))
+
+        total_height = sum(font.size(line)[1] for line in lines)
+        if total_height > rect.height:
+            scale_factor = rect.height / total_height
+            new_font_size = max(1, int(font.get_height() * scale_factor))
+            try:
+                font = pygame.font.Font(None, new_font_size)  # Use default font
+            except pygame.error:
+                print(f"Error creating font with size {new_font_size}")
+                return  # Skip rendering if font creation fails
+
+        y_offset = rect.top + 10
+        for line in lines:
+            try:
+                text_surface = font.render(line, True, color)
+                text_rect = text_surface.get_rect(centerx=rect.centerx, top=y_offset)
+                screen.blit(text_surface, text_rect)
+                y_offset += font.get_linesize()
+                if y_offset + font.get_linesize() > rect.bottom - 10:
+                    break
+            except pygame.error as e:
+                print(f"Error rendering text: {e}")
+                continue  # Skip this line if rendering fails
+        
+
+
+    def bookmark_stopwatch_wrapper(self, func_name, tab_open_func, *args, **kwargs):
+        """
+        Wrapper function that times bookmark operations from tab open to ctrl+w
+        """
+        import time
+        
+        # Start timing when tab is opened
+        start_time = time.time()
+        print(f"⏱️ STOPWATCH START: {func_name} - Tab opening...")
+        
+        try:
+            # Execute the tab opening and bookmark operation
+            result = tab_open_func(*args, **kwargs)
+            
+            # Stop timing immediately after the 0.25s wait and ctrl+w
+            end_time = time.time()
+            elapsed = end_time - start_time
+            
+            print(f"⏱️ STOPWATCH END: {func_name} completed in {elapsed:.3f} seconds")
+            return result
+            
+        except Exception as e:
+            end_time = time.time()
+            elapsed = end_time - start_time
+            print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
+            raise
+    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
+        global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
+        global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
+        global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
+
+        # Close and clear existing images
+        if 'current_listing_images' in globals():
+            for img in current_listing_images:
+                try:
+                    img.close()  # Explicitly close the image
+                except Exception as e:
+                    print(f"Error closing image: {str(e)}")
+            current_listing_images.clear()
+
+        if processed_images:
+            for img in processed_images:
+                try:
+                    img_copy = img.copy()  # Create a fresh copy
+                    current_listing_images.append(img_copy)
+                except Exception as e:
+                    print(f"Error copying image: {str(e)}")
+        
+        # Store bounding boxes with more robust handling
+        current_bounding_boxes = {
+            'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
+            'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
+        }
+
+        # Handle detected_items for Box 1 - show raw detected objects with counts
+        if isinstance(detected_items, dict):
+            # Format as "item_name: count" for items with count > 0
+            formatted_detected_items = {}
+            for item, count in detected_items.items():
+                try:
+                    count_int = int(count) if isinstance(count, str) else count
+                    if count_int > 0:
+                        formatted_detected_items[item] = str(count_int)
+                except (ValueError, TypeError):
+                    continue
+            
+            if not formatted_detected_items:
+                formatted_detected_items = {"no_items": "No items detected"}
+        else:
+            formatted_detected_items = {"no_items": "No items detected"}
+
+        # FIXED: Use the join_date parameter directly instead of generating new timestamp
+        # The join_date parameter now contains the stored timestamp from when item was processed
+        stored_append_time = join_date if join_date else "No timestamp"
+
+        # Explicitly set the global variables
+        current_detected_items = formatted_detected_items
+        current_listing_title = title[:50] + '...' if len(title) > 50 else title
+        current_listing_description = description[:200] + '...' if len(description) > 200 else description if description else "No description"
+        current_listing_join_date = stored_append_time  # FIXED: Use stored timestamp, not current time
+        current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
+        current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
+        current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
+        current_listing_url = url
+        current_suitability = suitability if suitability else "Suitability unknown"
+        current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
+
+    def handle_post_payment_logic(self, driver, driver_num, url):
+        """
+        Handle the logic after payment is clicked - check for success/errors
+        """
+        print(f"💳 DRIVER {driver_num}: Handling post-payment logic...")
+        
+        max_attempts = 250
+        attempt = 0
+        purchase_successful = False
+        
+        while not purchase_successful and attempt < max_attempts:
+            attempt += 1
+            
+            if attempt % 10 == 0:  # Print progress every 10 attempts
+                print(f"💳 DRIVER {driver_num}: Payment attempt {attempt}/{max_attempts}")
+            
+            # Check for error first (appears quickly)
+            try:
+                error_element = WebDriverWait(driver, 2).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//span[contains(text(), \"Sorry, we couldn't process your payment\")]"))
+                )
+                
+                if error_element:
+                    print(f"❌ DRIVER {driver_num}: Payment error detected, retrying...")
+                    
+                    # Click OK to dismiss error
+                    try:
+                        ok_button = WebDriverWait(driver, 3).until(
+                            EC.element_to_be_clickable((By.XPATH, "//button[contains(.//text(), 'OK, close')]"))
+                        )
+                        ok_button.click()
+                        print(f"✅ DRIVER {driver_num}: Error dismissed")
+                    except:
+                        print(f"⚠️ DRIVER {driver_num}: Could not dismiss error")
+                    
+                    # Wait and try to click pay again
+                    time.sleep(buying_driver_click_pay_wait_time)
+                    
+                    # Re-find and click pay button
+                    try:
+                        pay_button = driver.find_element(By.CSS_SELECTOR, 
+                            'button[data-testid="single-checkout-order-summary-purchase-button"]')
+                        pay_button.click()
+                    except:
+                        print(f"❌ DRIVER {driver_num}: Could not re-click pay button")
+                        break
+                    
+                    continue
+            
+            except TimeoutException:
+                pass  # No error found, continue
+            
+            # Check for success
+            try:
+                success_element = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//h2[text()='Purchase successful']"))
+                )
+                
+                if success_element:
+                    print(f"🎉 DRIVER {driver_num}: PURCHASE SUCCESSFUL!")
+                    purchase_successful = True
+                    
+                    # Send success notification
+                    try:
+                        self.send_pushover_notification(
+                            "Vinted Purchase Successful",
+                            f"Successfully purchased: {url}",
+                            'aks3to8guqjye193w7ajnydk9jaxh5',
+                            'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                        )
+                    except Exception as notification_error:
+                        print(f"⚠️ DRIVER {driver_num}: Notification failed: {notification_error}")
+                    
+                    break
+            
+            except TimeoutException:
+                # No success message yet, continue trying
+                continue
+        
+        if not purchase_successful:
+            print(f"❌ DRIVER {driver_num}: Purchase failed after {attempt} attempts")
+        
+        # Clean up
+        try:
+            driver.close()
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+        
+        self.release_driver(driver_num)
+        print(f"✅ DRIVER {driver_num}: Post-payment cleanup completed")
+
+
+    def monitor_for_purchase_unsuccessful(self, url, driver, driver_num, pay_button):
+        """
+        Monitor for "Purchase unsuccessful" detection from bookmark driver and click pay immediately
+        """
+        print(f"🔍 DRIVER {driver_num}: Starting 'Purchase unsuccessful' monitoring for {url[:50]}...")
+        
+        start_time = time.time()
+        check_interval = 0.1  # Check every 100ms for ultra-fast response
+        timeout = 25 * 60  # 25 minutes timeout
+        
+        global purchase_unsuccessful_detected_urls
+        
+        try:
+            while True:
+                elapsed = time.time() - start_time
+                
+                # Check timeout
+                if elapsed >= timeout:
+                    print(f"⏰ DRIVER {driver_num}: Monitoring timeout after {elapsed/60:.1f} minutes")
+                    break
+                
+                # Check if driver is still alive
+                try:
+                    driver.current_url
+                except:
+                    print(f"💀 DRIVER {driver_num}: Driver died during monitoring")
+                    break
+                
+                # CRITICAL: Check if "Purchase unsuccessful" was detected
+                if url in purchase_unsuccessful_detected_urls:
+                    entry = purchase_unsuccessful_detected_urls[url]
+                    if not entry.get('waiting', True):  # Flag changed by bookmark driver
+                        print(f"🎯 DRIVER {driver_num}: 'Purchase unsuccessful' detected! CLICKING PAY NOW!")
+                        
+                        # IMMEDIATELY click pay button
+                        try:
+                            # Try multiple click methods for maximum reliability
+                            pay_clicked = False
+                            
+                            # Method 1: Standard click
+                            try:
+                                pay_button.click()
+                                pay_clicked = True
+                                print(f"✅ DRIVER {driver_num}: Pay clicked using standard method")
+                            except:
+                                # Method 2: JavaScript click
+                                try:
+                                    driver.execute_script("arguments[0].click();", pay_button)
+                                    pay_clicked = True
+                                    print(f"✅ DRIVER {driver_num}: Pay clicked using JavaScript")
+                                except:
+                                    # Method 3: Force enable and click
+                                    try:
+                                        driver.execute_script("""
+                                            arguments[0].disabled = false;
+                                            arguments[0].click();
+                                        """, pay_button)
+                                        pay_clicked = True
+                                        print(f"✅ DRIVER {driver_num}: Pay clicked using force method")
+                                    except Exception as final_error:
+                                        print(f"❌ DRIVER {driver_num}: All pay click methods failed: {final_error}")
+                            
+                            if pay_clicked:
+                                print(f"💳 DRIVER {driver_num}: Payment initiated successfully!")
+                                
+                                # Continue with existing purchase logic
+                                self.handle_post_payment_logic(driver, driver_num, url)
+                            
+                            break  # Exit monitoring loop
+                            
+                        except Exception as click_error:
+                            print(f"❌ DRIVER {driver_num}: Error clicking pay button: {click_error}")
+                            break
+                
+                # Sleep briefly before next check
+                time.sleep(check_interval)
+        
+        except Exception as monitoring_error:
+            print(f"❌ DRIVER {driver_num}: Monitoring error: {monitoring_error}")
+        
+        finally:
+            # Clean up monitoring entry
+            if url in purchase_unsuccessful_detected_urls:
+                del purchase_unsuccessful_detected_urls[url]
+            
+            print(f"🧹 DRIVER {driver_num}: Monitoring cleanup completed")
+
+
+    def process_single_listing_with_driver_modified(self, url, driver_num, driver):
+        """
+        MODIFIED: Process listing that immediately navigates to buy page and waits for "Purchase unsuccessful"
+        """
+        print(f"🔥 DRIVER {driver_num}: Starting MODIFIED processing of {url[:50]}...")
+        
+        try:
+            # Driver health check
+            try:
+                current_url = driver.current_url
+                print(f"✅ DRIVER {driver_num}: Driver alive")
+            except Exception as e:
+                print(f"❌ DRIVER {driver_num}: Driver is dead: {str(e)}")
+                return
+            
+            # Open new tab
+            try:
+                driver.execute_script("window.open('');")
+                new_tab = driver.window_handles[-1]
+                driver.switch_to.window(new_tab)
+                print(f"✅ DRIVER {driver_num}: New tab opened")
+            except Exception as e:
+                print(f"❌ DRIVER {driver_num}: Failed to open new tab: {str(e)}")

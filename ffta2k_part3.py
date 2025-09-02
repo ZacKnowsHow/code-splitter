@@ -1,80 +1,4 @@
-# Continuation from line 6601
-                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
-                ):
-                    print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
-                    continue
-                
-                # Only include images that look like product photos
-                if (
-                    # Vinted product images typically have f800, f1200, etc.
-                    '/f800/' in src or 
-                    '/f1200/' in src or 
-                    '/f600/' in src or
-                    # Or contain vinted/cloudinary and are likely product images
-                    (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
-                    # And don't have small size indicators
-                    not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
-                ):
-                    valid_urls.append(src)
-                    if print_images_backend_info:
-                        print(f"    ✅ Added valid image URL: {src[:50]}...")
-
-        if not valid_urls:
-            print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
-            return []
-
-        if print_images_backend_info:
-            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
-        
-        os.makedirs(listing_dir, exist_ok=True)
-        
-        # FIXED: Enhanced duplicate detection using content hashes
-        def download_single_image(args):
-            """Download a single image with enhanced duplicate detection"""
-            url, index = args
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Cache-Control': 'no-cache',
-                'Referer': driver.current_url
-            }
-            
-            try:
-                resp = requests.get(url, timeout=10, headers=headers)
-                resp.raise_for_status()
-                
-                # FIXED: Use content hash to detect identical images with different URLs
-                content_hash = hashlib.md5(resp.content).hexdigest()
-                
-                # Check if we've already downloaded this exact image content
-                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
-                if os.path.exists(hash_file):
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
-                    return None
-                
-                img = Image.open(BytesIO(resp.content))
-                
-                # Skip very small images (likely icons or profile pics that got through)
-                if img.width < 200 or img.height < 200:
-                    print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
-                    return None
-                
-                # Resize image for YOLO detection optimization
-                MAX_SIZE = (1000, 1000)  # Slightly larger for better detection
-                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
-                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
-                    print(f"    📏 Resized image to: {img.width}x{img.height}")
-                
-                # Convert to RGB if needed
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                
-                # Save the image
+# Continuation from line 4401
                 save_path = os.path.join(listing_dir, f"{index}.png")
                 img.save(save_path, format="PNG", optimize=True)
                 
@@ -2159,9 +2083,10 @@
         flask_thread.daemon = True
         flask_thread.start()
         
+        
         # Start pygame window in separate thread
-        pygame_thread = threading.Thread(target=self.run_pygame_window)
-        pygame_thread.start()
+        #pygame_thread = threading.Thread(target=self.run_pygame_window)
+        #pygame_thread.start()
         
         # Clear download folder and start scraping
         self.clear_download_folder()
@@ -2178,16 +2103,9 @@
             sys.exit(0)
 
 if __name__ == "__main__":
-    if programme_to_run == 0:
-        scraper = FacebookScraper()
-        # Store globally for Flask route access
-        globals()['scraper_instance'] = scraper
-    else:
-        scraper = VintedScraper()
-        # Store globally for Flask route access - CRITICAL for button functionality
-        globals()['vinted_scraper_instance'] = scraper
+
+    scraper = VintedScraper()
+
+    globals()['vinted_scraper_instance'] = scraper
         
-        # Replace the normal search with enhanced version in the run method
-        # Modify the run() method to use search_vinted_enhanced instead of search_vinted
-    
     scraper.run()
