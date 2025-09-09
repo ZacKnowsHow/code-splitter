@@ -1,4 +1,145 @@
 # Continuation from line 4401
+        # Try multiple selectors in order of preference - focusing on product images only
+        img_selectors = [
+            # Target product images specifically (avoid profile pictures)
+            "img.web_ui__Image__content[data-testid^='item-photo-']",
+            "img[data-testid^='item-photo-']",
+            # Target images within containers that suggest product photos
+            "div.web_ui__Image__cover img.web_ui__Image__content",
+            "div.web_ui__Image__scaled img.web_ui__Image__content", 
+            "div.web_ui__Image__rounded img.web_ui__Image__content",
+            # Broader selectors but still avoiding profile images
+            "div.feed-grid img",
+            "div[class*='photo'] img",
+        ]
+        
+        imgs = []
+        for selector in img_selectors:
+            imgs = driver.find_elements(By.CSS_SELECTOR, selector)
+            if imgs:
+                if print_images_backend_info:
+                    print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
+                break
+        
+        if not imgs:
+            print("  ▶ No images found with any selector")
+            return []
+        
+        # FIXED: Remove the [:8] limit - process ALL images found
+        valid_urls = []
+        seen_urls = set()  # Track URLs to prevent duplicates
+        
+        if print_images_backend_info:
+            print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
+        
+        for img in imgs:  # REMOVED [:8] limit here
+            src = img.get_attribute("src")
+            parent_classes = ""
+            
+            # Get parent element classes to check for profile picture indicators
+            try:
+                parent = img.find_element(By.XPATH, "..")
+                parent_classes = parent.get_attribute("class") or ""
+            except:
+                pass
+            
+            # Check if this is a valid product image
+            if src and src.startswith('http'):
+                # FIXED: Better duplicate detection using URL normalization
+                # Remove query parameters and fragments for duplicate detection
+                normalized_url = src.split('?')[0].split('#')[0]
+                
+                if normalized_url in seen_urls:
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
+                    continue
+                
+                seen_urls.add(normalized_url)
+                
+                # Exclude profile pictures and small icons based on URL patterns
+                if (
+                    # Skip small profile pictures (50x50, 75x75, etc.)
+                    '/50x50/' in src or 
+                    '/75x75/' in src or 
+                    '/100x100/' in src or
+                    # Skip if parent has circle class (usually profile pics)
+                    'circle' in parent_classes.lower() or
+                    # Skip SVG icons
+                    src.endswith('.svg') or
+                    # Skip very obviously small images by checking dimensions in URL
+                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
+                ):
+                    print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
+                    continue
+                
+                # Only include images that look like product photos
+                if (
+                    # Vinted product images typically have f800, f1200, etc.
+                    '/f800/' in src or 
+                    '/f1200/' in src or 
+                    '/f600/' in src or
+                    # Or contain vinted/cloudinary and are likely product images
+                    (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
+                    # And don't have small size indicators
+                    not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
+                ):
+                    valid_urls.append(src)
+                    if print_images_backend_info:
+                        print(f"    ✅ Added valid image URL: {src[:50]}...")
+
+        if not valid_urls:
+            print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
+            return []
+
+        if print_images_backend_info:
+            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
+        
+        os.makedirs(listing_dir, exist_ok=True)
+        
+        # FIXED: Enhanced duplicate detection using content hashes
+        def download_single_image(args):
+            """Download a single image with enhanced duplicate detection"""
+            url, index = args
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
+                'Referer': driver.current_url
+            }
+            
+            try:
+                resp = requests.get(url, timeout=10, headers=headers)
+                resp.raise_for_status()
+                
+                # FIXED: Use content hash to detect identical images with different URLs
+                content_hash = hashlib.md5(resp.content).hexdigest()
+                
+                # Check if we've already downloaded this exact image content
+                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
+                if os.path.exists(hash_file):
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
+                    return None
+                
+                img = Image.open(BytesIO(resp.content))
+                
+                # Skip very small images (likely icons or profile pics that got through)
+                if img.width < 200 or img.height < 200:
+                    print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
+                    return None
+                
+                # Resize image for YOLO detection optimization
+                MAX_SIZE = (1000, 1000)  # Slightly larger for better detection
+                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
+                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
+                    print(f"    📏 Resized image to: {img.width}x{img.height}")
+                
+                # Convert to RGB if needed
+                if img.mode != 'RGB':
                     img = img.convert('RGB')
                 
                 # Save the image
@@ -345,6 +486,7 @@
                         break
 
                     overall_listing_counter += 1
+
 
                     # Process the listing (using current_driver instead of driver)
                     current_driver.execute_script("window.open();")
@@ -2057,145 +2199,3 @@
             
         # Initialize ALL global variables properly
         suitable_listings = []
-        current_listing_index = 0
-        
-        # **CRITICAL FIX: Initialize recent_listings for website navigation**
-        recent_listings = {
-            'listings': [],
-            'current_index': 0
-        }
-        
-        # Initialize all current listing variables
-        current_listing_title = "No title"
-        current_listing_description = "No description"
-        current_listing_join_date = "No join date"
-        current_listing_price = "0"
-        current_expected_revenue = "0"
-        current_profit = "0"
-        current_detected_items = "None"
-        current_listing_images = []
-        current_listing_url = ""
-        current_suitability = "Suitability unknown"
-        
-        # Initialize pygame display with default values
-        self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
-        
-        # Start Flask app in separate thread.
-        flask_thread = threading.Thread(target=self.run_flask_app)
-        flask_thread.daemon = True
-        flask_thread.start()
-        
-        # Start pygame window in separate thread
-        #pygame_thread = threading.Thread(target=self.run_pygame_window)
-        #pygame_thread.start()
-        
-        # NEW: Start thread monitoring system
-        def thread_monitor():
-            while not self.shutdown_event.is_set():
-                self.monitor_driver_threads()
-                time.sleep(5)
-
-        monitor_thread = Thread(target=thread_monitor, name="Thread-Monitor")
-        monitor_thread.daemon = True
-        monitor_thread.start()
-
-        print("🧵 MONITOR: Thread monitoring started")
-        
-        # NEW: Main scraping driver thread - THIS IS THE KEY CHANGE
-        def main_scraping_driver():
-            """Main scraping driver function that runs in its own thread"""
-            print("🚀 SCRAPING THREAD: Starting main scraping driver thread")
-            
-            # Clear download folder and start scraping
-            self.clear_download_folder()
-            driver = self.setup_driver()
-            
-            if driver is None:
-                print("❌ SCRAPING THREAD: Failed to setup main driver")
-                return
-                
-            try:
-                print("🔍 SCRAPING THREAD: Setting up persistent buying driver...")
-                self.setup_persistent_buying_driver()
-                
-                print("🚀 SCRAPING THREAD: Starting Vinted search with refresh...")
-                self.search_vinted_with_refresh(driver, SEARCH_QUERY)
-                
-            except Exception as scraping_error:
-                print(f"❌ SCRAPING THREAD ERROR: {scraping_error}")
-                import traceback
-                traceback.print_exc()
-                
-            finally:
-                print("🧹 SCRAPING THREAD: Cleaning up...")
-                try:
-                    driver.quit()
-                    print("✅ SCRAPING THREAD: Main driver closed")
-                except:
-                    print("⚠️ SCRAPING THREAD: Error closing main driver")
-                    
-                # Clean up all other drivers and resources
-                pygame.quit()
-                self.cleanup_persistent_buying_driver()
-                self.cleanup_all_buying_drivers()
-                self.cleanup_purchase_unsuccessful_monitoring()
-                self.cleanup_all_cycling_bookmark_drivers()  # Clean up bookmark drivers too
-                
-                time.sleep(2)
-                
-                active_count = self.get_active_thread_count()
-                if active_count > 0:
-                    print(f"⚠️ SCRAPING THREAD: {active_count} threads still active after cleanup")
-                else:
-                    print("✅ SCRAPING THREAD: All threads cleaned up successfully")
-                
-                print("🏁 SCRAPING THREAD: Main scraping thread completed")
-        
-        # Create and start the main scraping thread
-        print("🧵 MAIN: Creating main scraping driver thread...")
-        scraping_thread = Thread(target=main_scraping_driver, name="Main-Scraping-Thread")
-        scraping_thread.daemon = False  # Don't make it daemon so program waits for it
-        scraping_thread.start()
-        
-        print("🧵 MAIN: Main scraping driver thread started")
-        print("🧵 MAIN: Main thread will now wait for scraping thread to complete...")
-        
-        try:
-            # Wait for the scraping thread to complete
-            scraping_thread.join()
-            print("✅ MAIN: Scraping thread completed successfully")
-            
-        except KeyboardInterrupt:
-            print("\n🛑 MAIN: Keyboard interrupt received")
-            print("🛑 MAIN: Setting shutdown event...")
-            self.shutdown_event.set()
-            
-            print("⏳ MAIN: Waiting for scraping thread to finish...")
-            scraping_thread.join(timeout=30)  # Wait up to 30 seconds
-            
-            if scraping_thread.is_alive():
-                print("⚠️ MAIN: Scraping thread still alive after timeout")
-            else:
-                print("✅ MAIN: Scraping thread finished cleanly")
-        
-        except Exception as main_error:
-            print(f"❌ MAIN THREAD ERROR: {main_error}")
-            self.shutdown_event.set()
-            
-        finally:
-            print("🏁 MAIN: Program ending, final cleanup...")
-            # Force cleanup if anything is still running
-            self.cleanup_all_buying_drivers()
-            self.cleanup_persistent_buying_driver()
-            self.cleanup_all_cycling_bookmark_drivers()
-            self.cleanup_purchase_unsuccessful_monitoring()
-            
-            print("🏁 MAIN: Program exit")
-            sys.exit(0)
-
-if __name__ == "__main__":
-
-    scraper = VintedScraper()
-
-    globals()['vinted_scraper_instance'] = scraper
-        

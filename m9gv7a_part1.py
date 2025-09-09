@@ -64,8 +64,8 @@ TEST_SUITABLE_URLS = [
 TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
-BOOKMARK_TEST_MODE = False
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6990793592-new-look-handbag-black-fake-leather?referrer=catalog"
+BOOKMARK_TEST_MODE = True
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/7037950664-racer-jacket?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 #tests the buying functionality
@@ -74,7 +74,7 @@ BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle
 
 #tests both the bookmark and buying functionality
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6989925386-green-and-yellow-chunky-bracelet?referrer=catalog"
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6996290195-cider-with-rosie-pretty-decor-book?referrer=catalog"
 
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
@@ -1344,6 +1344,13 @@ class VintedScraper:
             self.buying_drivers[i] = None
             self.driver_status[i] = 'not_created'
 
+        self.bookmark_driver_threads = {}  # Track threads for each driver
+        self.bookmark_driver_locks = {}    # Lock for each driver
+        
+        # Initialize locks for each bookmark driver
+        for i in range(5):
+            self.bookmark_driver_locks[i] = threading.Lock()
+
 
         self.current_bookmark_driver_index = 0
         self.bookmark_driver_configs = [
@@ -1369,7 +1376,149 @@ class VintedScraper:
             }
         ]
         self.current_bookmark_driver = None
+        self.shutdown_event = threading.Event()
 
+
+    def cleanup_all_bookmark_threads(self):
+        """
+        Clean up all bookmark driver threads when program exits
+        """
+        print("🧹 CLEANUP: Stopping all bookmark driver threads...")
+        
+        active_threads = []
+        for driver_index, thread in self.bookmark_driver_threads.items():
+            if thread and thread.is_alive():
+                active_threads.append((driver_index + 1, thread))
+        
+        if active_threads:
+            print(f"🧹 CLEANUP: Found {len(active_threads)} active bookmark threads")
+            
+            # Give threads 10 seconds to finish naturally
+            print("⏳ CLEANUP: Waiting 10 seconds for threads to complete...")
+            for driver_num, thread in active_threads:
+                thread.join(timeout=10)
+                if thread.is_alive():
+                    print(f"⚠️ CLEANUP: BookmarkDriver-{driver_num} still running after timeout")
+                else:
+                    print(f"✅ CLEANUP: BookmarkDriver-{driver_num} completed")
+        
+        print("✅ CLEANUP: Bookmark thread cleanup completed")
+
+    def bookmark_driver_threaded(self, listing_url, username=None):
+        """
+        THREADED VERSION: Run each bookmark driver in its own thread
+        """
+        # Get the next available driver index (cycle through 0-4)
+        with threading.Lock():  # Ensure thread-safe driver selection
+            driver_index = self.current_bookmark_driver_index
+            self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
+        
+        # Start the bookmark process in a separate thread for this driver
+        thread_name = f"BookmarkDriver-{driver_index + 1}"
+        bookmark_thread = threading.Thread(
+            target=self._bookmark_driver_thread_worker,
+            args=(driver_index, listing_url, username),
+            name=thread_name
+        )
+        bookmark_thread.daemon = True
+        bookmark_thread.start()
+        
+        # Track the thread
+        self.bookmark_driver_threads[driver_index] = bookmark_thread
+        
+        print(f"🧵 BOOKMARK: Started {thread_name} for URL: {listing_url[:50]}...")
+        return True
+
+    def _bookmark_driver_thread_worker(self, driver_index, listing_url, username):
+        """
+        Worker function that runs in each bookmark driver thread
+        """
+        thread_name = f"BookmarkDriver-{driver_index + 1}"
+        
+        with self.bookmark_driver_locks[driver_index]:
+            print(f"🔖 {thread_name}: Starting bookmark process...")
+            
+            try:
+                # Create driver for this specific thread
+                config = self.bookmark_driver_configs[driver_index]
+                driver = self._create_bookmark_driver(config, driver_index)
+                
+                if driver is None:
+                    print(f"❌ {thread_name}: Failed to create driver")
+                    return
+                
+                # Execute the bookmark process using existing logic
+                step_log = self._initialize_step_logging()
+                step_log['driver_number'] = driver_index + 1
+                
+                # Validate inputs
+                if not self._validate_bookmark_inputs(listing_url, username, step_log):
+                    print(f"❌ {thread_name}: Input validation failed")
+                    return
+                
+                # Execute bookmark sequences
+                success = self._execute_bookmark_sequences_with_monitoring(
+                    driver, listing_url, username, step_log
+                )
+                
+                if success:
+                    print(f"✅ {thread_name}: Bookmark process completed successfully")
+                else:
+                    print(f"❌ {thread_name}: Bookmark process failed")
+                    
+            except Exception as e:
+                print(f"❌ {thread_name}: Thread error: {e}")
+                import traceback
+                traceback.print_exc()
+                
+            finally:
+                # Clean up driver
+                try:
+                    if 'driver' in locals() and driver:
+                        driver.quit()
+                        print(f"🗑️ {thread_name}: Driver cleaned up")
+                except Exception as cleanup_error:
+                    print(f"⚠️ {thread_name}: Cleanup error: {cleanup_error}")
+                
+                print(f"🏁 {thread_name}: Thread completed")
+
+    def _create_bookmark_driver(self, config, driver_index):
+        """
+        Create a bookmark driver with the specified configuration
+        """
+        try:
+            # Ensure ChromeDriver is cached
+            if not hasattr(self, '_cached_chromedriver_path'):
+                self._cached_chromedriver_path = ChromeDriverManager().install()
+            
+            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
+            
+            chrome_opts = Options()
+            chrome_opts.add_argument(f"--user-data-dir={config['user_data_dir']}")
+            chrome_opts.add_argument(f"--profile-directory={config['profile_directory']}")
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+            chrome_opts.add_experimental_option('useAutomationExtension', False)
+            
+            # Create the driver
+            driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set timeouts
+            driver.implicitly_wait(1)
+            driver.set_page_load_timeout(8)
+            driver.set_script_timeout(3)
+            
+            print(f"✅ DRIVER {driver_index + 1}: Created successfully")
+            return driver
+            
+        except Exception as e:
+            print(f"❌ DRIVER {driver_index + 1}: Creation failed: {e}")
+            return None
                 
     def get_next_bookmark_driver(self):
         """
@@ -2049,152 +2198,3 @@ class VintedScraper:
             
             # Check for success
             try:
-                success_element = WebDriverWait(driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, 
-                        "//h2[text()='Purchase successful']"))
-                )
-                
-                if success_element:
-                    print(f"🎉 DRIVER {driver_num}: PURCHASE SUCCESSFUL!")
-                    purchase_successful = True
-                    
-                    # Send success notification
-                    try:
-                        self.send_pushover_notification(
-                            "Vinted Purchase Successful",
-                            f"Successfully purchased: {url}",
-                            'aks3to8guqjye193w7ajnydk9jaxh5',
-                            'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
-                        )
-                    except Exception as notification_error:
-                        print(f"⚠️ DRIVER {driver_num}: Notification failed: {notification_error}")
-                    
-                    break
-            
-            except TimeoutException:
-                # No success message yet, continue trying
-                continue
-        
-        if not purchase_successful:
-            print(f"❌ DRIVER {driver_num}: Purchase failed after {attempt} attempts")
-        
-        # Clean up
-        try:
-            driver.close()
-            if len(driver.window_handles) > 0:
-                driver.switch_to.window(driver.window_handles[0])
-        except:
-            pass
-        
-        self.release_driver(driver_num)
-        print(f"✅ DRIVER {driver_num}: Post-payment cleanup completed")
-
-
-    def monitor_for_purchase_unsuccessful(self, url, driver, driver_num, pay_button):
-        """
-        Monitor for "Purchase unsuccessful" detection from bookmark driver and click pay immediately
-        """
-        print(f"🔍 DRIVER {driver_num}: Starting 'Purchase unsuccessful' monitoring for {url[:50]}...")
-        
-        start_time = time.time()
-        check_interval = 0.1  # Check every 100ms for ultra-fast response
-        timeout = 25 * 60  # 25 minutes timeout
-        
-        global purchase_unsuccessful_detected_urls
-        
-        try:
-            while True:
-                elapsed = time.time() - start_time
-                
-                # Check timeout
-                if elapsed >= timeout:
-                    print(f"⏰ DRIVER {driver_num}: Monitoring timeout after {elapsed/60:.1f} minutes")
-                    break
-                
-                # Check if driver is still alive
-                try:
-                    driver.current_url
-                except:
-                    print(f"💀 DRIVER {driver_num}: Driver died during monitoring")
-                    break
-                
-                # CRITICAL: Check if "Purchase unsuccessful" was detected
-                if url in purchase_unsuccessful_detected_urls:
-                    entry = purchase_unsuccessful_detected_urls[url]
-                    if not entry.get('waiting', True):  # Flag changed by bookmark driver
-                        print(f"🎯 DRIVER {driver_num}: 'Purchase unsuccessful' detected! CLICKING PAY NOW!")
-                        
-                        # IMMEDIATELY click pay button
-                        try:
-                            # Try multiple click methods for maximum reliability
-                            pay_clicked = False
-                            
-                            # Method 1: Standard click
-                            try:
-                                pay_button.click()
-                                pay_clicked = True
-                                print(f"✅ DRIVER {driver_num}: Pay clicked using standard method")
-                            except:
-                                # Method 2: JavaScript click
-                                try:
-                                    driver.execute_script("arguments[0].click();", pay_button)
-                                    pay_clicked = True
-                                    print(f"✅ DRIVER {driver_num}: Pay clicked using JavaScript")
-                                except:
-                                    # Method 3: Force enable and click
-                                    try:
-                                        driver.execute_script("""
-                                            arguments[0].disabled = false;
-                                            arguments[0].click();
-                                        """, pay_button)
-                                        pay_clicked = True
-                                        print(f"✅ DRIVER {driver_num}: Pay clicked using force method")
-                                    except Exception as final_error:
-                                        print(f"❌ DRIVER {driver_num}: All pay click methods failed: {final_error}")
-                            
-                            if pay_clicked:
-                                print(f"💳 DRIVER {driver_num}: Payment initiated successfully!")
-                                
-                                # Continue with existing purchase logic
-                                self.handle_post_payment_logic(driver, driver_num, url)
-                            
-                            break  # Exit monitoring loop
-                            
-                        except Exception as click_error:
-                            print(f"❌ DRIVER {driver_num}: Error clicking pay button: {click_error}")
-                            break
-                
-                # Sleep briefly before next check
-                time.sleep(check_interval)
-        
-        except Exception as monitoring_error:
-            print(f"❌ DRIVER {driver_num}: Monitoring error: {monitoring_error}")
-        
-        finally:
-            # Clean up monitoring entry
-            if url in purchase_unsuccessful_detected_urls:
-                del purchase_unsuccessful_detected_urls[url]
-            
-            print(f"🧹 DRIVER {driver_num}: Monitoring cleanup completed")
-
-
-    def process_single_listing_with_driver_modified(self, url, driver_num, driver):
-        """
-        MODIFIED: Process listing that immediately navigates to buy page and waits for "Purchase unsuccessful"
-        """
-        print(f"🔥 DRIVER {driver_num}: Starting MODIFIED processing of {url[:50]}...")
-        
-        try:
-            # Driver health check
-            try:
-                current_url = driver.current_url
-                print(f"✅ DRIVER {driver_num}: Driver alive")
-            except Exception as e:
-                print(f"❌ DRIVER {driver_num}: Driver is dead: {str(e)}")
-                return
-            
-            # Open new tab
-            try:
-                driver.execute_script("window.open('');")
-                new_tab = driver.window_handles[-1]
-                driver.switch_to.window(new_tab)
