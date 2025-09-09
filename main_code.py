@@ -8893,7 +8893,7 @@ if __name__ == "__main__":
                 print("Install with: pip install PyAudioWPatch")
             main_vm_driver()
         else:
-            # Run main scraper with VM-based bookmark drivers
+            # Run main scraper with VM-based bookmark driver
             print("VM_DRIVER_USE = True - Running main Vinted scraper with VM bookmark drivers")
             scraper = VintedScraper()
             globals()['vinted_scraper_instance'] = scraper
