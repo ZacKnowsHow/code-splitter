@@ -735,7 +735,9 @@ class VintedScraper:
             try:
                 # Step 1: Clear browser data (creates and closes a driver)
                 print(f"🔖 {thread_name}: Step 1 - Clearing browser data...")
-                vm_clear_browser_data(vm_ip_address, profile_config)
+                
+                # FIX: Add 'self' parameter to the function call
+                self.vm_clear_browser_data(vm_ip_address, profile_config)
                 
                 # Step 2: Small delay before creating main driver (MATCHES working script)
                 time.sleep(1)
@@ -1520,6 +1522,179 @@ class VintedScraper:
                         self.buying_drivers[driver_num] = None
                         self.driver_status[driver_num] = 'not_created'
 
+    def vm_clear_browser_data(self, vm_ip_address, profile_config):
+        """
+        Clear browser data using VM - MATCHES the working script exactly
+        This creates a driver, clears data, then closes the driver
+        """
+        print("=" * 50)
+        print("VM BOOKMARK: Clearing browser data...")
+        print("=" * 50)
+        
+        clear_driver = None
+        
+        try:
+            print("Step 1: Setting up temporary driver for data clearing...")
+            
+            # Use same Chrome options as working script
+            chrome_options = ChromeOptions()
+            chrome_options.add_argument(f'--user-data-dir={profile_config["user_data_dir"]}')
+            chrome_options.add_argument(f'--profile-directory={profile_config["profile_directory"]}')
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            chrome_options.add_argument('--force-device-scale-factor=1')
+            chrome_options.add_argument('--high-dpi-support=1')
+            chrome_options.add_argument('--remote-debugging-port=9223')  # Different port
+            chrome_options.add_argument('--remote-allow-origins=*')
+            chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--disable-web-security')
+            chrome_options.add_argument('--allow-running-insecure-content')
+            
+            # Create driver connection - EXACTLY like working script
+            clear_driver = webdriver.Remote(
+                command_executor=f'http://{vm_ip_address}:4444',
+                options=chrome_options
+            )
+            
+            print(f"✓ Temporary driver created successfully (Session: {clear_driver.session_id})")
+            
+            print("Step 2: Navigating to Chrome settings...")
+            clear_driver.get("chrome://settings/clearBrowserData")
+            print("✓ Navigated to clear browser data page")
+            
+            print("Step 3: Waiting for page to load...")
+            time.sleep(2)  # Wait for Shadow DOM to initialize
+            
+            print("Step 4: Accessing Shadow DOM to find clear button...")
+            
+            # EXACT same JavaScript from working script
+            shadow_dom_script = """
+            function findAndClickClearButton() {
+                // Multiple strategies to find the clear button in Shadow DOM
+                
+                // Strategy 1: Direct access via settings-ui
+                let settingsUi = document.querySelector('settings-ui');
+                if (settingsUi && settingsUi.shadowRoot) {
+                    let clearBrowserData = settingsUi.shadowRoot.querySelector('settings-main')?.shadowRoot
+                        ?.querySelector('settings-basic-page')?.shadowRoot
+                        ?.querySelector('settings-section[section="privacy"]')?.shadowRoot
+                        ?.querySelector('settings-clear-browsing-data-dialog');
+                    
+                    if (clearBrowserData && clearBrowserData.shadowRoot) {
+                        let clearButton = clearBrowserData.shadowRoot.querySelector('#clearButton');
+                        if (clearButton) {
+                            console.log('Found clear button via strategy 1');
+                            clearButton.click();
+                            return true;
+                        }
+                    }
+                }
+                
+                // Strategy 2: Search all shadow roots recursively
+                function searchShadowRoots(element) {
+                    if (element.shadowRoot) {
+                        let clearButton = element.shadowRoot.querySelector('#clearButton');
+                        if (clearButton) {
+                            console.log('Found clear button via recursive search');
+                            clearButton.click();
+                            return true;
+                        }
+                        
+                        // Search nested shadow roots
+                        let shadowElements = element.shadowRoot.querySelectorAll('*');
+                        for (let el of shadowElements) {
+                            if (searchShadowRoots(el)) return true;
+                        }
+                    }
+                    return false;
+                }
+                
+                let allElements = document.querySelectorAll('*');
+                for (let el of allElements) {
+                    if (searchShadowRoots(el)) return true;
+                }
+                
+                // Strategy 3: Look for cr-button elements in shadow roots
+                function findCrButton(element) {
+                    if (element.shadowRoot) {
+                        let crButtons = element.shadowRoot.querySelectorAll('cr-button');
+                        for (let btn of crButtons) {
+                            if (btn.id === 'clearButton' || btn.textContent.includes('Delete data')) {
+                                console.log('Found cr-button via strategy 3');
+                                btn.click();
+                                return true;
+                            }
+                        }
+                        
+                        let shadowElements = element.shadowRoot.querySelectorAll('*');
+                        for (let el of shadowElements) {
+                            if (findCrButton(el)) return true;
+                        }
+                    }
+                    return false;
+                }
+                
+                for (let el of allElements) {
+                    if (findCrButton(el)) return true;
+                }
+                
+                console.log('Clear button not found in any shadow root');
+                return false;
+            }
+            
+            return findAndClickClearButton();
+            """
+            
+            # Execute the Shadow DOM navigation script
+            result = clear_driver.execute_script(shadow_dom_script)
+            
+            if result:
+                print("✓ Successfully clicked clear data button via Shadow DOM!")
+                print("Step 5: Waiting for data clearing to complete...")
+                time.sleep(2)  # Wait for clearing process
+                print("✓ Browser data clearing completed successfully!")
+            else:
+                print("✗ Failed to find clear button in Shadow DOM")
+                
+                # Fallback: Try keyboard shortcut like working script
+                print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
+                try:
+                    body = clear_driver.find_element(By.TAG_NAME, "body")
+                    body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
+                    time.sleep(1)
+                    # Try to press Enter to confirm
+                    body.send_keys(Keys.ENTER)
+                    time.sleep(1)
+                    print("✓ Fallback keyboard shortcut attempted")
+                except Exception as fallback_error:
+                    print(f"✗ Fallback also failed: {fallback_error}")
+            
+        except Exception as e:
+            print(f"✗ Browser data clearing failed: {str(e)}")
+            print("Continuing anyway...")
+            import traceback
+            traceback.print_exc()
+        
+        finally:
+            # CRITICAL: Always close the driver - MATCHES working script
+            if clear_driver:
+                try:
+                    print("Step 6: Closing temporary driver...")
+                    clear_driver.quit()
+                    print("✓ Temporary driver closed successfully")
+                except Exception as e:
+                    print(f"Warning: Failed to close temporary driver: {e}")
+            
+            print("=" * 50)
+            print("VM BOOKMARK: Browser data clear complete")
+            print("=" * 50)
+            time.sleep(0.5)  # Brief pause before continuing
+
     def start_bookmark_stopwatch(self, listing_url):
         """
         Start a stopwatch for a successfully bookmarked listing
@@ -2024,178 +2199,3 @@ class VintedScraper:
             if len(driver.window_handles) > 0:
                 driver.switch_to.window(driver.window_handles[0])
         except:
-            pass
-        
-        self.release_driver(driver_num)
-        print(f"✅ DRIVER {driver_num}: Post-payment cleanup completed")
-
-
-    def monitor_for_purchase_unsuccessful(self, url, driver, driver_num, pay_button):
-        """
-        Monitor for "Purchase unsuccessful" detection from bookmark driver and click pay immediately
-        """
-        print(f"🔍 DRIVER {driver_num}: Starting 'Purchase unsuccessful' monitoring for {url[:50]}...")
-        
-        start_time = time.time()
-        check_interval = 0.1  # Check every 100ms for ultra-fast response
-        timeout = 25 * 60  # 25 minutes timeout
-        
-        global purchase_unsuccessful_detected_urls
-        
-        try:
-            while True:
-                elapsed = time.time() - start_time
-                
-                # Check timeout
-                if elapsed >= timeout:
-                    print(f"⏰ DRIVER {driver_num}: Monitoring timeout after {elapsed/60:.1f} minutes")
-                    break
-                
-                # Check if driver is still alive
-                try:
-                    driver.current_url
-                except:
-                    print(f"💀 DRIVER {driver_num}: Driver died during monitoring")
-                    break
-                
-                # CRITICAL: Check if "Purchase unsuccessful" was detected
-                if url in purchase_unsuccessful_detected_urls:
-                    entry = purchase_unsuccessful_detected_urls[url]
-                    if not entry.get('waiting', True):  # Flag changed by bookmark driver
-                        print(f"🎯 DRIVER {driver_num}: 'Purchase unsuccessful' detected! CLICKING PAY NOW!")
-                        
-                        # IMMEDIATELY click pay button
-                        try:
-                            # Try multiple click methods for maximum reliability
-                            pay_clicked = False
-                            
-                            # Method 1: Standard click
-                            try:
-                                pay_button.click()
-                                pay_clicked = True
-                                print(f"✅ DRIVER {driver_num}: Pay clicked using standard method")
-                            except:
-                                # Method 2: JavaScript click
-                                try:
-                                    driver.execute_script("arguments[0].click();", pay_button)
-                                    pay_clicked = True
-                                    print(f"✅ DRIVER {driver_num}: Pay clicked using JavaScript")
-                                except:
-                                    # Method 3: Force enable and click
-                                    try:
-                                        driver.execute_script("""
-                                            arguments[0].disabled = false;
-                                            arguments[0].click();
-                                        """, pay_button)
-                                        pay_clicked = True
-                                        print(f"✅ DRIVER {driver_num}: Pay clicked using force method")
-                                    except Exception as final_error:
-                                        print(f"❌ DRIVER {driver_num}: All pay click methods failed: {final_error}")
-                            
-                            if pay_clicked:
-                                print(f"💳 DRIVER {driver_num}: Payment initiated successfully!")
-                                
-                                # Continue with existing purchase logic
-                                self.handle_post_payment_logic(driver, driver_num, url)
-                            
-                            break  # Exit monitoring loop
-                            
-                        except Exception as click_error:
-                            print(f"❌ DRIVER {driver_num}: Error clicking pay button: {click_error}")
-                            break
-                
-                # Sleep briefly before next check
-                time.sleep(check_interval)
-        
-        except Exception as monitoring_error:
-            print(f"❌ DRIVER {driver_num}: Monitoring error: {monitoring_error}")
-        
-        finally:
-            # Clean up monitoring entry
-            if url in purchase_unsuccessful_detected_urls:
-                del purchase_unsuccessful_detected_urls[url]
-            
-            print(f"🧹 DRIVER {driver_num}: Monitoring cleanup completed")
-
-
-    def process_single_listing_with_driver_modified(self, url, driver_num, driver):
-        """
-        MODIFIED: Process listing that immediately navigates to buy page and waits for "Purchase unsuccessful"
-        """
-        print(f"🔥 DRIVER {driver_num}: Starting MODIFIED processing of {url[:50]}...")
-        
-        try:
-            # Driver health check
-            try:
-                current_url = driver.current_url
-                print(f"✅ DRIVER {driver_num}: Driver alive")
-            except Exception as e:
-                print(f"❌ DRIVER {driver_num}: Driver is dead: {str(e)}")
-                return
-            
-            # Open new tab
-            try:
-                driver.execute_script("window.open('');")
-                new_tab = driver.window_handles[-1]
-                driver.switch_to.window(new_tab)
-                print(f"✅ DRIVER {driver_num}: New tab opened")
-            except Exception as e:
-                print(f"❌ DRIVER {driver_num}: Failed to open new tab: {str(e)}")
-                return
-            
-            # Navigate to URL
-            actual_url = test_purchase_url if test_purchase_not_true else url
-            
-            navigation_success = False
-            for nav_attempt in range(3):
-                try:
-                    driver.get(actual_url)
-                    WebDriverWait(driver, 8).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
-                    navigation_success = True
-                    print(f"✅ DRIVER {driver_num}: Navigation successful")
-                    break
-                except Exception as nav_error:
-                    print(f"❌ DRIVER {driver_num}: Navigation attempt {nav_attempt+1} failed: {str(nav_error)}")
-                    if nav_attempt < 2:
-                        time.sleep(1)
-            
-            if not navigation_success:
-                print(f"❌ DRIVER {driver_num}: All navigation attempts failed")
-                try:
-                    driver.close()
-                    if len(driver.window_handles) > 0:
-                        driver.switch_to.window(driver.window_handles[0])
-                except:
-                    pass
-                return
-            
-            # Click Buy now button
-            buy_button_clicked = False
-            buy_selectors = [
-                'button[data-testid="item-buy-button"]',
-                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
-                '//button[@data-testid="item-buy-button"]',
-                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]'
-            ]
-            
-            for selector in buy_selectors:
-                try:
-                    if selector.startswith('//'):
-                        buy_button = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.XPATH, selector))
-                        )
-                    else:
-                        buy_button = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                        )
-                    
-                    # Try multiple click methods
-                    for click_method in ['standard', 'javascript']:
-                        try:
-                            if click_method == 'standard':
-                                buy_button.click()
-                            else:
-                                driver.execute_script("arguments[0].click();", buy_button)
-                            

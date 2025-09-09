@@ -1,4 +1,179 @@
 # Continuation from line 6601
+            try:
+                parent = img.find_element(By.XPATH, "..")
+                parent_classes = parent.get_attribute("class") or ""
+            except:
+                pass
+            
+            # Check if this is a valid product image
+            if src and src.startswith('http'):
+                # FIXED: Better duplicate detection using URL normalization
+                # Remove query parameters and fragments for duplicate detection
+                normalized_url = src.split('?')[0].split('#')[0]
+                
+                if normalized_url in seen_urls:
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
+                    continue
+                
+                seen_urls.add(normalized_url)
+                
+                # Exclude profile pictures and small icons based on URL patterns
+                if (
+                    # Skip small profile pictures (50x50, 75x75, etc.)
+                    '/50x50/' in src or 
+                    '/75x75/' in src or 
+                    '/100x100/' in src or
+                    # Skip if parent has circle class (usually profile pics)
+                    'circle' in parent_classes.lower() or
+                    # Skip SVG icons
+                    src.endswith('.svg') or
+                    # Skip very obviously small images by checking dimensions in URL
+                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
+                ):
+                    print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
+                    continue
+                
+                # Only include images that look like product photos
+                if (
+                    # Vinted product images typically have f800, f1200, etc.
+                    '/f800/' in src or 
+                    '/f1200/' in src or 
+                    '/f600/' in src or
+                    # Or contain vinted/cloudinary and are likely product images
+                    (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
+                    # And don't have small size indicators
+                    not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
+                ):
+                    valid_urls.append(src)
+                    if print_images_backend_info:
+                        print(f"    ✅ Added valid image URL: {src[:50]}...")
+
+        if not valid_urls:
+            print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
+            return []
+
+        if print_images_backend_info:
+            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
+        
+        os.makedirs(listing_dir, exist_ok=True)
+        
+        # FIXED: Enhanced duplicate detection using content hashes
+        def download_single_image(args):
+            """Download a single image with enhanced duplicate detection"""
+            url, index = args
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
+                'Referer': driver.current_url
+            }
+            
+            try:
+                resp = requests.get(url, timeout=10, headers=headers)
+                resp.raise_for_status()
+                
+                # FIXED: Use content hash to detect identical images with different URLs
+                content_hash = hashlib.md5(resp.content).hexdigest()
+                
+                # Check if we've already downloaded this exact image content
+                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
+                if os.path.exists(hash_file):
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
+                    return None
+                
+                img = Image.open(BytesIO(resp.content))
+                
+                # Skip very small images (likely icons or profile pics that got through)
+                if img.width < 200 or img.height < 200:
+                    print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
+                    return None
+                
+                # Resize image for YOLO detection optimization
+                MAX_SIZE = (1000, 1000)  # Slightly larger for better detection
+                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
+                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
+                    print(f"    📏 Resized image to: {img.width}x{img.height}")
+                
+                # Convert to RGB if needed
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Save the image
+                save_path = os.path.join(listing_dir, f"{index}.png")
+                img.save(save_path, format="PNG", optimize=True)
+                
+                # Create hash marker file to prevent future duplicates
+                with open(hash_file, 'w') as f:
+                    f.write(f"Downloaded from: {url}")
+                if print_images_backend_info:
+                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
+                return save_path
+                
+            except Exception as e:
+                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
+                return None
+        if print_images_backend_info:
+            print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
+        
+        # FIXED: Dynamic batch size based on actual image count
+        batch_size = len(valid_urls)  # Each "batch" equals the number of listing images
+        max_workers = min(6, batch_size)  # Use appropriate number of workers
+        
+        if print_images_backend_info:
+            print(f"  ▶ Batch size set to: {batch_size} (= number of listing images)")
+            print(f"  ▶ Using {max_workers} concurrent workers")
+        
+        downloaded_paths = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Prepare arguments for concurrent download
+            download_args = [(url, i+1) for i, url in enumerate(valid_urls)]
+            
+            # Submit all download jobs
+            future_to_url = {executor.submit(download_single_image, args): args[0] for args in download_args}
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_url):
+                result = future.result()
+                if result:  # Only add successful downloads
+                    downloaded_paths.append(result)
+
+        print(f"  ▶ Successfully downloaded {len(downloaded_paths)} unique images (from {len(valid_urls)} URLs)")
+        
+        # Clean up hash files (optional - you might want to keep them for faster future runs)
+        # Uncomment the next 6 lines if you want to clean up hash files after each listing
+        # try:
+        #     for file in os.listdir(listing_dir):
+        #         if file.startswith('.hash_'):
+        #             os.remove(os.path.join(listing_dir, file))
+        # except:
+        #     pass
+        
+        return downloaded_paths
+
+
+    def download_and_process_images_vinted(self, image_urls):
+        """FIXED: Process images without arbitrary limits and with better deduplication"""
+        processed_images = []
+        seen_hashes = set()  # Track content hashes to prevent duplicates
+        
+        print(f"🖼️  Processing {len(image_urls)} image URLs (NO LIMIT)")
+        
+        for i, url in enumerate(image_urls):  # REMOVED [:8] limit here
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    # FIXED: Use content hash for duplicate detection
+                    content_hash = hashlib.md5(response.content).hexdigest()
+                    
+                    if content_hash in seen_hashes:
+                        if print_images_backend_info:
+                            print(f"🖼️  Skipping duplicate image {i+1} (hash: {content_hash[:8]}...)")
                         continue
                     
                     seen_hashes.add(content_hash)
@@ -2024,108 +2199,3 @@
         
         # NEW: Main scraping driver thread - THIS IS THE KEY CHANGE
         def main_scraping_driver():
-            """Main scraping driver function that runs in its own thread"""
-            print("🚀 SCRAPING THREAD: Starting main scraping driver thread")
-            
-            # Clear download folder and start scraping
-            self.clear_download_folder()
-            driver = self.setup_driver()
-            
-            if driver is None:
-                print("❌ SCRAPING THREAD: Failed to setup main driver")
-                return
-                
-            try:
-                print("🔍 SCRAPING THREAD: Setting up persistent buying driver...")
-                self.setup_persistent_buying_driver()
-                
-                print("🚀 SCRAPING THREAD: Starting Vinted search with refresh...")
-                self.search_vinted_with_refresh(driver, SEARCH_QUERY)
-                
-            except Exception as scraping_error:
-                print(f"❌ SCRAPING THREAD ERROR: {scraping_error}")
-                import traceback
-                traceback.print_exc()
-                
-            finally:
-                print("🧹 SCRAPING THREAD: Cleaning up...")
-                try:
-                    driver.quit()
-                    print("✅ SCRAPING THREAD: Main driver closed")
-                except:
-                    print("⚠️ SCRAPING THREAD: Error closing main driver")
-                    
-                # Clean up all other drivers and resources
-                pygame.quit()
-                self.cleanup_persistent_buying_driver()
-                self.cleanup_all_buying_drivers()
-                self.cleanup_purchase_unsuccessful_monitoring()
-                self.cleanup_all_cycling_bookmark_drivers()  # Clean up bookmark drivers too
-                
-                time.sleep(2)
-
-                print("🏁 SCRAPING THREAD: Main scraping thread completed")
-        
-        # Create and start the main scraping thread
-        print("🧵 MAIN: Creating main scraping driver thread...")
-        scraping_thread = Thread(target=main_scraping_driver, name="Main-Scraping-Thread")
-        scraping_thread.daemon = False  # Don't make it daemon so program waits for it
-        scraping_thread.start()
-        
-        print("🧵 MAIN: Main scraping driver thread started")
-        print("🧵 MAIN: Main thread will now wait for scraping thread to complete...")
-        
-        try:
-            # Wait for the scraping thread to complete
-            scraping_thread.join()
-            print("✅ MAIN: Scraping thread completed successfully")
-            
-        except KeyboardInterrupt:
-            print("\n🛑 MAIN: Keyboard interrupt received")
-            print("🛑 MAIN: Setting shutdown event...")
-            self.shutdown_event.set()
-            
-            print("⏳ MAIN: Waiting for scraping thread to finish...")
-            scraping_thread.join(timeout=30)  # Wait up to 30 seconds
-            
-            if scraping_thread.is_alive():
-                print("⚠️ MAIN: Scraping thread still alive after timeout")
-            else:
-                print("✅ MAIN: Scraping thread finished cleanly")
-        
-        except Exception as main_error:
-            print(f"❌ MAIN THREAD ERROR: {main_error}")
-            self.shutdown_event.set()
-            
-        finally:
-            print("🏁 MAIN: Program ending, final cleanup...")
-            # Force cleanup if anything is still running
-            self.cleanup_all_buying_drivers()
-            self.cleanup_persistent_buying_driver()
-            self.cleanup_all_cycling_bookmark_drivers()
-            self.cleanup_purchase_unsuccessful_monitoring()
-            
-            print("🏁 MAIN: Program exit")
-            sys.exit(0)
-
-if __name__ == "__main__":
-    if VM_DRIVER_USE:
-        # Check if we should run the VM driver for captcha solving OR the main scraper with VM bookmarks
-        if len(sys.argv) > 1 and sys.argv[1] == "--vm-captcha-only":
-            # Run only the VM captcha solver
-            print("VM_DRIVER_USE = True - Running VM driver for captcha solving only")
-            if not HAS_PYAUDIO:
-                print("WARNING: pyaudiowpatch not available - audio features may not work")
-                print("Install with: pip install PyAudioWPatch")
-            main_vm_driver()
-        else:
-            # Run main scraper with VM-based bookmark drivers
-            print("VM_DRIVER_USE = True - Running main Vinted scraper with VM bookmark drivers")
-            scraper = VintedScraper()
-            globals()['vinted_scraper_instance'] = scraper
-            scraper.run()
-    else:
-        print("VM_DRIVER_USE = False - Running main Vinted scraper with regular bookmark drivers")
-        scraper = VintedScraper()
-        globals()['vinted_scraper_instance'] = scraper
-        scraper.run()
