@@ -1,833 +1,4 @@
-programme_to_run = 1
-#0 = facebook
-#1 = vinted
-
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
-from selenium.webdriver.common.action_chains import ActionChains
-from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.microsoft import EdgeChromiumDriverManager
-from selenium.webdriver.edge.service import Service as EdgeService
-from selenium.webdriver.edge.options import Options as EdgeOptions
-import undetected_chromedriver as uc
-import os
-import shutil
-import sys
-import time
-import re
-import json
-import io
-import base64
-import threading
-import subprocess
-import hashlib
-import concurrent.futures
-from queue import Queue
-import queue
-import pygame
-import pyautogui
-import requests
-from bs4 import BeautifulSoup
-import webbrowser
-from flask import Flask, render_template, request, session, redirect, url_for, jsonify, send_file
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-from pyngrok import ngrok
-import cv2
-import numpy as np
-from PIL import Image
-from io import BytesIO
-from urllib.parse import urlencode
-from datetime import datetime
-import logging
-from ultralytics import YOLO
-import random
-import torch
-from threading import Thread, Lock, Event
-
-
-# tests whether the listing is suitable for buying based on URL rather than scanning
-TEST_WHETHER_SUITABLE = False
-TEST_SUITABLE_URLS = [
-    'https://www.vinted.co.uk/items/6963376052-nintendo-switch?referrer=catalog',
-    'https://www.vinted.co.uk/items/6963025596-nintendo-switch-oled-model-the-legend-of-zelda-tears-of-the-kingdom-edition?referrer=catalog',
-    'https://www.vinted.co.uk/items/6970192196-nintendo-switch-lite-in-grey?referrer=catalog'
-]
-
-# tests the number of listings found by the search
-TEST_NUMBER_OF_LISTINGS = False
-
-#tests the bookmark functionality
-BOOKMARK_TEST_MODE = True
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/7037950664-racer-jacket?referrer=catalog"
-BOOKMARK_TEST_USERNAME = "leah_lane" 
-
-#tests the buying functionality
-BUYING_TEST_MODE = False
-BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
-
-#tests both the bookmark and buying functionality
-TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6996290195-cider-with-rosie-pretty-decor-book?referrer=catalog"
-
-PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
-NINTENDO_SWITCH_CLASSES = [
-    'controller','tv_black', 
-    'tv_white', 'comfort_h',
-    'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
-]
-
-VINTED_SHOW_ALL_LISTINGS = True
-print_debug = False
-print_images_backend_info = False
-test_bookmark_function = False
-bookmark_listings = True
-click_pay_button_final_check = True
-test_bookmark_link = "https://www.vinted.co.uk/items/4402812396-paper-back-book?referrer=catalog"
-bookmark_stopwatch_length = 540
-buying_driver_click_pay_wait_time = 7.5
-actually_purchase_listing = True
-wait_for_bookmark_stopwatch_to_buy = False
-test_purchase_not_true = False #uses the url below rather than the one from the web page
-test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1?referrer=catalog"
-#sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
-should_send_fail_bookmark_notification = True
-
-
-purchase_unsuccessful_detected_urls = {}  # Track URLs waiting for "Purchase unsuccessful" detection
-# Config
-PROFILE_DIR = "Default"
-PERMANENT_USER_DATA_DIR = r"C:\VintedScraper_Default2"
-#"C:\VintedScraper_Default" - first one
-#"C:\VintedScraper_Backup" - second one
-BASE_URL = "https://www.vinted.co.uk/catalog"
-SEARCH_QUERY = "nintendo switch"
-PRICE_FROM = 10
-PRICE_TO = 510
-CURRENCY = "GBP"
-ORDER = "newest_first"
-
-# Where to dump your images
-DOWNLOAD_ROOT = "vinted_photos"
-
-# Suppress verbose ultralytics logging
-logging.getLogger('ultralytics').setLevel(logging.WARNING)
-
-# --- Object Detection Configuration ---
-#pc
-#MODEL_WEIGHTS = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
-#laptop
-MODEL_WEIGHTS = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
-CLASS_NAMES = [
-   '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'comfort_h',
-   'comfort_h_joy', 'controller', 'crash_sand', 'dance', 'diamond_p', 'evee',
-   'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
-   'lets_go_p', 'links_z', 'lite', 'lite_box', 'luigis', 'mario_maker_2',
-   'mario_sonic', 'mario_tennis', 'minecraft', 'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic',
-   'odyssey_m', 'oled', 'oled_box', 'oled_in_tv', 'other_mario', 'party_m',
-   'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
-   'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch',
-   'switch_box', 'switch_in_tv', 'switch_screen', 'switch_sports', 'sword_p', 'tears_z',
-   'tv_black', 'tv_white', 'violet_p'
-]
-
-GENERAL_CONFIDENCE_MIN = 0.5
-HIGHER_CONFIDENCE_MIN = 0.55
-HIGHER_CONFIDENCE_ITEMS = { 'controller': HIGHER_CONFIDENCE_MIN, 'tv_white': HIGHER_CONFIDENCE_MIN, 'tv_black': HIGHER_CONFIDENCE_MIN }
-
-####VINTED ^^^^
-
-SCRAPER_USER_DATA_DIR = r"C:\FacebookScraper_ScraperProfile"
-#default
-
-MESSAGING_USER_DATA_DIR = r"C:\FacebookScraper_MessagingProfile"
-#profile 2
-
-
-app = Flask(__name__, template_folder='templates')
-
-limiter = Limiter(get_remote_address, app=app, default_limits=["10 per second", "100 per minute"])
-
-#logging.basicConfig(level=logging.DEBUG)
-#logging.getLogger('selenium').setLevel(logging.DEBUG)
-#logging.getLogger('urllib3').setLevel(logging.DEBUG)
-#logging.getLogger('selenium').setLevel(logging.WARNING)
-#logging.getLogger('urllib3').setLevel(logging.WARNING)
-logging.getLogger('ultralytics').setLevel(logging.WARNING)
-
-search_query = "nintendo switch"
-ngrok.set_auth_token('2roTu5SuJVRTFYSd2d1JBTyhjXA_5qNzmjZBn5EHVA2dwMfrZ')
-
-request_queue = Queue()
-website_price = 0
-website_price_adjusted = website_price
-message_1 = f'still available? im london based, happy to pay {website_price_adjusted} + shipping upfront if you can post. thanks'
-adjusted_message_1 = f'still available? i know you said collection but im london based, happy to pay {website_price_adjusted} + shipping upfront if you can post. thanks'
-
-General_Confidence_Min = 0.5
-Higher_Confidence_Min = 0.55
-Higher_Confidence_Items = {'controller': Higher_Confidence_Min, 'tv_white': Higher_Confidence_Min, 'tv_black': Higher_Confidence_Min}
-max_posting_age_minutes = 48000
-min_price = 14
-max_price = 500
-element_exractor_timeout = 0.85
-price_mulitplier = 1
-visible_listings_scanned = 0
-SD_card_price = 0
-
-app.secret_key = "facebook1967"
-PIN_CODE = 14346
-#pc
-OUTPUT_FILE_PATH = r"C:\users\zacknowshow\Downloads\SUITABLE_LISTINGS.txt"
-#laptop
-#OUTPUT_FILE_PATH = r"C:\Users\zacha\Downloads\SUITABLE_LISTINGS.txt"
-
-recent_listings = {
-    'listings': [],
-    'current_index': 0
-}
-
-review_min = 3
-REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
-MAX_LISTINGS_VINTED_TO_SCAN = 5  # Maximum listings to scan before refresh
-wait_after_max_reached_vinted = 0  # Seconds to wait between refresh cycles (5 minutes)
-VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
-FAILURE_REASON_LISTED = True
-REPEAT_LISTINGS = True
-LOCK_POSITION = True
-SHOW_ALL_LISTINGS = False
-SHOW_PARTIALLY_SUITABLE = False
-setup_website = False
-send_message = True
-current_listing_url = ""
-send_notification = True
-request_processing_event = threading.Event()
-
-GAME_CLASSES = [
-   '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
-   'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
-   'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
-   'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
-   'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
-   'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
-   'sword_p', 'tears_z', 'violet_p'
-]
-
-
-title_must_contain = ["nintendo", "pokemon", "zelda", "mario", "animal crossing", "minecraft", 'oled', 'lite', 'pokémon', 'switch game',
-                    'switch bundle', 'nintendo bundle', 'switch with games', 'modded switch']
-title_forbidden_words = ['unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
-                        'joycon', 'snes', 'gamecube', 'n64', 'damaged', 'circuit', 'kart live', 'ds', 'tablet only', 'ringfit', 'ring fit'
-                        'repair', '™', 'each', 'empty game', 'just game case', 'empty case', 'arcade', 'wii', 'tv frame', 'joy-con',
-                        'for parts', 'won’t charge', 'spares & repair', 'xbox', 'prices in description', 'collector set', 'collectors set'
-                        'read description', 'joy pads', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
-description_forbidden_words = ['faulty', 'not post', 'jailbreak', 'scam', 'visit us', 'opening hours', 'open 7 days', 'am - ',
-                                'store', 'telephone', 'email', 'call us', '+44', '07', 'kart live', 'circuit', '.shop', 'our website',
-                                'website:', 'empty game', 'just game case', 'empty case', 'each', 'spares and repairs', 'prices are',
-                                'tablet only', 'not charge', 'stopped charging', 'doesnt charge', 'individually priced', 'per game', 
-                                'https', 'case only', 'shop', 'spares or repairs', 'dock cover', '3d print', 'spares & repair',
-                                'error code', 'will not connect']
-#pc
-CONFIG_FILE = r"C:\Users\ZacKnowsHow\Downloads\square_configuratgion.json"
-#laptop
-#CONFIG_FILE = r"C:\Users\zacha\Downloads\square_configuratgion.json"
-
-
-model_weights = r"C:\Users\ZacKnowsHow\Downloads\best.pt"
-class_names = [
-   '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'comfort_h',
-   'comfort_h_joy', 'controller', 'crash_sand', 'dance', 'diamond_p', 'evee',
-   'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
-   'lets_go_p', 'links_z', 'lite', 'lite_box', 'luigis', 'mario_maker_2',
-   'mario_sonic', 'mario_tennis', 'minecraft', 'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic',
-   'odyssey_m', 'oled', 'oled_box', 'oled_in_tv', 'other_mario', 'party_m',
-   'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
-   'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch',
-   'switch_box', 'switch_in_tv', 'switch_screen', 'switch_sports', 'sword_p', 'tears_z',
-   'tv_black', 'tv_white', 'violet_p'
-]
-mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
-capped_classes = [
-   '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'comfort_h',
-   'crash_sand', 'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24',
-   'gta', 'just_dance', 'kart_m', 'kirby', 'lets_go_p', 'links_z',
-   'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft', 'minecraft_dungeons',
-   'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'oled_in_tv', 'party_m', 'rocket_league',
-   'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros', 'snap_p',
-   'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_in_tv', 'switch_sports',
-   'sword_p', 'tears_z', 'tv_black', 'tv_white', 'violet_p'
-]
-BANNED_PRICES = {
-    59.00,
-    49.00,
-    17.00
-}
-MESSAGE_2_WORDS = {
-    'cash only', 'must collect', 'only cash', 'no post', 'no delivery', 'pickup only', 'collect only',
-    'pick up only', 'cash on collection', 'cash on pick up', 'cash on pickup', 'cash collection',
-    'cash collect', 'cash pick up', 'cash pickup', 'i'
-}
-
-SD_CARD_WORD = {'sd card', 'sdcard', 'sd', 'card', 'memory card', 'memorycard', 'micro sd', 'microsd',
-                'memory card', 'memorycard', 'sandisk', '128gb', '256gb', 'game'}
-
-sd_card_revenue = 5
-
-current_listing_price = "0"
-duplicate_counter = 0
-scanned_urls = []
-current_listing_title = "No title"
-current_listing_description = "No description"
-current_listing_join_date = "No join date"
-current_detected_items = "None"
-current_expected_revenue= "0"
-current_profit = "0"
-current_suitability = "Suitability unknown"
-current_listing_images = []
-current_bounding_boxes = {}
-suitable_listings = []
-current_listing_index = 0
-miscellaneous_games_price = 5
-vinted_scraper_instance = None
-
-BASE_PRICES = {
-   '1_2_switch': 6.5, 'animal_crossing': 24, 'arceus_p': 27.5, 'bow_z': 28, 'bros_deluxe_m': 23.5,
-   'comfort_h': 6,
-   'controller': 8.5, 'crash_sand': 11, 'diamond_p': 26, 'evee': 25, 'fifa_23': 7.5, 'fifa_24': 14,
-   'gta': 21, 'just_dance': 5, 'kart_m': 22, 'kirby': 29, 'lets_go_p': 25, 'links_z': 26,
-   'lite': 52, 'luigis': 20, 'mario_maker_2': 19, 'mario_sonic': 14, 'mario_tennis': 12,
-   'minecraft': 14,
-   'minecraft_dungeons': 13, 'minecraft_story': 55, 'miscellanious_sonic': 15, 'odyssey_m': 23,
-   'oled': 142, 'other_mario': 20,
-   'party_m': 27, 'rocket_league': 13, 'scarlet_p': 26.5, 'shield_p': 25.5, 'shining_p': 25,
-   'skywards_z': 26,
-   'smash_bros': 24.5, 'snap_p': 19, 'splatoon_2': 7.5, 'splatoon_3': 25, 'super_m_party': 19.5,
-   'super_mario_3d': 51,
-   'switch': 64, 'switch_sports': 19, 'sword_p': 20, 'tears_z': 29, 'tv_black': 14.5, 'tv_white': 20.5,
-   'violet_p': 26
-}
-scanned_unique_ids = set()
-
-# Vinted-specific filtering variables (independent from Facebook)
-vinted_title_must_contain = ["nintendo", "pokemon", "zelda", "mario", "animal crossing", "minecraft", 'oled', 'lite', 'pokémon', 'switch game',
-                            'switch bundle', 'nintendo bundle', 'switch with games', 'modded switch']
-
-vinted_title_forbidden_words = ['box only', 'unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
-                               'joycon', 'snes', 'gamecube', 'n64', 'damaged', 'circuit', 'kart live', 'tablet only', 'ringfit', 'ring fit'
-                               'repair', '™', 'each', 'empty game', 'just game case', 'empty case', 'arcade', 'wii', 'tv frame', 'joy-con',
-                               'for parts', 'wont charge', 'spares & repair', 'xbox', 'prices in description', 'collector set', 'collectors set'
-                                'joy pads', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
-
-vinted_description_forbidden_words = ['faulty', 'jailbreak', 'visit us', 'opening hours', 'open 7 days', 
-                                     'telephone', 'call us', '+44', '07', 'kart live', '.shop', 'our website',
-                                     'website:', 'empty game', 'just game case', 'empty case', 'each', 'spares and repairs', 'prices are',
-                                     'tablet only', 'not charge', 'stopped charging', 'doesnt charge', 'individually priced', 'per game',
-                                     'https', 'case only', 'spares or repairs', 'dock cover', '3d print', 'spares & repair',
-                                     'error code', 'will not connect']
-
-vinted_min_price = 14
-vinted_max_price = 500
-vinted_banned_prices = {59.00, 49.00, 17.00}
-
-def debug_function_call(func_name, line_number=None):
-    """Debug function to track where errors occur"""
-    if print_debug:
-        print(f"DEBUG: Entering function {func_name}" + (f" at line {line_number}" if line_number else ""))
-
-# Vinted profit suitability ranges (same structure as Facebook but independent variables)
-def check_vinted_profit_suitability(listing_price, profit_percentage):
-    if 10 <= listing_price < 16:
-        return 100 <= profit_percentage <= 600
-    elif 16 <= listing_price < 25:
-        return 50 <= profit_percentage <= 400
-    elif 25 <= listing_price < 50:
-        return 37.5 <= profit_percentage <= 550
-    elif 50 <= listing_price < 100:
-        return 35 <= profit_percentage <= 500
-    elif listing_price >= 100:
-        return 30 <= profit_percentage <= 450
-    else:
-        return False
-
-@app.route("/", methods=["GET", "POST"])
-def index():
-    # Remove the 'self' parameter and access global variables instead
-    global recent_listings, current_listing_title, current_listing_price, current_listing_description
-    global current_listing_join_date, current_detected_items, current_profit, current_listing_images
-    global current_listing_url
-    
-    if "authenticated" in session:
-        return render_main_page()  # Call the standalone function
-    
-    if request.method == "POST":
-        entered_pin = request.form.get("pin")
-        if int(entered_pin) == PIN_CODE:
-            session["authenticated"] = True
-            return redirect(url_for("index"))
-        else:
-            return '''
-            <html>
-            <head>
-                <title>Enter PIN</title>
-            </head>
-            <body>
-                <h2>Enter 5-digit PIN to access</h2>
-                <p style="color: red;">Incorrect PIN</p>
-                <form method="POST">
-                    <input type="password" name="pin" maxlength="5" required>
-                    <button type="submit">Submit</button>
-                </form>
-            </body>
-            </html>
-            '''
-    
-    return '''
-    <html>
-    <head>
-        <title>Enter PIN</title>
-    </head>
-    <body>
-        <h2>Enter 5-digit PIN to access</h2>
-        <form method="POST">
-            <input type="password" name="pin" maxlength="5" required>
-            <button type="submit">Submit</button>
-        </form>
-    </body>
-    </html>
-    '''
-
-@app.route("/logout")
-def logout():
-    session.pop("authenticated", None)
-    return redirect(url_for("index"))
-
-@app.route('/static/icon.png')
-def serve_icon():
-    #pc
-    #return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2 (1).png", mimetype='image/png')
-    #laptop
-    return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2.png", mimetype='image/png')
-
-@app.route('/change_listing', methods=['POST'])
-def change_listing():
-    direction = request.form.get('direction')
-    total_listings = len(recent_listings['listings'])
-    
-    if direction == 'next':
-        recent_listings['current_index'] = (recent_listings['current_index'] + 1) % total_listings
-    elif direction == 'previous':
-        recent_listings['current_index'] = (recent_listings['current_index'] - 1) % total_listings
-    
-    current_listing = recent_listings['listings'][recent_listings['current_index']]
-    
-    # Convert images to base64
-    processed_images_base64 = []
-    for img in current_listing['processed_images']:
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        img_str = base64.b64encode(buffered.getvalue()).decode()
-        processed_images_base64.append(img_str)
-    
-    return jsonify({
-        'title': current_listing['title'],
-        'description': current_listing['description'],
-        'join_date': current_listing['join_date'],
-        'price': current_listing['price'],
-        'expected_revenue': current_listing['expected_revenue'],
-        'profit': current_listing['profit'],
-        'detected_items': current_listing['detected_items'],
-        'processed_images': processed_images_base64,
-        'bounding_boxes': current_listing['bounding_boxes'],
-        'url': current_listing['url'],
-        'suitability': current_listing['suitability'],
-        'current_index': recent_listings['current_index'] + 1,
-        'total_listings': total_listings
-    })
-
-@app.route('/vinted-button-clicked', methods=['POST'])
-def vinted_button_clicked():
-    """Handle Vinted scraper button clicks with enhanced functionality"""
-    if print_debug:
-        print("DEBUG: Received a Vinted button-click POST request")
-    
-    # Get the listing URL and action from the form data
-    url = request.form.get('url')
-    action = request.form.get('action')
-    
-    if not url:
-        print("ERROR: No URL provided in Vinted button click")
-        return 'NO URL PROVIDED', 400
-    
-    try:
-        # Print the appropriate message based on the action
-        if action == 'buy_yes':
-            print(f'✅ VINTED YES BUTTON: User wishes to buy listing: {url}')
-            
-            # Access the Vinted scraper instance and trigger enhanced button functionality
-            if 'vinted_scraper_instance' in globals():
-                vinted_scraper_instance.vinted_button_clicked_enhanced(url)
-            else:
-                print("WARNING: No Vinted scraper instance found")
-                print(f'Vinted button clicked on listing: {url}')
-                with open('vinted_clicked_listings.txt', 'a') as f:
-                    f.write(f"{action}: {url}\n")
-                    
-        elif action == 'buy_no':
-            print(f'❌ VINTED NO BUTTON: User does not wish to buy listing: {url}')
-            # DO NOT CALL vinted_button_clicked_enhanced - just print message
-            # No navigation should happen for "No" button
-        else:
-            print(f'🔘 VINTED BUTTON: Unknown action "{action}" for listing: {url}')
-        
-        return 'VINTED BUTTON CLICK PROCESSED', 200
-        
-    except Exception as e:
-        print(f"ERROR processing Vinted button click: {e}")
-        return 'ERROR PROCESSING REQUEST', 500
-
-
-# Replace the render_main_page function starting at line ~465 with this modified version
-
-def render_main_page():
-    try:
-        # Access global variables
-        global current_listing_title, current_listing_price, current_listing_description
-        global current_listing_join_date, current_detected_items, current_profit
-        global current_listing_images, current_listing_url, recent_listings
-        if print_debug:
-            print("DEBUG: render_main_page called")
-            print(f"DEBUG: recent_listings has {len(recent_listings.get('listings', []))} listings")
-            print(f"DEBUG: current_listing_title = {current_listing_title}")
-            print(f"DEBUG: current_listing_price = {current_listing_price}")
-
-        # Ensure default values if variables are None or empty
-        title = str(current_listing_title or 'No Title Available')
-        price = str(current_listing_price or 'Price: £0.00')
-        description = str(current_listing_description or 'No Description Available')
-        detected_items = str(current_detected_items or 'No items detected')
-        profit = str(current_profit or 'Profit: £0.00')
-        join_date = str(current_listing_join_date or 'No Join Date Available')
-        listing_url = str(current_listing_url or 'No URL Available')
-
-        # Create all_listings_json - this is crucial for the JavaScript
-        all_listings_json = "[]" # Default empty array
-        if recent_listings and 'listings' in recent_listings and recent_listings['listings']:
-            try:
-                listings_data = []
-                for listing in recent_listings['listings']:
-                    # Convert images to base64
-                    processed_images_base64 = []
-                    if 'processed_images' in listing and listing['processed_images']:
-                        for img in listing['processed_images']:
-                            try:
-                                processed_images_base64.append(base64_encode_image(img))
-                            except Exception as img_error:
-                                print(f"Error encoding image: {img_error}")
-
-                    listings_data.append({
-                        'title': str(listing.get('title', 'No Title')),
-                        'description': str(listing.get('description', 'No Description')),
-                        'join_date': str(listing.get('join_date', 'No Date')),
-                        'price': str(listing.get('price', '0')),
-                        'profit': float(listing.get('profit', 0)),
-                        'detected_items': str(listing.get('detected_items', 'No Items')),
-                        'processed_images': processed_images_base64,
-                        'url': str(listing.get('url', 'No URL')),
-                        'suitability': str(listing.get('suitability', 'Unknown'))
-                    })
-                all_listings_json = json.dumps(listings_data)
-                if print_debug:
-                    print(f"DEBUG: Created JSON for {len(listings_data)} listings")
-            except Exception as json_error:
-                print(f"ERROR creating listings JSON: {json_error}")
-                all_listings_json = "[]"
-
-        # Convert current images to base64 for web display
-        image_html = ""
-        if current_listing_images:
-            image_html = "<div class='image-container'>"
-            try:
-                for img in current_listing_images:
-                    buffered = io.BytesIO()
-                    img.save(buffered, format="PNG")
-                    img_str = base64.b64encode(buffered.getvalue()).decode()
-                    image_html += f'''
-                    <div class="image-wrapper">
-                        <img src="data:image/png;base64,{img_str}" alt="Listing Image">
-                    </div>
-                    '''
-                image_html += "</div>"
-            except Exception as img_error:
-                print(f"Error processing current images: {img_error}")
-                image_html = "<p>Error loading images</p>"
-        else:
-            image_html = "<p>No images available</p>"
-
-        # Return the complete HTML with NEW top bar layout and stopwatch functionality
-        return f'''
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-            <link rel="apple-touch-icon" href="/static/icon.png">
-            <link rel="icon" type="image/png" href="/static/icon.png">
-            <meta name="apple-mobile-web-app-capable" content="yes">
-            <meta name="apple-mobile-web-app-status-bar-style" content="black">
-            <meta name="apple-mobile-web-app-title" content="Marketplace Scanner">
-            <title>Marketplace Scanner</title>
-            <style>
-                * {{
-                    box-sizing: border-box;
-                    margin: 0;
-                    padding: 0;
-                }}
-                body {{
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-                    background-color: #f0f0f0;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    min-height: 100vh;
-                    margin: 0;
-                    padding: 0;
-                    line-height: 1.6;
-                    touch-action: manipulation;
-                    overscroll-behavior-y: none;
-                }}
-                .container {{
-                    background-color: white;
-                    padding: 25px;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    text-align: center;
-                    width: 100%;
-                    max-width: 375px;
-                    margin: 0 auto;
-                    position: relative;
-                    height: calc(100vh - 10px);
-                    overflow-y: auto;
-                }}
-                
-                /* NEW: Top bar styles */
-                .top-bar {{
-                    display: flex;
-                    gap: 5px;
-                    margin-bottom: 15px;
-                    justify-content: space-between;
-                }}
-                
-                .top-bar-item {{
-                    flex: 1;
-                    padding: 8px 4px;
-                    border-radius: 8px;
-                    font-size: 12px;
-                    font-weight: bold;
-                    color: white;
-                    text-align: center;
-                    min-height: 40px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }}
-                
-                .refresh-button {{
-                    background-color: #4CAF50;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    border: none;
-                    touch-action: manipulation;
-                    -webkit-tap-highlight-color: transparent;
-                }}
-                
-                .refresh-button:hover {{
-                    background-color: #45a049;
-                    transform: translateY(-1px);
-                }}
-                
-                .refresh-button:active {{
-                    transform: translateY(0);
-                }}
-                
-                .listing-counter {{
-                    background-color: #2196F3;
-                }}
-                
-                .stopwatch-display {{
-                    background-color: #FF9800;
-                    font-family: monospace;
-                }}
-                
-                .custom-button {{
-                    width: 100%;
-                    padding: 12px;
-                    color: white;
-                    border: none;
-                    border-radius: 10px;
-                    font-size: 16px;
-                    font-weight: bold;
-                    touch-action: manipulation;
-                    -webkit-tap-highlight-color: transparent;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                }}
-                .custom-button:hover {{
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-                }}
-                .custom-button:active {{
-                    transform: translateY(0);
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                }}
-                .section-box, .financial-row, .details-row {{
-                    border: 1px solid black;
-                    border-radius: 5px;
-                    margin-bottom: -1px;
-                }}
-                .section-box {{
-                    padding: 10px;
-                }}
-                .financial-row, .details-row {{
-                    display: flex;
-                    justify-content: space-between;
-                }}
-                .financial-item, .details-item {{
-                    flex: 1;
-                    padding: 10px;
-                    border-right: 1px solid black;
-                    font-weight: bold;
-                    font-size: 19px;
-                }}
-                .financial-item:last-child, .details-item:last-child {{
-                    border-right: none;
-                }}
-                .content-title {{
-                    color: rgb(173, 13, 144);
-                    font-weight: bold;
-                    font-size: 1.6em;
-                }}
-                .content-price {{
-                    color: rgb(19, 133, 194);
-                    font-weight: bold;
-                }}
-                .content-description {{
-                    color: #006400;
-                    font-weight: bold;
-                }}
-                .content-profit {{
-                    color: rgb(186, 14, 14);
-                    font-weight: bold;
-                }}
-                .content-join-date {{
-                    color: #4169E1;
-                    font-weight: bold;
-                }}
-                .content-detected-items {{
-                    color: #8B008B;
-                    font-weight: bold;
-                }}
-                .image-container {{
-                    display: flex;
-                    flex-wrap: wrap;
-                    justify-content: center;
-                    align-items: center;
-                    gap: 10px;
-                    max-height: 335px;
-                    overflow-y: auto;
-                    padding: 10px;
-                    background-color: #f9f9f9;
-                    border: 1px solid black;
-                    border-radius: 10px;
-                    margin-bottom: 10px;
-                }}
-                .image-wrapper {{
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    max-width: 100%;
-                    max-height: 200px;
-                    overflow: hidden;
-                }}
-                .image-wrapper img {{
-                    max-width: 100%;
-                    max-height: 100%;
-                    object-fit: contain;
-                }}
-                .listing-url {{
-                    font-size: 10px;
-                    word-break: break-all;
-                    border: 1px solid black;
-                    border-radius: 5px;
-                    padding: 5px;
-                    margin-top: 10px;
-                    font-weight: bold;
-                }}
-                .single-button-container {{
-                    display: flex;
-                    flex-direction: column;
-                    gap: 10px;
-                    margin: 15px 0;
-                }}
-                .open-listing-button {{
-                    background-color: #28a745;
-                    font-size: 18px;
-                    padding: 15px;
-                }}
-                
-                /* Buy decision buttons */
-                .buy-decision-container {{
-                    display: flex;
-                    gap: 10px;
-                    margin: 15px 0;
-                }}
-                .buy-yes-button {{
-                    background-color: #28a745;
-                    flex: 1;
-                    padding: 15px;
-                    font-size: 16px;
-                    font-weight: bold;
-                    border-radius: 8px;
-                    color: white;
-                    border: none;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    touch-action: manipulation;
-                    -webkit-tap-highlight-color: transparent;
-                }}
-                .buy-yes-button:hover {{
-                    background-color: #218838;
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-                }}
-                .buy-yes-button:active {{
-                    transform: translateY(0);
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                }}
-                .buy-no-button {{
-                    background-color: #dc3545;
-                    flex: 1;
-                    padding: 15px;
-                    font-size: 16px;
-                    font-weight: bold;
-                    border-radius: 8px;
-                    color: white;
-                    border: none;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    touch-action: manipulation;
-                    -webkit-tap-highlight-color: transparent;
-                }}
-                .buy-no-button:hover {{
-                    background-color: #c82333;
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-                }}
-                .buy-no-button:active {{
+# Continuation from line 2201
                     transform: translateY(0);
                     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 }}
@@ -2197,4 +1368,834 @@ class VintedScraper:
                 pass  # No error found, continue
             
             # Check for success
+            try:
+                success_element = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//h2[text()='Purchase successful']"))
+                )
+                
+                if success_element:
+                    print(f"🎉 DRIVER {driver_num}: PURCHASE SUCCESSFUL!")
+                    purchase_successful = True
+                    
+                    # Send success notification
+                    try:
+                        self.send_pushover_notification(
+                            "Vinted Purchase Successful",
+                            f"Successfully purchased: {url}",
+                            'aks3to8guqjye193w7ajnydk9jaxh5',
+                            'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                        )
+                    except Exception as notification_error:
+                        print(f"⚠️ DRIVER {driver_num}: Notification failed: {notification_error}")
+                    
+                    break
+            
+            except TimeoutException:
+                # No success message yet, continue trying
+                continue
+        
+        if not purchase_successful:
+            print(f"❌ DRIVER {driver_num}: Purchase failed after {attempt} attempts")
+        
+        # Clean up
+        try:
+            driver.close()
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+        
+        self.release_driver(driver_num)
+        print(f"✅ DRIVER {driver_num}: Post-payment cleanup completed")
+
+
+    def monitor_for_purchase_unsuccessful(self, url, driver, driver_num, pay_button):
+        """
+        Monitor for "Purchase unsuccessful" detection from bookmark driver and click pay immediately
+        """
+        print(f"🔍 DRIVER {driver_num}: Starting 'Purchase unsuccessful' monitoring for {url[:50]}...")
+        
+        start_time = time.time()
+        check_interval = 0.1  # Check every 100ms for ultra-fast response
+        timeout = 25 * 60  # 25 minutes timeout
+        
+        global purchase_unsuccessful_detected_urls
+        
+        try:
+            while True:
+                elapsed = time.time() - start_time
+                
+                # Check timeout
+                if elapsed >= timeout:
+                    print(f"⏰ DRIVER {driver_num}: Monitoring timeout after {elapsed/60:.1f} minutes")
+                    break
+                
+                # Check if driver is still alive
+                try:
+                    driver.current_url
+                except:
+                    print(f"💀 DRIVER {driver_num}: Driver died during monitoring")
+                    break
+                
+                # CRITICAL: Check if "Purchase unsuccessful" was detected
+                if url in purchase_unsuccessful_detected_urls:
+                    entry = purchase_unsuccessful_detected_urls[url]
+                    if not entry.get('waiting', True):  # Flag changed by bookmark driver
+                        print(f"🎯 DRIVER {driver_num}: 'Purchase unsuccessful' detected! CLICKING PAY NOW!")
+                        
+                        # IMMEDIATELY click pay button
+                        try:
+                            # Try multiple click methods for maximum reliability
+                            pay_clicked = False
+                            
+                            # Method 1: Standard click
+                            try:
+                                pay_button.click()
+                                pay_clicked = True
+                                print(f"✅ DRIVER {driver_num}: Pay clicked using standard method")
+                            except:
+                                # Method 2: JavaScript click
+                                try:
+                                    driver.execute_script("arguments[0].click();", pay_button)
+                                    pay_clicked = True
+                                    print(f"✅ DRIVER {driver_num}: Pay clicked using JavaScript")
+                                except:
+                                    # Method 3: Force enable and click
+                                    try:
+                                        driver.execute_script("""
+                                            arguments[0].disabled = false;
+                                            arguments[0].click();
+                                        """, pay_button)
+                                        pay_clicked = True
+                                        print(f"✅ DRIVER {driver_num}: Pay clicked using force method")
+                                    except Exception as final_error:
+                                        print(f"❌ DRIVER {driver_num}: All pay click methods failed: {final_error}")
+                            
+                            if pay_clicked:
+                                print(f"💳 DRIVER {driver_num}: Payment initiated successfully!")
+                                
+                                # Continue with existing purchase logic
+                                self.handle_post_payment_logic(driver, driver_num, url)
+                            
+                            break  # Exit monitoring loop
+                            
+                        except Exception as click_error:
+                            print(f"❌ DRIVER {driver_num}: Error clicking pay button: {click_error}")
+                            break
+                
+                # Sleep briefly before next check
+                time.sleep(check_interval)
+        
+        except Exception as monitoring_error:
+            print(f"❌ DRIVER {driver_num}: Monitoring error: {monitoring_error}")
+        
+        finally:
+            # Clean up monitoring entry
+            if url in purchase_unsuccessful_detected_urls:
+                del purchase_unsuccessful_detected_urls[url]
+            
+            print(f"🧹 DRIVER {driver_num}: Monitoring cleanup completed")
+
+
+    def process_single_listing_with_driver_modified(self, url, driver_num, driver):
+        """
+        MODIFIED: Process listing that immediately navigates to buy page and waits for "Purchase unsuccessful"
+        """
+        print(f"🔥 DRIVER {driver_num}: Starting MODIFIED processing of {url[:50]}...")
+        
+        try:
+            # Driver health check
+            try:
+                current_url = driver.current_url
+                print(f"✅ DRIVER {driver_num}: Driver alive")
+            except Exception as e:
+                print(f"❌ DRIVER {driver_num}: Driver is dead: {str(e)}")
+                return
+            
+            # Open new tab
+            try:
+                driver.execute_script("window.open('');")
+                new_tab = driver.window_handles[-1]
+                driver.switch_to.window(new_tab)
+                print(f"✅ DRIVER {driver_num}: New tab opened")
+            except Exception as e:
+                print(f"❌ DRIVER {driver_num}: Failed to open new tab: {str(e)}")
+                return
+            
+            # Navigate to URL
+            actual_url = test_purchase_url if test_purchase_not_true else url
+            
+            navigation_success = False
+            for nav_attempt in range(3):
+                try:
+                    driver.get(actual_url)
+                    WebDriverWait(driver, 8).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                    navigation_success = True
+                    print(f"✅ DRIVER {driver_num}: Navigation successful")
+                    break
+                except Exception as nav_error:
+                    print(f"❌ DRIVER {driver_num}: Navigation attempt {nav_attempt+1} failed: {str(nav_error)}")
+                    if nav_attempt < 2:
+                        time.sleep(1)
+            
+            if not navigation_success:
+                print(f"❌ DRIVER {driver_num}: All navigation attempts failed")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                return
+            
+            # Click Buy now button
+            buy_button_clicked = False
+            buy_selectors = [
+                'button[data-testid="item-buy-button"]',
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]'
+            ]
+            
+            for selector in buy_selectors:
+                try:
+                    if selector.startswith('//'):
+                        buy_button = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        buy_button = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                    
+                    # Try multiple click methods
+                    for click_method in ['standard', 'javascript']:
+                        try:
+                            if click_method == 'standard':
+                                buy_button.click()
+                            else:
+                                driver.execute_script("arguments[0].click();", buy_button)
+                            
+                            buy_button_clicked = True
+                            print(f"✅ DRIVER {driver_num}: Buy button clicked using {click_method}")
+                            break
+                        except Exception as click_error:
+                            continue
+                    
+                    if buy_button_clicked:
+                        break
+                        
+                except Exception as selector_error:
+                    continue
+            
+            if not buy_button_clicked:
+                print(f"❌ DRIVER {driver_num}: Could not click buy button - item likely sold")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                return
+            
+            # MODIFIED: Find and store pay button location BUT DON'T CLICK YET
+            print(f"🔍 DRIVER {driver_num}: Finding pay button (but not clicking yet)...")
+            
+            pay_button = None
+            pay_selectors = [
+                'button[data-testid="single-checkout-order-summary-purchase-button"]',
+                '//button[@data-testid="single-checkout-order-summary-purchase-button"]'
+            ]
+            
+            for selector in pay_selectors:
+                try:
+                    if selector.startswith('//'):
+                        pay_button = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.XPATH, selector))
+                        )
+                    else:
+                        pay_button = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        )
+                    
+                    print(f"✅ DRIVER {driver_num}: Pay button found and stored")
+                    break
+                    
+                except Exception as selector_error:
+                    continue
+            
+            if not pay_button:
+                print(f"❌ DRIVER {driver_num}: Could not find pay button")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                return
+            
+            # MODIFIED: Register this URL for "Purchase unsuccessful" monitoring
+            global purchase_unsuccessful_detected_urls
+            purchase_unsuccessful_detected_urls[url] = {
+                'driver': driver,
+                'driver_num': driver_num,
+                'pay_button': pay_button,
+                'waiting': True,
+                'start_time': time.time()
+            }
+            
+            print(f"🔍 DRIVER {driver_num}: Registered for 'Purchase unsuccessful' monitoring")
+            print(f"⏱️ DRIVER {driver_num}: Will wait for bookmark driver to detect 'Purchase unsuccessful'")
+            
+            # Start monitoring thread for this specific URL
+            monitoring_thread = threading.Thread(
+                target=self.monitor_for_purchase_unsuccessful,
+                args=(url, driver, driver_num, pay_button)
+            )
+            monitoring_thread.daemon = True
+            monitoring_thread.start()
+            
+        except Exception as critical_error:
+            print(f"❌ DRIVER {driver_num}: Critical error: {str(critical_error)}")
+            # Clean up
+            try:
+                driver.close()
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+            except:
+                pass
+            self.release_driver(driver_num)
+
+    def process_single_listing_with_driver(self, url, driver_num, driver):
+        """
+        ENHANCED: Process a single listing using the specified driver with robust error handling,
+        success rate logging, selector alternatives, and failure fast-path
+        """
+        
+        # SUCCESS RATE LOGGING - Track exactly where and when things break
+        process_log = {
+            'start_time': time.time(),
+            'url': url,
+            'driver_num': driver_num,
+            'steps_completed': [],
+            'failures': [],
+            'success': False,
+            'critical_operations': []
+        }
+        
+        def log_step(step_name, success=True, error_msg=None, duration=None):
+            """Log each step for debugging and success rate analysis"""
+            elapsed = duration if duration else time.time() - process_log['start_time']
+            
+            if success:
+                process_log['steps_completed'].append(f"{step_name} - {elapsed:.2f}s")
+                if print_debug:
+                    print(f"✅ DRIVER {driver_num}: {step_name}")
+            else:
+                process_log['failures'].append(f"{step_name}: {error_msg} - {elapsed:.2f}s")
+                print(f"❌ DRIVER {driver_num}: {step_name} - {error_msg}")
+        
+        def log_final_result():
+            """Log comprehensive results for success rate analysis"""
+            total_time = time.time() - process_log['start_time']
+            print(f"\n📊 PROCESSING ANALYSIS - Driver {driver_num}")
+            print(f"🔗 URL: {url[:60]}...")
+            print(f"⏱️  Total time: {total_time:.2f}s")
+            print(f"✅ Steps completed: {len(process_log['steps_completed'])}")
+            print(f"❌ Failures: {len(process_log['failures'])}")
+            print(f"🏆 Overall success: {'YES' if process_log['success'] else 'NO'}")
+            
+            if process_log['failures'] and print_debug:
+                print("🔍 FAILURE DETAILS:")
+                for failure in process_log['failures'][:5]:  # Show first 5 failures
+                    print(f"  • {failure}")
+
+        # SELECTOR ALTERNATIVES - Multiple backup selectors for each critical element
+        SELECTOR_SETS = {
+
+            'purchase_unsuccessful': [
+                 "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+                "//*[text()='Purchase unsuccessful']"
+            ],
+            
+            'buy_button': [
+                'button[data-testid="item-buy-button"]',
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                'button.web_ui__Button__button[data-testid="item-buy-button"]',
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+                '//span[text()="Buy now"]/parent::button'
+            ],
+            
+            'pay_button': [
+                'button[data-testid="single-checkout-order-summary-purchase-button"]',
+                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
+                '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
+                'button.web_ui__Button__primary[data-testid*="purchase"]',
+                '//button[contains(@data-testid, "purchase-button")]',
+                '//button[contains(@class, "web_ui__Button__primary")]'
+            ],
+            
+            'ship_to_home': [
+                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]',
+                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to home"]',
+                '//h2[text()="Ship to home"]',
+                '//*[text()="Ship to home"]'
+            ],
+            
+            'ship_to_pickup': [
+                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]',
+                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to pick-up point"]',
+                '//h2[text()="Ship to pick-up point"]',
+                '//*[text()="Ship to pick-up point"]'
+            ],
+            
+            'success_message': [
+                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Purchase successful']",
+                "//h2[contains(@class, 'web_ui__Text__title') and text()='Purchase successful']",
+                "//h2[text()='Purchase successful']",
+                "//*[contains(text(), 'Purchase successful')]"
+            ],
+            
+            'error_modal': [
+                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format']//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left' and contains(text(), 'Sorry, we couldn')]",
+                "//span[@data-testid='checkout-payment-error-modal--body']",
+                "//div[@data-testid='checkout-payment-error-modal--overlay']",
+                "//span[contains(text(), \"Sorry, we couldn't process your payment\")]",
+                "//*[contains(text(), 'Some of the items belong to another purchase')]"
+            ],
+            
+            'ok_button': [
+                "//button[@data-testid='checkout-payment-error-modal-action-button']",
+                "//button//span[@class='web_ui__Button__label' and text()='OK, close']",
+                "//button[contains(.//text(), 'OK, close')]",
+                "//button[contains(@class, 'web_ui__Button__primary')]",
+                "//*[text()='OK, close']"
+            ]
+        }
+        
+        def try_selectors_fast_fail(driver, selector_set_name, operation='find', timeout=3, click_method='standard'):
+            """
+            FAILURE FAST-PATH - Try selectors with quick timeouts and fail quickly
+            Returns (element, selector_used) or (None, None) if all fail
+            """
+            selectors = SELECTOR_SETS.get(selector_set_name, [])
+            if not selectors:
+                log_step(f"no_selectors_{selector_set_name}", False, "No selectors defined")
+                return None, None
+            
+            for i, selector in enumerate(selectors):
+                try:
+                    if print_debug:
+                        print(f"🔍 DRIVER {driver_num}: Trying selector {i+1}/{len(selectors)} for {selector_set_name}")
+                    
+                    # Use appropriate locator strategy
+                    if selector.startswith('//'):
+                        if operation == 'click':
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.element_to_be_clickable((By.XPATH, selector))
+                            )
+                        else:
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.presence_of_element_located((By.XPATH, selector))
+                            )
+                    else:
+                        if operation == 'click':
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                            )
+                        else:
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                            )
+                    
+                    # If we need to click, try the requested click method(s)
+                    if operation == 'click':
+                        click_methods = ['standard', 'javascript', 'actionchains'] if click_method == 'all' else [click_method]
+                        
+                        for method in click_methods:
+                            try:
+                                if method == 'standard':
+                                    element.click()
+                                elif method == 'javascript':
+                                    driver.execute_script("arguments[0].click();", element)
+                                elif method == 'actionchains':
+                                    from selenium.webdriver.common.action_chains import ActionChains
+                                    ActionChains(driver).move_to_element(element).click().perform()
+                                
+                                log_step(f"click_{selector_set_name}_{method}", True)
+                                break
+                            except Exception as click_error:
+                                log_step(f"click_{selector_set_name}_{method}_attempt", False, str(click_error))
+                                continue
+                        else:
+                            continue  # All click methods failed, try next selector
+                    
+                    log_step(f"selector_{selector_set_name}_success", True, f"Used #{i+1}: {selector[:30]}...")
+                    return element, selector
+                    
+                except TimeoutException:
+                    log_step(f"selector_{selector_set_name}_{i+1}_timeout", False, f"Timeout after {timeout}s")
+                    continue
+                except Exception as e:
+                    log_step(f"selector_{selector_set_name}_{i+1}_error", False, str(e)[:100])
+                    continue
+            
+            log_step(f"all_selectors_{selector_set_name}_failed", False, f"All {len(selectors)} selectors failed")
+            return None, None
+
+        # START OF MAIN PROCESSING LOGIC
+        start_time = time.time()
+        log_step("processing_started", True)
+        
+        try:
+            print(f"🔥 DRIVER {driver_num}: Starting robust processing of {url[:50]}...")
+            
+            # DRIVER HEALTH CHECK - Verify driver is alive before using it
+            try:
+                current_url = driver.current_url
+                log_step("driver_health_check", True, f"Driver alive: {current_url[:30]}...")
+            except Exception as e:
+                log_step("driver_health_check", False, f"Driver is dead: {str(e)}")
+                log_final_result()
+                return
+            
+            # TAB MANAGEMENT - Open new tab for processing
+            try:
+                stopwatch_start = time.time()
+                print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
+                driver.execute_script("window.open('');")
+                new_tab = driver.window_handles[-1]
+                driver.switch_to.window(new_tab)
+                log_step("new_tab_opened", True, f"Total tabs: {len(driver.window_handles)}")
+            except Exception as e:
+                log_step("new_tab_creation", False, str(e))
+                log_final_result()
+                return
+
+            # URL HANDLING - Support test mode
+            if test_purchase_not_true:
+                actual_url = test_purchase_url
+                log_step("test_mode_url", True, f"Using test URL: {actual_url}")
+            else:
+                actual_url = url
+                log_step("normal_url", True)
+            
+            # NAVIGATION - Navigate to listing with retry logic
+            navigation_success = False
+            for nav_attempt in range(3):  # Try up to 3 times
+                try:
+                    log_step(f"navigation_attempt_{nav_attempt+1}", True)
+                    driver.get(actual_url)
+                    
+                    # Wait for page to load with timeout
+                    WebDriverWait(driver, 8).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                    navigation_success = True
+                    log_step("navigation_success", True)
+                    break
+                    
+                except TimeoutException:
+                    log_step(f"navigation_timeout_{nav_attempt+1}", False, "Page load timeout")
+                    if nav_attempt < 2:  # Not the last attempt
+                        time.sleep(1)
+                        continue
+                except Exception as nav_error:
+                    log_step(f"navigation_error_{nav_attempt+1}", False, str(nav_error))
+                    if nav_attempt < 2:  # Not the last attempt
+                        time.sleep(1)
+                        continue
+
+            if not navigation_success:
+                log_step("navigation_final_failure", False, "All navigation attempts failed")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                log_final_result()
+                return
+
+            # BUY BUTTON DETECTION - Look for Buy now button with multiple selectors
+            buy_button, buy_selector = try_selectors_fast_fail(
+                driver, 'buy_button', operation='click', timeout=10, click_method='all'
+            )
+            
+            if not buy_button:
+                log_step("buy_button_not_found", False, "Item likely sold or unavailable")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                log_final_result()
+                return
+
+            log_step("buy_button_clicked", True, f"Used: {buy_selector[:30]}...")
+            process_log['critical_operations'].append("buy_button_clicked")
+
+            # PURCHASE FLOW BRANCHING - Different logic based on actually_purchase_listing
+            if actually_purchase_listing:
+                log_step("purchase_mode_enabled", True, "Starting actual purchase process")
+                
+                # SHIPPING SELECTION - Click "Ship to home" first if available
+                ship_home_element, ship_home_selector = try_selectors_fast_fail(
+                    driver, 'ship_to_home', operation='click', timeout=15, click_method='all'
+                )
+                
+                if ship_home_element:
+                    log_step("ship_to_home_clicked", True)
+                    time.sleep(2)  # Brief wait as requested
+                else:
+                    log_step("ship_to_home_not_found", False, "Continuing without shipping selection")
+                
+                # PAY BUTTON DETECTION - Look for pay button
+                pay_button, pay_selector = try_selectors_fast_fail(
+                    driver, 'pay_button', operation='find', timeout=15
+                )
+                
+                if not pay_button:
+                    log_step("pay_button_not_found", False, "Payment interface not available")
+                    try:
+                        driver.close()
+                        if len(driver.window_handles) > 0:
+                            driver.switch_to.window(driver.window_handles[0])
+                    except:
+                        pass
+                    log_final_result()
+                    return
+
+                log_step("pay_button_found", True)
+                process_log['critical_operations'].append("pay_button_found")
+
+                # PURCHASE LOOP - Attempt purchase with error handling
+                purchase_successful = False
+                max_attempts = 250
+                attempt = 0
+                
+                while not purchase_successful and attempt < max_attempts:
+                    attempt += 1
+                    elapsed_time = time.time() - start_time
+                    
+                    # Check timeout
+                    if elapsed_time >= bookmark_stopwatch_length:
+                        log_step("purchase_timeout", False, f"Timeout after {elapsed_time:.1f}s")
+                        break
+                    
+                    if print_debug:
+                        print(f"💳 DRIVER {driver_num}: Purchase attempt {attempt}")
+                    
+                    # CLICK PAY BUTTON
+                    pay_clicked = False
+                    for click_method in ['standard', 'javascript']:
+                        try:
+                            # Re-find pay button for each attempt (DOM may change)
+                            current_pay_button = driver.find_element(By.CSS_SELECTOR, 
+                                'button[data-testid="single-checkout-order-summary-purchase-button"]'
+                            )
+                            
+                            if click_method == 'standard':
+                                current_pay_button.click()
+                            else:
+                                driver.execute_script("arguments[0].click();", current_pay_button)
+                            
+                            log_step(f"pay_click_attempt_{attempt}_{click_method}", True)
+                            pay_clicked = True
+                            break
+                            
+                        except Exception as click_error:
+                            log_step(f"pay_click_attempt_{attempt}_{click_method}", False, str(click_error))
+                            continue
+                    
+                    if not pay_clicked:
+                        log_step(f"pay_click_failed_attempt_{attempt}", False, "All click methods failed")
+                        break
+                    
+                    # CHECK FOR ERROR OR SUCCESS
+                    # First check for quick error (appears fast)
+                    error_found = False
+                    error_element, error_selector = try_selectors_fast_fail(
+                        driver, 'error_modal', operation='find', timeout=10
+                    )
+                    
+                    if error_element:
+                        log_step(f"payment_error_detected_attempt_{attempt}", True, f"Using: {error_selector[:30]}...")
+                        error_found = True
+                        
+                        # Wait before clicking OK
+                        if print_debug:
+                            print(f"⏳ DRIVER {driver_num}: Waiting {buying_driver_click_pay_wait_time}s before clicking OK")
+                        time.sleep(buying_driver_click_pay_wait_time)
+                        
+                        # CLICK OK BUTTON
+                        ok_element, ok_selector = try_selectors_fast_fail(
+                            driver, 'ok_button', operation='click', timeout=5, click_method='all'
+                        )
+                        
+                        if ok_element:
+                            log_step(f"ok_button_clicked_attempt_{attempt}", True)
+                        else:
+                            log_step(f"ok_button_not_found_attempt_{attempt}", False, "Could not dismiss error")
+                        
+                        # Wait before retry
+                        time.sleep(buying_driver_click_pay_wait_time)
+                        continue
+                    
+                    # If no error, check for success (takes longer)
+                    remaining_time = bookmark_stopwatch_length - (time.time() - start_time)
+                    if remaining_time <= 0:
+                        log_step("success_check_timeout", False, "No time remaining for success check")
+                        break
+                    
+                    success_timeout = min(15, remaining_time)
+                    success_element, success_selector = try_selectors_fast_fail(
+                        driver, 'success_message', operation='find', timeout=success_timeout
+                    )
+                    
+                    if success_element:
+                        log_step("purchase_successful", True, f"Using: {success_selector[:30]}...")
+                        purchase_successful = True
+                        process_log['success'] = True
+                        process_log['critical_operations'].append("purchase_completed")
+                        
+                        # Send notification
+                        notification_title = "Vinted Purchase Successful"
+                        notification_message = f"Successfully purchased: {url}"
+                        
+                        try:
+                            self.send_pushover_notification(
+                                notification_title,
+                                notification_message,
+                                'aks3to8guqjye193w7ajnydk9jaxh5',
+                                'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                            )
+                            log_step("success_notification_sent", True)
+                        except Exception as notification_error:
+                            log_step("success_notification_failed", False, str(notification_error))
+                        
+                        break
+                    else:
+                        log_step(f"success_not_found_attempt_{attempt}", False, f"Timeout after {success_timeout}s")
+                        break
+                
+                # Final purchase result
+                total_elapsed = time.time() - start_time
+                if purchase_successful:
+                    log_step("purchase_flow_completed", True, f"Success after {attempt} attempts in {total_elapsed:.2f}s")
+                else:
+                    log_step("purchase_flow_failed", False, f"Failed after {attempt} attempts in {total_elapsed:.2f}s")
+
+            else:
+                log_step("legacy_shipping_mode", True, "Using original shipping alternation logic")
+                
+                # LEGACY SHIPPING FLOW - Original alternating click logic
+                try:
+                    pickup_element, pickup_selector = try_selectors_fast_fail(
+                        driver, 'ship_to_pickup', operation='find', timeout=10
+                    )
+                    
+                    if pickup_element:
+                        log_step("shipping_page_loaded", True)
+                        first_click_time = time.time()
+                        
+                        log_step("alternating_clicks_started", True, f"Duration: {bookmark_stopwatch_length}s")
+                        
+                        while True:
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                log_step("alternating_clicks_timeout", True, "Time limit reached")
+                                break
+                            
+                            # Click pickup point
+                            pickup_clicked, _ = try_selectors_fast_fail(
+                                driver, 'ship_to_pickup', operation='click', timeout=2, click_method='standard'
+                            )
+                            
+                            if pickup_clicked:
+                                log_step("pickup_point_clicked", True)
+                            else:
+                                log_step("pickup_point_click_failed", False, "Could not click pickup point")
+                            
+                            time.sleep(buying_driver_click_pay_wait_time)
+                            
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                break
+                            
+                            # Click ship to home
+                            home_clicked, _ = try_selectors_fast_fail(
+                                driver, 'ship_to_home', operation='click', timeout=2, click_method='standard'
+                            )
+                            
+                            if home_clicked:
+                                log_step("ship_to_home_clicked", True)
+                            else:
+                                log_step("ship_to_home_click_failed", False, "Could not click ship to home")
+                            
+                            time.sleep(buying_driver_click_pay_wait_time)
+                        
+                        log_step("legacy_shipping_completed", True)
+                        process_log['success'] = True
+                        
+                    else:
+                        log_step("shipping_page_not_loaded", False, "Could not find shipping options")
+                        
+                except Exception as shipping_error:
+                    log_step("legacy_shipping_error", False, str(shipping_error))
+
+        except Exception as critical_error:
+            log_step("critical_processing_error", False, str(critical_error))
+            import traceback
+            if print_debug:
+                print(f"🔥 DRIVER {driver_num}: Critical error traceback:")
+                traceback.print_exc()
+
+        finally:
+            # CLEANUP - Always clean up tab and release driver
+            cleanup_start = time.time()
+            
+            try:
+                # Close processing tab
+                driver.close()
+                log_step("processing_tab_closed", True)
+                
+                # Return to main tab
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+                    log_step("returned_to_main_tab", True)
+                
+            except Exception as cleanup_error:
+                log_step("cleanup_error", False, str(cleanup_error))
+            
+            # Calculate final timing
+            total_time = time.time() - start_time
+            cleanup_time = time.time() - cleanup_start
+            
+            log_step("processing_completed", True, f"Total: {total_time:.2f}s, Cleanup: {cleanup_time:.2f}s")
+            
+            # Log comprehensive results
+            log_final_result()
+            
+            # ALWAYS release the driver
+            self.release_driver(driver_num)
+            log_step("driver_released", True)
+
+
+    # Supporting helper function for better timeout management
+    def calculate_dynamic_timeout(base_timeout, elapsed_time, max_total_time):
+        """
+        Calculate dynamic timeout based on elapsed time and maximum allowed time
+        """
+        remaining_time = max_total_time - elapsed_time
+        return min(base_timeout, max(1, remaining_time * 0.5))  # Use half of remaining time, minimum 1s
+    def cleanup_processed_images(self, processed_images):
+
+        for img in processed_images:
             try:
