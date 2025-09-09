@@ -211,7 +211,7 @@ recent_listings = {
 
 review_min = 3
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
-MAX_LISTINGS_VINTED_TO_SCAN = 5  # Maximum listings to scan before refresh
+MAX_LISTINGS_VINTED_TO_SCAN = 1  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 0  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
@@ -392,12 +392,13 @@ def send_keypress_with_pyautogui(key, hold_time=None):
         print(f"PyAutoGUI keystroke failed for {key}: {e}")
         return False
 
-def clear_browser_data(vm_ip_address="192.168.56.101"):
+def vm_clear_browser_data(self, vm_ip_address, profile_config):
     """
-    Clear browser data before main execution using same VM profile
+    Clear browser data using VM - MATCHES the working script exactly
+    This creates a driver, clears data, then closes the driver
     """
     print("=" * 50)
-    print("CLEARING BROWSER DATA...")
+    print("VM BOOKMARK: Clearing browser data...")
     print("=" * 50)
     
     clear_driver = None
@@ -405,16 +406,16 @@ def clear_browser_data(vm_ip_address="192.168.56.101"):
     try:
         print("Step 1: Setting up temporary driver for data clearing...")
         
-        # Use same Chrome options as main driver for consistency
+        # Use same Chrome options as working script
         chrome_options = ChromeOptions()
-        chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
-        chrome_options.add_argument('--profile-directory=Profile 4')
+        chrome_options.add_argument(f'--user-data-dir={profile_config["user_data_dir"]}')
+        chrome_options.add_argument(f'--profile-directory={profile_config["profile_directory"]}')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         chrome_options.add_argument('--force-device-scale-factor=1')
         chrome_options.add_argument('--high-dpi-support=1')
-        chrome_options.add_argument('--remote-debugging-port=9223')  # Different port from main
+        chrome_options.add_argument('--remote-debugging-port=9223')  # Different port
         chrome_options.add_argument('--remote-allow-origins=*')
         chrome_options.add_argument('--disable-features=VizDisplayCompositor')
         chrome_options.add_argument('--disable-dev-shm-usage')
@@ -424,7 +425,7 @@ def clear_browser_data(vm_ip_address="192.168.56.101"):
         chrome_options.add_argument('--disable-web-security')
         chrome_options.add_argument('--allow-running-insecure-content')
         
-        # Create driver connection
+        # Create driver connection - EXACTLY like working script
         clear_driver = webdriver.Remote(
             command_executor=f'http://{vm_ip_address}:4444',
             options=chrome_options
@@ -441,7 +442,7 @@ def clear_browser_data(vm_ip_address="192.168.56.101"):
         
         print("Step 4: Accessing Shadow DOM to find clear button...")
         
-        # JavaScript to navigate Shadow DOM and click the clear button
+        # EXACT same JavaScript from working script
         shadow_dom_script = """
         function findAndClickClearButton() {
             // Multiple strategies to find the clear button in Shadow DOM
@@ -530,10 +531,9 @@ def clear_browser_data(vm_ip_address="192.168.56.101"):
         else:
             print("✗ Failed to find clear button in Shadow DOM")
             
-            # Fallback: Try to trigger clear via keyboard shortcut
+            # Fallback: Try keyboard shortcut like working script
             print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
             try:
-                from selenium.webdriver.common.keys import Keys
                 body = clear_driver.find_element(By.TAG_NAME, "body")
                 body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
                 time.sleep(1)
@@ -546,11 +546,12 @@ def clear_browser_data(vm_ip_address="192.168.56.101"):
         
     except Exception as e:
         print(f"✗ Browser data clearing failed: {str(e)}")
-        print("Continuing with main execution anyway...")
+        print("Continuing anyway...")
         import traceback
         traceback.print_exc()
     
     finally:
+        # CRITICAL: Always close the driver - MATCHES working script
         if clear_driver:
             try:
                 print("Step 6: Closing temporary driver...")
@@ -560,7 +561,7 @@ def clear_browser_data(vm_ip_address="192.168.56.101"):
                 print(f"Warning: Failed to close temporary driver: {e}")
         
         print("=" * 50)
-        print("BROWSER DATA CLEAR COMPLETE")
+        print("VM BOOKMARK: Browser data clear complete")
         print("=" * 50)
         time.sleep(0.5)  # Brief pause before continuing
 
@@ -917,7 +918,7 @@ def main_vm_driver():
     vm_ip_address = "192.168.56.101"  # Replace with your actual VM IP
     
     # Clear browser data first using same VM profile
-    clear_browser_data(vm_ip_address)
+    vm_clear_browser_data(vm_ip_address)
     
     # Small delay before creating main driver
     time.sleep(1)
@@ -2599,6 +2600,625 @@ def base64_encode_image(img):
 
 class VintedScraper:
 
+    def setup_vm_driver_for_bookmark(self, vm_ip_address="192.168.56.101", profile_config=None):
+        """
+        Create a VM driver for bookmark work - MATCHES working script setup_driver function
+        """
+        try:
+            # Session cleanup (from working script)
+            try:
+                import requests
+                status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+                status_data = status_response.json()
+                
+                if 'value' in status_data and 'nodes' in status_data['value']:
+                    for node in status_data['value']['nodes']:
+                        if 'slots' in node:
+                            for slot in node['slots']:
+                                if slot.get('session'):
+                                    session_id = slot['session']['sessionId']
+                                    print(f"Found existing session: {session_id}")
+                                    delete_response = requests.delete(
+                                        f"http://{vm_ip_address}:4444/session/{session_id}",
+                                        timeout=10
+                                    )
+                                    print(f"Cleaned up session: {session_id}")
+            
+            except Exception as e:
+                print(f"Session cleanup failed: {e}")
+            
+            # Chrome options - EXACTLY like working script
+            chrome_options = ChromeOptions()
+            
+            # Use profile config
+            if profile_config:
+                chrome_options.add_argument(f'--user-data-dir={profile_config["user_data_dir"]}')
+                chrome_options.add_argument(f'--profile-directory={profile_config["profile_directory"]}')
+            else:
+                chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
+                chrome_options.add_argument('--profile-directory=Profile 4')
+            
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            
+            # VM-specific optimizations - MATCHES working script
+            chrome_options.add_argument('--force-device-scale-factor=1')
+            chrome_options.add_argument('--high-dpi-support=1')
+            chrome_options.add_argument('--remote-debugging-port=9222')
+            chrome_options.add_argument('--remote-allow-origins=*')
+            chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--disable-web-security')
+            chrome_options.add_argument('--allow-running-insecure-content')
+            
+            print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
+            
+            driver = None
+            
+            try:
+                print("Attempting to connect to remote WebDriver...")
+                
+                driver = webdriver.Remote(
+                    command_executor=f'http://{vm_ip_address}:4444',
+                    options=chrome_options
+                )
+                
+                print(f"✓ Successfully created remote WebDriver connection")
+                print(f"Session ID: {driver.session_id}")
+                
+                print("Applying stealth modifications...")
+                stealth_script = """
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+                window.chrome = {runtime: {}};
+                Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+                
+                Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
+                Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+                Object.defineProperty(screen, 'colorDepth', {get: () => 24});
+                """
+                driver.execute_script(stealth_script)
+                print("✓ Stealth script applied successfully")
+                
+                print(f"✓ Successfully connected to VM Chrome with clean profile")
+                return driver
+                
+            except Exception as e:
+                print(f"✗ Failed to connect to VM WebDriver")
+                print(f"Error: {str(e)}")
+                
+                if driver:
+                    try:
+                        driver.quit()
+                    except:
+                        pass
+                
+                return None
+            
+        except Exception as e:
+            print(f"✗ Failed to setup VM driver: {str(e)}")
+            return None
+
+    def vm_perform_login_and_bookmark(self, driver):
+        """
+        Perform login and captcha handling - MATCHES working script main() function flow
+        """
+        detector = None
+        
+        try:
+            print("Navigating to vinted.co.uk...")
+            driver.get("https://vinted.co.uk")
+            
+            # Random delay after page load - MATCHES working script
+            time.sleep(random.uniform(0.5, 2.0))
+            
+            # Wait for and accept cookies - MATCHES working script
+            print("Waiting for cookie consent button...")
+            try:
+                cookie_button = WebDriverWait(driver, 15).until(
+                    EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler"))
+                )
+                cookie_button.click()
+                print("Cookie consent accepted")
+            except:
+                print("Cookie consent button not found, continuing...")
+            
+            # Small delay after cookie acceptance
+            time.sleep(random.uniform(1, 2))
+            
+            # Click Sign up | Log in button - MATCHES working script
+            print("Looking for Sign up | Log in button...")
+            signup_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
+            )
+            
+            time.sleep(random.uniform(0.5, 2.0))  # human_like_delay
+            action = ActionChains(driver)
+            
+            # Move to element naturally - MATCHES working script
+            offset_x = random.randint(-3, 3)
+            offset_y = random.randint(-3, 3)
+            action.move_to_element_with_offset(signup_button, offset_x, offset_y)
+            time.sleep(random.uniform(0.1, 0.3))
+            action.move_to_element(signup_button)
+            time.sleep(random.uniform(0.2, 0.5))
+            
+            time.sleep(random.uniform(0.1, 0.3))
+            action.click().perform()
+            print("Clicked Sign up | Log in button")
+            
+            # Wait for the login/signup modal to appear
+            time.sleep(random.uniform(1, 2))
+            
+            # Handle login method - MATCHES working script
+            if google_login:
+                print("Using Google login...")
+                google_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
+                )
+                
+                time.sleep(random.uniform(0.5, 2.0))  # human_like_delay
+                action = ActionChains(driver)
+                offset_x = random.randint(-3, 3)
+                offset_y = random.randint(-3, 3)
+                action.move_to_element_with_offset(google_button, offset_x, offset_y)
+                time.sleep(random.uniform(0.1, 0.3))
+                action.move_to_element(google_button)
+                time.sleep(random.uniform(0.2, 0.5))
+                time.sleep(random.uniform(0.1, 0.3))
+                action.click().perform()
+                print("Clicked Continue with Google")
+                
+            else:
+                print("Using email login...")
+                
+                # Click "Log in" text - MATCHES working script
+                login_text = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//span[contains(@class, 'web_ui__Text__underline') and text()='Log in']"))
+                )
+                
+                time.sleep(random.uniform(0.5, 2.0))
+                action = ActionChains(driver)
+                offset_x = random.randint(-3, 3)
+                offset_y = random.randint(-3, 3)
+                action.move_to_element_with_offset(login_text, offset_x, offset_y)
+                time.sleep(random.uniform(0.1, 0.3))
+                action.move_to_element(login_text)
+                time.sleep(random.uniform(0.2, 0.5))
+                time.sleep(random.uniform(0.1, 0.3))
+                action.click().perform()
+                print("Clicked Log in")
+                
+                # Wait a bit for the form to update
+                time.sleep(random.uniform(0.5, 1))
+                
+                # Click "email" text
+                email_text = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//span[contains(@class, 'web_ui__Text__underline') and text()='email']"))
+                )
+                
+                time.sleep(random.uniform(0.5, 2.0))
+                action = ActionChains(driver)
+                offset_x = random.randint(-3, 3)
+                offset_y = random.randint(-3, 3)
+                action.move_to_element_with_offset(email_text, offset_x, offset_y)
+                time.sleep(random.uniform(0.1, 0.3))
+                action.move_to_element(email_text)
+                time.sleep(random.uniform(0.2, 0.5))
+                time.sleep(random.uniform(0.1, 0.3))
+                action.click().perform()
+                print("Clicked email")
+                
+                # Wait a bit for the form to update
+                time.sleep(random.uniform(0.5, 1))
+                
+                # Click Continue button
+                continue_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[@type='submit']//span[text()='Continue']"))
+                )
+                
+                time.sleep(random.uniform(0.5, 2.0))
+                action = ActionChains(driver)
+                offset_x = random.randint(-3, 3)
+                offset_y = random.randint(-3, 3)
+                action.move_to_element_with_offset(continue_button, offset_x, offset_y)
+                time.sleep(random.uniform(0.1, 0.3))
+                action.move_to_element(continue_button)
+                time.sleep(random.uniform(0.2, 0.5))
+                time.sleep(random.uniform(0.1, 0.3))
+                action.click().perform()
+                print("Clicked Continue")
+            
+            # Wait a bit for any redirects or page loads after login flow
+            time.sleep(random.uniform(3, 5))
+            
+            # Handle captcha - MATCHES working script exactly
+            result = handle_datadome_audio_captcha(driver)
+
+            if result == "no_captcha":
+                print("No captcha present - login successful!")
+                return True
+            elif result == True:
+                print("Audio captcha button clicked successfully!")
+                print("="*60)
+                print("STARTING AUDIO DETECTION...")
+                print("="*60)
+                
+                # Initialize and start audio detection - MATCHES working script
+                if HAS_PYAUDIO:
+                    detector = AudioNumberDetector(driver=driver)
+                    detector.start_listening()
+                    
+                    # Wait for captcha completion - simple approach
+                    print("Waiting for captcha to be solved...")
+                    max_wait_time = 120  # 2 minutes
+                    start_time = time.time()
+                    
+                    while time.time() - start_time < max_wait_time:
+                        try:
+                            # Check if login completed by looking for messages button
+                            messages_element = driver.find_element(
+                                By.CSS_SELECTOR, 
+                                'a[data-testid="header-conversations-button"]'
+                            )
+                            print("Login completed successfully!")
+                            detector.stop()
+                            return True
+                        except:
+                            time.sleep(2)
+                            continue
+                    
+                    print("Captcha solving timeout")
+                    detector.stop()
+                    return False
+                else:
+                    print("Audio captcha detected but no audio processing available")
+                    return False
+            else:
+                print("Failed to handle captcha")
+                return False
+                
+        except Exception as e:
+            print(f"Login process failed: {str(e)}")
+            return False
+        
+        finally:
+            if detector:
+                try:
+                    detector.stop()
+                except:
+                    pass
+
+    def vm_bookmark_driver_threaded(self, listing_url, username=None):
+        """
+        VM-based threaded bookmark driver - FIXED to match working script
+        """
+        # Get the next available driver config
+        with threading.Lock():
+            driver_index = self.current_bookmark_driver_index
+            self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
+        
+        # Start the bookmark process in a separate thread
+        thread_name = f"VM-BookmarkDriver-{driver_index + 1}"
+        bookmark_thread = threading.Thread(
+            target=self._vm_bookmark_driver_thread_worker,
+            args=(driver_index, listing_url, username),
+            name=thread_name
+        )
+        bookmark_thread.daemon = True
+        bookmark_thread.start()
+        
+        # Track the thread
+        self.bookmark_driver_threads[driver_index] = bookmark_thread
+        
+        print(f"🧵 VM-BOOKMARK: Started {thread_name} for URL: {listing_url[:50]}...")
+        return True
+
+    def _vm_bookmark_driver_thread_worker(self, driver_index, listing_url, username):
+        """
+        FIXED: VM bookmark driver thread worker - MATCHES working script pattern exactly
+        """
+        thread_name = f"VM-BookmarkDriver-{driver_index + 1}"
+        
+        with self.bookmark_driver_locks[driver_index]:
+            print(f"🔖 {thread_name}: Starting VM bookmark process...")
+            
+            vm_ip_address = "192.168.56.101"  # Update with your VM IP
+            profile_config = self.bookmark_driver_configs[driver_index]
+            
+            try:
+                # Step 1: Clear browser data (creates and closes a driver)
+                print(f"🔖 {thread_name}: Step 1 - Clearing browser data...")
+                self.vm_clear_browser_data(vm_ip_address, profile_config)
+                
+                # Step 2: Small delay before creating main driver (MATCHES working script)
+                time.sleep(1)
+                
+                # Step 3: Create fresh driver for actual work
+                print(f"🔖 {thread_name}: Step 2 - Creating fresh driver...")
+                driver = self.setup_vm_driver_for_bookmark(vm_ip_address, profile_config)
+                
+                if driver is None:
+                    print(f"❌ {thread_name}: Failed to create fresh VM driver")
+                    return
+                
+                # Step 4: Perform login and captcha handling
+                print(f"🔖 {thread_name}: Step 3 - Performing login...")
+                login_success = self.vm_perform_login_and_bookmark(driver)
+                
+                if not login_success:
+                    print(f"❌ {thread_name}: Login failed")
+                    return
+                
+                print(f"✅ {thread_name}: Login successful, proceeding with bookmark...")
+                
+                # Step 5: Execute the actual bookmark process
+                step_log = self._initialize_step_logging()
+                step_log['driver_number'] = driver_index + 1
+                step_log['vm_driver'] = True
+                
+                # Validate inputs
+                if not self._validate_bookmark_inputs(listing_url, username, step_log):
+                    print(f"❌ {thread_name}: Input validation failed")
+                    return
+                
+                # Execute bookmark sequences within authenticated VM session
+                success = self._execute_vm_bookmark_sequences(
+                    driver, listing_url, username, step_log
+                )
+                
+                if success:
+                    print(f"✅ {thread_name}: VM bookmark process completed successfully")
+                else:
+                    print(f"❌ {thread_name}: VM bookmark process failed")
+                    
+            except Exception as e:
+                print(f"❌ {thread_name}: Thread error: {e}")
+                import traceback
+                traceback.print_exc()
+                
+            finally:
+                # Clean up driver
+                if 'driver' in locals() and driver:
+                    try:
+                        driver.quit()
+                        print(f"🗑️ {thread_name}: VM driver cleaned up")
+                    except Exception as cleanup_error:
+                        print(f"⚠️ {thread_name}: Cleanup error: {cleanup_error}")
+                
+                print(f"🏁 {thread_name}: VM bookmark thread completed")
+
+    def _execute_vm_bookmark_sequences(self, driver, listing_url, username, step_log):
+        """
+        Execute bookmark sequences within VM environment
+        This is similar to existing bookmark logic but adapted for VM
+        """
+        actual_url = step_log['actual_url']
+        
+        try:
+            # Create new tab and navigate (same as existing logic)
+            if not self._create_tab_and_navigate(driver, actual_url, step_log):
+                return False
+            
+            # Execute first buy sequence (same logic but in VM)
+            first_sequence_success = self._execute_first_buy_sequence(driver, step_log)
+            
+            if not first_sequence_success:
+                return False
+            
+            # Execute second sequence with monitoring (adapted for VM)
+            return self._execute_vm_second_sequence_with_monitoring(driver, actual_url, username, step_log)
+            
+        except Exception as e:
+            self._log_step(step_log, "vm_bookmark_sequences_error", False, str(e))
+            return False
+
+    def _execute_vm_second_sequence_with_monitoring(self, driver, actual_url, username, step_log):
+        """
+        Execute second sequence with Purchase unsuccessful monitoring in VM
+        """
+        self._log_step(step_log, "vm_second_sequence_start", True)
+        
+        try:
+            # Open new tab for second sequence
+            driver.execute_script("window.open('');")
+            second_tab = driver.window_handles[-1]
+            driver.switch_to.window(second_tab)
+            self._log_step(step_log, "vm_second_tab_created", True)
+            
+            # Navigate again
+            driver.get(actual_url)
+            self._log_step(step_log, "vm_second_navigation", True)
+            
+            # Look for buy button again
+            second_buy_element, second_buy_selector = self._try_selectors(
+                driver,
+                'buy_button',
+                operation='click',
+                timeout=15,
+                click_method='all',
+                step_log=step_log
+            )
+            
+            if second_buy_element:
+                self._log_step(step_log, "vm_second_buy_button_clicked", True, f"Used: {second_buy_selector[:30]}...")
+                
+                # Check for processing payment and start VM monitoring
+                success = self._check_vm_processing_payment_with_monitoring(driver, step_log)
+                
+                # Don't close tab if monitoring is active
+                if not (success and step_log.get('monitoring_active', False)):
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                    self._log_step(step_log, "vm_second_tab_closed", True)
+                
+                if success:
+                    return True
+            else:
+                self._log_step(step_log, "vm_second_buy_button_not_found", False, "Proceeding with messages")
+            
+            # Execute messages sequence if not monitoring
+            if not step_log.get('monitoring_active', False):
+                return self._execute_messages_sequence(driver, actual_url, username, step_log)
+            else:
+                return True
+                
+        except Exception as second_sequence_error:
+            self._log_step(step_log, "vm_second_sequence_error", False, str(second_sequence_error))
+            return True
+
+    def _check_vm_processing_payment_with_monitoring(self, driver, step_log):
+        """
+        Check for processing payment message and start VM monitoring if found
+        """
+        processing_element, processing_selector = self._try_selectors(
+            driver,
+            'processing_payment',
+            operation='find',
+            timeout=3,
+            step_log=step_log
+        )
+        
+        if processing_element:
+            element_text = processing_element.text.strip()
+            self._log_step(step_log, "vm_processing_payment_found", True, f"Text: {element_text}")
+            print('VM SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+            
+            # Start VM-based monitoring for "Purchase unsuccessful"
+            print('🔍 VM-MONITORING: Starting "Purchase unsuccessful" detection...')
+            step_log['success'] = True
+            step_log['monitoring_active'] = True
+            step_log['vm_monitoring'] = True
+            
+            # Start monitoring in separate thread
+            monitoring_thread = threading.Thread(
+                target=self._monitor_vm_purchase_unsuccessful,
+                args=(driver, step_log)
+            )
+            monitoring_thread.daemon = True
+            monitoring_thread.start()
+            
+            return True
+        else:
+            self._log_step(step_log, "vm_processing_payment_not_found", False, "Processing payment message not found")
+            print('VM listing likely bookmarked by another')
+            return False
+
+    def _monitor_vm_purchase_unsuccessful(self, driver, step_log):
+        """
+        Monitor for "Purchase unsuccessful" message in VM environment
+        """
+        print(f"🔍 VM-MONITORING: Starting Purchase unsuccessful detection...")
+        
+        # Set the monitoring flag
+        self.monitoring_threads_active.set()
+        
+        # Get the current URL being monitored
+        current_url = driver.current_url
+        
+        # Start the stopwatch
+        monitoring_start_time = time.time()
+        print(f"⏱️ VM-STOPWATCH: Started monitoring at {time.strftime('%H:%M:%S')}")
+        
+        # Maximum wait time: 25 minutes
+        max_wait_time = 25 * 60
+        
+        # Define selectors for "Purchase unsuccessful" message
+        unsuccessful_selectors = [
+            "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+            "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+            "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+            "//*[text()='Purchase unsuccessful']"
+        ]
+        
+        print(f"🔍 VM-MONITORING: Watching for 'Purchase unsuccessful' for up to {max_wait_time/60:.0f} minutes...")
+        
+        global purchase_unsuccessful_detected_urls
+        
+        try:
+            while True:
+                elapsed_time = time.time() - monitoring_start_time
+                
+                # Check timeout
+                if elapsed_time >= max_wait_time:
+                    print(f"⏰ VM-TIMEOUT: Maximum wait time reached")
+                    break
+                
+                # Check if driver is still alive
+                try:
+                    driver.current_url
+                except Exception:
+                    print(f"💀 VM-MONITORING: Driver died during monitoring")
+                    break
+                
+                # Try each selector to find "Purchase unsuccessful"
+                found_unsuccessful = False
+                for selector in unsuccessful_selectors:
+                    try:
+                        element = WebDriverWait(driver, 1).until(
+                            EC.presence_of_element_located((By.XPATH, selector))
+                        )
+                        
+                        # Found it!
+                        end_time = time.time()
+                        total_elapsed = end_time - monitoring_start_time
+                        
+                        print(f"🎯 VM-FOUND! 'Purchase unsuccessful' detected!")
+                        print(f"⏱️ VM-STOPWATCH: Monitoring completed in {total_elapsed/60:.2f} minutes")
+                        
+                        # Signal all waiting buying drivers to click pay NOW
+                        print(f"🚀 VM-TRIGGERING: All waiting buying drivers to click pay NOW!")
+                        
+                        for url, entry in purchase_unsuccessful_detected_urls.items():
+                            if entry.get('waiting', True):
+                                print(f"🎯 VM-TRIGGERING: Buying driver for {url[:50]}...")
+                                entry['waiting'] = False  # Signal the buying driver
+                        
+                        self._log_step(step_log, "vm_purchase_unsuccessful_found", True, 
+                                    f"Found after {total_elapsed:.2f}s")
+                        
+                        found_unsuccessful = True
+                        break
+                        
+                    except TimeoutException:
+                        continue
+                    except Exception as selector_error:
+                        print(f"⚠️ VM-MONITORING: Error with selector: {selector_error}")
+                        continue
+                
+                if found_unsuccessful:
+                    break
+                    
+                # Wait before checking again
+                time.sleep(0.5)  # Check every 500ms
+        
+        except Exception as monitoring_error:
+            end_time = time.time()
+            total_elapsed = end_time - monitoring_start_time
+            print(f"❌ VM-MONITORING ERROR: {monitoring_error}")
+            self._log_step(step_log, "vm_monitoring_error", False, str(monitoring_error))
+        
+        finally:
+            # Clean up monitoring
+            step_log['monitoring_active'] = False
+            step_log['vm_monitoring'] = False
+            self.monitoring_threads_active.clear()
+            
+            print(f"🗑️ VM-MONITORING CLEANUP: Closing monitoring tab...")
+            try:
+                driver.close()
+                print(f"✅ VM-MONITORING CLEANUP: VM monitoring tab closed")
+            except Exception as tab_close_error:
+                print(f"⚠️ VM-MONITORING CLEANUP: Error closing tab: {tab_close_error}")
+            
+            print(f"🔄 VM-MONITORING COMPLETE: VM monitoring finished")
+
     def restart_driver_if_dead(self, driver):
         """If driver is dead, create a new one. That's it."""
         try:
@@ -2751,9 +3371,9 @@ class VintedScraper:
 
     def cleanup_all_bookmark_threads(self):
         """
-        Clean up all bookmark driver threads when program exits
+        Clean up all bookmark driver threads when program exits - Updated for VM
         """
-        print("🧹 CLEANUP: Stopping all bookmark driver threads...")
+        print("🧹 CLEANUP: Stopping all VM bookmark driver threads...")
         
         active_threads = []
         for driver_index, thread in self.bookmark_driver_threads.items():
@@ -2761,18 +3381,18 @@ class VintedScraper:
                 active_threads.append((driver_index + 1, thread))
         
         if active_threads:
-            print(f"🧹 CLEANUP: Found {len(active_threads)} active bookmark threads")
+            print(f"🧹 VM-CLEANUP: Found {len(active_threads)} active VM bookmark threads")
             
-            # Give threads 10 seconds to finish naturally
-            print("⏳ CLEANUP: Waiting 10 seconds for threads to complete...")
+            # Give threads time to finish
+            print("⏳ VM-CLEANUP: Waiting for VM bookmark threads to complete...")
             for driver_num, thread in active_threads:
                 thread.join(timeout=10)
                 if thread.is_alive():
-                    print(f"⚠️ CLEANUP: BookmarkDriver-{driver_num} still running after timeout")
+                    print(f"⚠️ VM-CLEANUP: VM-BookmarkDriver-{driver_num} still running after timeout")
                 else:
-                    print(f"✅ CLEANUP: BookmarkDriver-{driver_num} completed")
+                    print(f"✅ VM-CLEANUP: VM-BookmarkDriver-{driver_num} completed")
         
-        print("✅ CLEANUP: Bookmark thread cleanup completed")
+        print("✅ VM-CLEANUP: VM bookmark thread cleanup completed")
 
     def bookmark_driver_threaded(self, listing_url, username=None):
         """
@@ -5275,7 +5895,7 @@ class VintedScraper:
 
     # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
 
-    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
+    def process_vinted_listing_with_vm_bookmarks(self, details, detected_objects, processed_images, listing_counter, url):
         """
         Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
         FIXED: Now passes username to bookmark_driver
@@ -5390,26 +6010,23 @@ class VintedScraper:
         elif bookmark_listings and VINTED_SHOW_ALL_LISTINGS:
             should_bookmark = True
             
-            if should_bookmark:
-                # CHANGED: Use threaded bookmark execution
-                print(f"🔖 THREADED BOOKMARK: {url}")
-                
-                # Extract username from details
-                username = details.get("username", None)
-                if not username or username == "Username not found":
-                    username = None
-                    print("🔖 USERNAME: Not available for this listing")
-                
-                # Start bookmark in separate thread - no need to wait for completion
-                bookmark_success = self.bookmark_driver_threaded(url, username)
-                
-                # For the rest of the logic, assume bookmark will succeed
-                # (the thread will handle the actual success/failure)
-                if bookmark_success:
-                    print("✅ Bookmark thread started successfully")
-                    
-                    # Start bookmark stopwatch (existing logic)
-                    self.start_bookmark_stopwatch(url)
+        if should_bookmark:
+            # CHANGED: Use VM-based bookmark execution
+            print(f"🔖 VM-THREADED BOOKMARK: {url}")
+            
+            # Extract username from details
+            username = details.get("username", None)
+            if not username or username == "Username not found":
+                username = None
+                print("🔖 VM-USERNAME: Not available for this listing")
+            
+            # Start VM bookmark in separate thread
+            bookmark_success = self.vm_bookmark_driver_threaded(url, username)
+            
+            if bookmark_success:
+                print("✅ VM bookmark thread started successfully")
+                # Start bookmark stopwatch (existing logic)
+                self.start_bookmark_stopwatch(url)
 
         # NEW: Generate exact UK time when creating listing info 
         from datetime import datetime
@@ -6295,7 +6912,7 @@ class VintedScraper:
                                     print(f"  • {cls}: {detected_objects[cls]}")
 
                         # Process listing for pygame display
-                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
+                        self.process_vinted_listing_with_vm_bookmarks(details, detected_objects, processed_images, overall_listing_counter, url)
 
                         # Mark this listing as scanned
                         if listing_id:
@@ -7586,7 +8203,7 @@ class VintedScraper:
                     detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
                 
                 # Process for pygame display (no booking logic, force show all)
-                self.process_vinted_listing(details, detected_objects, processed_images, idx, url)
+                self.process_vinted_listing_with_vm_bookmarks(details, detected_objects, processed_images, idx, url)
                 
                 print(f"✅ Processed test URL {idx} - added to pygame")
                 
@@ -8092,13 +8709,22 @@ class VintedScraper:
 
 if __name__ == "__main__":
     if VM_DRIVER_USE:
-        print("VM_DRIVER_USE = True - Running VM driver script instead of main scraper")
-        if not HAS_PYAUDIO:
-            print("WARNING: pyaudiowpatch not available - audio features may not work")
-            print("Install with: pip install PyAudioWPatch")
-        main_vm_driver()
+        # Check if we should run the VM driver for captcha solving OR the main scraper with VM bookmarks
+        if len(sys.argv) > 1 and sys.argv[1] == "--vm-captcha-only":
+            # Run only the VM captcha solver
+            print("VM_DRIVER_USE = True - Running VM driver for captcha solving only")
+            if not HAS_PYAUDIO:
+                print("WARNING: pyaudiowpatch not available - audio features may not work")
+                print("Install with: pip install PyAudioWPatch")
+            main_vm_driver()
+        else:
+            # Run main scraper with VM-based bookmark drivers
+            print("VM_DRIVER_USE = True - Running main Vinted scraper with VM bookmark drivers")
+            scraper = VintedScraper()
+            globals()['vinted_scraper_instance'] = scraper
+            scraper.run()
     else:
-        print("VM_DRIVER_USE = False - Running main Vinted scraper")
+        print("VM_DRIVER_USE = False - Running main Vinted scraper with regular bookmark drivers")
         scraper = VintedScraper()
         globals()['vinted_scraper_instance'] = scraper
         scraper.run()
