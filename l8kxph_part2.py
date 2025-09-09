@@ -1,4 +1,5 @@
 # Continuation from line 2201
+                print(f"✅ DRIVER {driver_num}: New tab opened")
             except Exception as e:
                 print(f"❌ DRIVER {driver_num}: Failed to open new tab: {str(e)}")
                 return
@@ -2198,4 +2199,3 @@
                 
                 # Convert to RGB if needed
                 if img.mode != 'RGB':
-                    img = img.convert('RGB')
