@@ -735,7 +735,7 @@ class VintedScraper:
             try:
                 # Step 1: Clear browser data (creates and closes a driver)
                 print(f"🔖 {thread_name}: Step 1 - Clearing browser data...")
-                self.vm_clear_browser_data(vm_ip_address, profile_config)
+                vm_clear_browser_data(vm_ip_address, profile_config)
                 
                 # Step 2: Small delay before creating main driver (MATCHES working script)
                 time.sleep(1)
