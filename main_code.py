@@ -2934,7 +2934,9 @@ class VintedScraper:
             try:
                 # Step 1: Clear browser data (creates and closes a driver)
                 print(f"🔖 {thread_name}: Step 1 - Clearing browser data...")
-                vm_clear_browser_data(vm_ip_address, profile_config)
+                
+                # FIX: Add 'self' parameter to the function call
+                self.vm_clear_browser_data(vm_ip_address, profile_config)
                 
                 # Step 2: Small delay before creating main driver (MATCHES working script)
                 time.sleep(1)
@@ -3718,6 +3720,179 @@ class VintedScraper:
                         print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
                         self.buying_drivers[driver_num] = None
                         self.driver_status[driver_num] = 'not_created'
+
+    def vm_clear_browser_data(self, vm_ip_address, profile_config):
+        """
+        Clear browser data using VM - MATCHES the working script exactly
+        This creates a driver, clears data, then closes the driver
+        """
+        print("=" * 50)
+        print("VM BOOKMARK: Clearing browser data...")
+        print("=" * 50)
+        
+        clear_driver = None
+        
+        try:
+            print("Step 1: Setting up temporary driver for data clearing...")
+            
+            # Use same Chrome options as working script
+            chrome_options = ChromeOptions()
+            chrome_options.add_argument(f'--user-data-dir={profile_config["user_data_dir"]}')
+            chrome_options.add_argument(f'--profile-directory={profile_config["profile_directory"]}')
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            chrome_options.add_argument('--force-device-scale-factor=1')
+            chrome_options.add_argument('--high-dpi-support=1')
+            chrome_options.add_argument('--remote-debugging-port=9223')  # Different port
+            chrome_options.add_argument('--remote-allow-origins=*')
+            chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--disable-web-security')
+            chrome_options.add_argument('--allow-running-insecure-content')
+            
+            # Create driver connection - EXACTLY like working script
+            clear_driver = webdriver.Remote(
+                command_executor=f'http://{vm_ip_address}:4444',
+                options=chrome_options
+            )
+            
+            print(f"✓ Temporary driver created successfully (Session: {clear_driver.session_id})")
+            
+            print("Step 2: Navigating to Chrome settings...")
+            clear_driver.get("chrome://settings/clearBrowserData")
+            print("✓ Navigated to clear browser data page")
+            
+            print("Step 3: Waiting for page to load...")
+            time.sleep(2)  # Wait for Shadow DOM to initialize
+            
+            print("Step 4: Accessing Shadow DOM to find clear button...")
+            
+            # EXACT same JavaScript from working script
+            shadow_dom_script = """
+            function findAndClickClearButton() {
+                // Multiple strategies to find the clear button in Shadow DOM
+                
+                // Strategy 1: Direct access via settings-ui
+                let settingsUi = document.querySelector('settings-ui');
+                if (settingsUi && settingsUi.shadowRoot) {
+                    let clearBrowserData = settingsUi.shadowRoot.querySelector('settings-main')?.shadowRoot
+                        ?.querySelector('settings-basic-page')?.shadowRoot
+                        ?.querySelector('settings-section[section="privacy"]')?.shadowRoot
+                        ?.querySelector('settings-clear-browsing-data-dialog');
+                    
+                    if (clearBrowserData && clearBrowserData.shadowRoot) {
+                        let clearButton = clearBrowserData.shadowRoot.querySelector('#clearButton');
+                        if (clearButton) {
+                            console.log('Found clear button via strategy 1');
+                            clearButton.click();
+                            return true;
+                        }
+                    }
+                }
+                
+                // Strategy 2: Search all shadow roots recursively
+                function searchShadowRoots(element) {
+                    if (element.shadowRoot) {
+                        let clearButton = element.shadowRoot.querySelector('#clearButton');
+                        if (clearButton) {
+                            console.log('Found clear button via recursive search');
+                            clearButton.click();
+                            return true;
+                        }
+                        
+                        // Search nested shadow roots
+                        let shadowElements = element.shadowRoot.querySelectorAll('*');
+                        for (let el of shadowElements) {
+                            if (searchShadowRoots(el)) return true;
+                        }
+                    }
+                    return false;
+                }
+                
+                let allElements = document.querySelectorAll('*');
+                for (let el of allElements) {
+                    if (searchShadowRoots(el)) return true;
+                }
+                
+                // Strategy 3: Look for cr-button elements in shadow roots
+                function findCrButton(element) {
+                    if (element.shadowRoot) {
+                        let crButtons = element.shadowRoot.querySelectorAll('cr-button');
+                        for (let btn of crButtons) {
+                            if (btn.id === 'clearButton' || btn.textContent.includes('Delete data')) {
+                                console.log('Found cr-button via strategy 3');
+                                btn.click();
+                                return true;
+                            }
+                        }
+                        
+                        let shadowElements = element.shadowRoot.querySelectorAll('*');
+                        for (let el of shadowElements) {
+                            if (findCrButton(el)) return true;
+                        }
+                    }
+                    return false;
+                }
+                
+                for (let el of allElements) {
+                    if (findCrButton(el)) return true;
+                }
+                
+                console.log('Clear button not found in any shadow root');
+                return false;
+            }
+            
+            return findAndClickClearButton();
+            """
+            
+            # Execute the Shadow DOM navigation script
+            result = clear_driver.execute_script(shadow_dom_script)
+            
+            if result:
+                print("✓ Successfully clicked clear data button via Shadow DOM!")
+                print("Step 5: Waiting for data clearing to complete...")
+                time.sleep(2)  # Wait for clearing process
+                print("✓ Browser data clearing completed successfully!")
+            else:
+                print("✗ Failed to find clear button in Shadow DOM")
+                
+                # Fallback: Try keyboard shortcut like working script
+                print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
+                try:
+                    body = clear_driver.find_element(By.TAG_NAME, "body")
+                    body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
+                    time.sleep(1)
+                    # Try to press Enter to confirm
+                    body.send_keys(Keys.ENTER)
+                    time.sleep(1)
+                    print("✓ Fallback keyboard shortcut attempted")
+                except Exception as fallback_error:
+                    print(f"✗ Fallback also failed: {fallback_error}")
+            
+        except Exception as e:
+            print(f"✗ Browser data clearing failed: {str(e)}")
+            print("Continuing anyway...")
+            import traceback
+            traceback.print_exc()
+        
+        finally:
+            # CRITICAL: Always close the driver - MATCHES working script
+            if clear_driver:
+                try:
+                    print("Step 6: Closing temporary driver...")
+                    clear_driver.quit()
+                    print("✓ Temporary driver closed successfully")
+                except Exception as e:
+                    print(f"Warning: Failed to close temporary driver: {e}")
+            
+            print("=" * 50)
+            print("VM BOOKMARK: Browser data clear complete")
+            print("=" * 50)
+            time.sleep(0.5)  # Brief pause before continuing
 
     def start_bookmark_stopwatch(self, listing_url):
         """
