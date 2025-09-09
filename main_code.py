@@ -64,8 +64,8 @@ TEST_SUITABLE_URLS = [
 TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
-BOOKMARK_TEST_MODE = False
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/6990793592-new-look-handbag-black-fake-leather?referrer=catalog"
+BOOKMARK_TEST_MODE = True
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/7037950664-racer-jacket?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 #tests the buying functionality
@@ -74,7 +74,7 @@ BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle
 
 #tests both the bookmark and buying functionality
 TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6989925386-green-and-yellow-chunky-bracelet?referrer=catalog"
+TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6996290195-cider-with-rosie-pretty-decor-book?referrer=catalog"
 
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
@@ -1344,6 +1344,13 @@ class VintedScraper:
             self.buying_drivers[i] = None
             self.driver_status[i] = 'not_created'
 
+        self.bookmark_driver_threads = {}  # Track threads for each driver
+        self.bookmark_driver_locks = {}    # Lock for each driver
+        
+        # Initialize locks for each bookmark driver
+        for i in range(5):
+            self.bookmark_driver_locks[i] = threading.Lock()
+
 
         self.current_bookmark_driver_index = 0
         self.bookmark_driver_configs = [
@@ -1369,7 +1376,149 @@ class VintedScraper:
             }
         ]
         self.current_bookmark_driver = None
+        self.shutdown_event = threading.Event()
 
+
+    def cleanup_all_bookmark_threads(self):
+        """
+        Clean up all bookmark driver threads when program exits
+        """
+        print("🧹 CLEANUP: Stopping all bookmark driver threads...")
+        
+        active_threads = []
+        for driver_index, thread in self.bookmark_driver_threads.items():
+            if thread and thread.is_alive():
+                active_threads.append((driver_index + 1, thread))
+        
+        if active_threads:
+            print(f"🧹 CLEANUP: Found {len(active_threads)} active bookmark threads")
+            
+            # Give threads 10 seconds to finish naturally
+            print("⏳ CLEANUP: Waiting 10 seconds for threads to complete...")
+            for driver_num, thread in active_threads:
+                thread.join(timeout=10)
+                if thread.is_alive():
+                    print(f"⚠️ CLEANUP: BookmarkDriver-{driver_num} still running after timeout")
+                else:
+                    print(f"✅ CLEANUP: BookmarkDriver-{driver_num} completed")
+        
+        print("✅ CLEANUP: Bookmark thread cleanup completed")
+
+    def bookmark_driver_threaded(self, listing_url, username=None):
+        """
+        THREADED VERSION: Run each bookmark driver in its own thread
+        """
+        # Get the next available driver index (cycle through 0-4)
+        with threading.Lock():  # Ensure thread-safe driver selection
+            driver_index = self.current_bookmark_driver_index
+            self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
+        
+        # Start the bookmark process in a separate thread for this driver
+        thread_name = f"BookmarkDriver-{driver_index + 1}"
+        bookmark_thread = threading.Thread(
+            target=self._bookmark_driver_thread_worker,
+            args=(driver_index, listing_url, username),
+            name=thread_name
+        )
+        bookmark_thread.daemon = True
+        bookmark_thread.start()
+        
+        # Track the thread
+        self.bookmark_driver_threads[driver_index] = bookmark_thread
+        
+        print(f"🧵 BOOKMARK: Started {thread_name} for URL: {listing_url[:50]}...")
+        return True
+
+    def _bookmark_driver_thread_worker(self, driver_index, listing_url, username):
+        """
+        Worker function that runs in each bookmark driver thread
+        """
+        thread_name = f"BookmarkDriver-{driver_index + 1}"
+        
+        with self.bookmark_driver_locks[driver_index]:
+            print(f"🔖 {thread_name}: Starting bookmark process...")
+            
+            try:
+                # Create driver for this specific thread
+                config = self.bookmark_driver_configs[driver_index]
+                driver = self._create_bookmark_driver(config, driver_index)
+                
+                if driver is None:
+                    print(f"❌ {thread_name}: Failed to create driver")
+                    return
+                
+                # Execute the bookmark process using existing logic
+                step_log = self._initialize_step_logging()
+                step_log['driver_number'] = driver_index + 1
+                
+                # Validate inputs
+                if not self._validate_bookmark_inputs(listing_url, username, step_log):
+                    print(f"❌ {thread_name}: Input validation failed")
+                    return
+                
+                # Execute bookmark sequences
+                success = self._execute_bookmark_sequences_with_monitoring(
+                    driver, listing_url, username, step_log
+                )
+                
+                if success:
+                    print(f"✅ {thread_name}: Bookmark process completed successfully")
+                else:
+                    print(f"❌ {thread_name}: Bookmark process failed")
+                    
+            except Exception as e:
+                print(f"❌ {thread_name}: Thread error: {e}")
+                import traceback
+                traceback.print_exc()
+                
+            finally:
+                # Clean up driver
+                try:
+                    if 'driver' in locals() and driver:
+                        driver.quit()
+                        print(f"🗑️ {thread_name}: Driver cleaned up")
+                except Exception as cleanup_error:
+                    print(f"⚠️ {thread_name}: Cleanup error: {cleanup_error}")
+                
+                print(f"🏁 {thread_name}: Thread completed")
+
+    def _create_bookmark_driver(self, config, driver_index):
+        """
+        Create a bookmark driver with the specified configuration
+        """
+        try:
+            # Ensure ChromeDriver is cached
+            if not hasattr(self, '_cached_chromedriver_path'):
+                self._cached_chromedriver_path = ChromeDriverManager().install()
+            
+            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
+            
+            chrome_opts = Options()
+            chrome_opts.add_argument(f"--user-data-dir={config['user_data_dir']}")
+            chrome_opts.add_argument(f"--profile-directory={config['profile_directory']}")
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+            chrome_opts.add_experimental_option('useAutomationExtension', False)
+            
+            # Create the driver
+            driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set timeouts
+            driver.implicitly_wait(1)
+            driver.set_page_load_timeout(8)
+            driver.set_script_timeout(3)
+            
+            print(f"✅ DRIVER {driver_index + 1}: Created successfully")
+            return driver
+            
+        except Exception as e:
+            print(f"❌ DRIVER {driver_index + 1}: Creation failed: {e}")
+            return None
                 
     def get_next_bookmark_driver(self):
         """
@@ -3871,34 +4020,26 @@ class VintedScraper:
         elif bookmark_listings and VINTED_SHOW_ALL_LISTINGS:
             should_bookmark = True
             
-        if should_bookmark:
-            # INSTANT bookmark execution - now with username parameter
-            print(f"🔖 INSTANT BOOKMARK: {url}")
-            
-            # Capture stdout to detect the success message
-            from io import StringIO
-            import contextlib
-            
-            # Create a string buffer to capture print output
-            captured_output = StringIO()
-            
-            # Temporarily redirect stdout to capture the bookmark_driver output
-            with contextlib.redirect_stdout(captured_output):
-                self.bookmark_driver(url, username)
-            
-            # Get the captured output and restore normal stdout
-            bookmark_output = captured_output.getvalue()
-            
-            # Print the captured output normally so you can still see it
-            print(bookmark_output, end='')
-            
-            # Check if the success message was printed
-            if 'SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!' in bookmark_output:
-                bookmark_success = True
-                print("🎉 BOOKMARK SUCCESS DETECTED!")
-                self.start_bookmark_stopwatch(url)
-            else:
-                print("❌ Bookmark did not succeed")
+            if should_bookmark:
+                # CHANGED: Use threaded bookmark execution
+                print(f"🔖 THREADED BOOKMARK: {url}")
+                
+                # Extract username from details
+                username = details.get("username", None)
+                if not username or username == "Username not found":
+                    username = None
+                    print("🔖 USERNAME: Not available for this listing")
+                
+                # Start bookmark in separate thread - no need to wait for completion
+                bookmark_success = self.bookmark_driver_threaded(url, username)
+                
+                # For the rest of the logic, assume bookmark will succeed
+                # (the thread will handle the actual success/failure)
+                if bookmark_success:
+                    print("✅ Bookmark thread started successfully")
+                    
+                    # Start bookmark stopwatch (existing logic)
+                    self.start_bookmark_stopwatch(url)
 
         # NEW: Generate exact UK time when creating listing info 
         from datetime import datetime
@@ -4744,6 +4885,7 @@ class VintedScraper:
                         break
 
                     overall_listing_counter += 1
+
 
                     # Process the listing (using current_driver instead of driver)
                     current_driver.execute_script("window.open();")
@@ -6489,16 +6631,8 @@ class VintedScraper:
         #pygame_thread.start()
         
         # NEW: Start thread monitoring system
-        def thread_monitor():
-            while not self.shutdown_event.is_set():
-                self.monitor_driver_threads()
-                time.sleep(5)
 
-        monitor_thread = Thread(target=thread_monitor, name="Thread-Monitor")
-        monitor_thread.daemon = True
-        monitor_thread.start()
 
-        print("🧵 MONITOR: Thread monitoring started")
         
         # NEW: Main scraping driver thread - THIS IS THE KEY CHANGE
         def main_scraping_driver():
@@ -6541,13 +6675,7 @@ class VintedScraper:
                 self.cleanup_all_cycling_bookmark_drivers()  # Clean up bookmark drivers too
                 
                 time.sleep(2)
-                
-                active_count = self.get_active_thread_count()
-                if active_count > 0:
-                    print(f"⚠️ SCRAPING THREAD: {active_count} threads still active after cleanup")
-                else:
-                    print("✅ SCRAPING THREAD: All threads cleaned up successfully")
-                
+
                 print("🏁 SCRAPING THREAD: Main scraping thread completed")
         
         # Create and start the main scraping thread
