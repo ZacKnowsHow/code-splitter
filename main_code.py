@@ -81,7 +81,7 @@ TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
 BOOKMARK_TEST_MODE = False
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/7037950664-racer-jacket?referrer=catalog"
+BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/7050671534-yoshimoto-nara-shirt?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
 #tests the buying functionality
@@ -592,22 +592,16 @@ def setup_driver(vm_ip_address="192.168.56.101"):
     chrome_options = ChromeOptions()
     chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
     chrome_options.add_argument('--profile-directory=Profile 4')
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
     
     # VM-specific optimizations
-    chrome_options.add_argument('--force-device-scale-factor=1')
-    chrome_options.add_argument('--high-dpi-support=1')
+
     chrome_options.add_argument('--remote-debugging-port=9222')
-    chrome_options.add_argument('--remote-allow-origins=*')
-    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--disable-extensions')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--disable-web-security')
-    chrome_options.add_argument('--allow-running-insecure-content')
 
     
     print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
@@ -912,7 +906,10 @@ def move_to_element_naturally(driver, element):
     return action
 
 def main_vm_driver():
-    """Main VM driver function"""
+    """
+    MODIFIED: Main VM driver function that handles login AND bookmarking
+    THIS ALL OCCURS IN THE VM - BOTH LOGIN AND BOOKMARKING
+    """
     # VM IP address - change this to your VM's IP
     vm_ip_address = "192.168.56.101"  # Replace with your actual VM IP
     
@@ -931,6 +928,10 @@ def main_vm_driver():
     detector = None
     
     try:
+        print("=" * 60)
+        print("STEP 1: EXECUTING ALL VM_DRIVER_USE FUNCTIONALITY")
+        print("=" * 60)
+        
         print("Navigating to vinted.co.uk...")
         driver.get("https://vinted.co.uk")
         
@@ -1025,7 +1026,10 @@ def main_vm_driver():
 
         if result == "no_captcha":
             print("No captcha present - login successful!")
-            print("Script completed successfully without needing captcha solving.")
+            print("=" * 60)
+            print("STEP 1 COMPLETE: VM_DRIVER_USE FUNCTIONALITY FINISHED")
+            print("=" * 60)
+            
         elif result == True:
             print("Audio captcha button clicked successfully!")
             print("="*60)
@@ -1036,15 +1040,36 @@ def main_vm_driver():
             if HAS_PYAUDIO:
                 detector = AudioNumberDetector(driver=driver)
                 detector.start_listening()
+                
+                # WAIT FOR AUDIO DETECTION TO COMPLETE
+                print("Waiting for audio detection to complete...")
+                while detector.is_running:
+                    time.sleep(1)
+                    
+                print("Audio detection completed!")
             else:
                 print("ERROR: Cannot start audio detection - pyaudiowpatch not available")
+                return
         else:
             print("Failed to click audio captcha button")
+            return
         
-        print("Script completed!")
+        # ========================================
+        # STEP 2: NOW START BOOKMARKING IN THE VM
+        # ========================================
+        print("=" * 60)
+        print("STEP 2: STARTING VM BOOKMARKING PROCESS")
+        print("THIS ALL OCCURS IN THE VM!")
+        print("=" * 60)
         
-        # Keep browser open for a bit to see the result
-        time.sleep(10)
+        # Store the main tab handle
+        main_tab = driver.current_window_handle
+        print(f"Main tab stored: {main_tab}")
+        
+        # Start the VM bookmarking process
+        start_vm_bookmarking_process(driver, main_tab)
+        
+        print("Script completed successfully!")
         
     except KeyboardInterrupt:
         print("\n\nStopping script...")
@@ -1061,9 +1086,369 @@ def main_vm_driver():
                 detector.stop()
             except:
                 pass
-        # Uncomment the next line if you want to close the browser automatically
-        # driver.quit()
+        # Keep browser open - do not close driver automatically
+        print("VM driver remaining open for manual inspection...")
         pass
+
+def start_vm_bookmarking_process(driver, main_tab):
+    """
+    MODIFIED: Start the bookmarking process within the VM
+    THIS ALL OCCURS IN THE VM - BOOKMARKING USING THE SAME LOGGED-IN SESSION
+    """
+    print("🔖 VM BOOKMARK: Starting VM bookmarking process...")
+    print("🔖 VM BOOKMARK: Using the same VM session that just logged in")
+    
+    # For now, let's do a simple test bookmark on a sample URL
+    # You can modify this to integrate with your existing bookmark system
+    test_url = "https://www.vinted.co.uk/items/7050472217-batman-t-shirt?referrer=catalog"
+    test_username = "test_user"
+    
+    try:
+        # Execute VM bookmark using the same logged-in driver
+        success = execute_vm_bookmark(driver, main_tab, test_url, test_username)
+        
+        if success:
+            print("✅ VM BOOKMARK: Bookmark process completed successfully")
+        else:
+            print("❌ VM BOOKMARK: Bookmark process failed")
+            
+    except Exception as e:
+        print(f"❌ VM BOOKMARK ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+
+def execute_vm_bookmark(driver, main_tab, listing_url, username):
+    """
+    MODIFIED: Execute bookmark functionality within the VM
+    THIS REPLICATES YOUR EXISTING BOOKMARK LOGIC BUT USES THE VM DRIVER
+    """
+    print(f"🔖 VM EXECUTING: Bookmarking {listing_url}")
+    print(f"👤 VM USERNAME: {username}")
+    
+    try:
+        # STEP 1: Open new tab for bookmarking (just like your existing logic)
+        print("🔖 VM: Opening new tab for bookmark process...")
+        driver.execute_script("window.open('');")
+        bookmark_tab = driver.window_handles[-1]
+        driver.switch_to.window(bookmark_tab)
+        print("✅ VM: New bookmark tab opened")
+        
+        # STEP 2: Navigate to the listing URL
+        print(f"🔖 VM: Navigating to {listing_url}")
+        driver.get(listing_url)
+        
+        # Wait for page to load
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            print("✅ VM: Page loaded successfully")
+        except TimeoutException:
+            print("❌ VM: Timeout waiting for page to load")
+            return False
+        
+        # STEP 3: Execute the first buy sequence (replicating your existing logic)
+        print("🔖 VM: Starting first buy sequence...")
+        first_sequence_success = execute_vm_first_buy_sequence(driver)
+        
+        if not first_sequence_success:
+            print("❌ VM: First buy sequence failed")
+            return False
+        
+        # STEP 4: Execute the second sequence with monitoring
+        print("🔖 VM: Starting second sequence with monitoring...")
+        second_sequence_success = execute_vm_second_sequence(driver, listing_url, username)
+        
+        if second_sequence_success:
+            print("✅ VM: Both sequences completed successfully")
+            return True
+        else:
+            print("❌ VM: Second sequence failed")
+            return False
+            
+    except Exception as e:
+        print(f"❌ VM BOOKMARK EXECUTION ERROR: {e}")
+        return False
+        
+    finally:
+        # Clean up bookmark tab and return to main tab
+        try:
+            if len(driver.window_handles) > 1:
+                driver.close()  # Close current bookmark tab
+                driver.switch_to.window(main_tab)  # Return to main tab
+                print("✅ VM: Returned to main tab")
+        except Exception as cleanup_error:
+            print(f"⚠️ VM CLEANUP ERROR: {cleanup_error}")
+
+def execute_vm_first_buy_sequence(driver):
+    """
+    MODIFIED: Execute first buy sequence in VM (replicates your existing logic)
+    THIS ALL OCCURS IN THE VM
+    """
+    print("🔖 VM FIRST: Starting first buy sequence...")
+    
+    # Look for buy button (using your existing selectors)
+    buy_selectors = [
+        "button[data-testid='item-buy-button']",
+        "button.web_ui__Button__primary[data-testid='item-buy-button']",
+        "button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated",
+        "//button[@data-testid='item-buy-button']",
+        "//button[contains(@class, 'web_ui__Button__primary')]//span[text()='Buy now']"
+    ]
+    
+    buy_button_found = False
+    for selector in buy_selectors:
+        try:
+            print(f"🔖 VM: Trying buy button selector: {selector}")
+            
+            if selector.startswith('//'):
+                buy_button = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, selector))
+                )
+            else:
+                buy_button = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                )
+            
+            # Click the buy button
+            buy_button.click()
+            print(f"✅ VM FIRST: Buy button clicked with selector: {selector}")
+            buy_button_found = True
+            break
+            
+        except TimeoutException:
+            continue
+        except Exception as e:
+            print(f"❌ VM FIRST: Buy button error with {selector}: {e}")
+            continue
+    
+    if not buy_button_found:
+        print("❌ VM FIRST: No buy button found - item likely sold")
+        return False
+    
+    # Wait for payment page to load and look for pay button
+    print("💳 VM FIRST: Waiting for pay button to appear...")
+    
+    pay_button_found = False
+    pay_selectors = [
+        'button[data-testid="single-checkout-order-summary-purchase-button"]',
+        'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
+        '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
+    ]
+    
+    for selector in pay_selectors:
+        try:
+            if selector.startswith('//'):
+                pay_button = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, selector))
+                )
+            else:
+                pay_button = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+            
+            print(f"✅ VM FIRST: Pay button found with selector: {selector}")
+            pay_button_found = True
+            break
+            
+        except TimeoutException:
+            continue
+    
+    if not pay_button_found:
+        print("❌ VM FIRST: Pay button not found")
+        return False
+    
+    # Execute the critical pay sequence (your exact logic)
+    print("💳 VM FIRST: Executing critical pay sequence...")
+    
+    try:
+        # Click pay button
+        pay_button.click()
+        print("💳 VM FIRST: Pay button clicked")
+        
+        # CRITICAL: Wait exactly 0.25 seconds (your requirement)
+        print("⏱️ VM FIRST: Waiting exactly 0.25 seconds...")
+        time.sleep(0.25)
+        
+        # CRITICAL: Close tab immediately
+        print("🗑️ VM FIRST: Closing tab immediately...")
+        driver.close()
+        
+        # Switch back to main tab
+        if len(driver.window_handles) > 0:
+            driver.switch_to.window(driver.window_handles[0])
+            print("✅ VM FIRST: Returned to main tab after critical sequence")
+        
+        print("✅ VM FIRST: Critical sequence completed successfully")
+        return True
+        
+    except Exception as critical_error:
+        print(f"❌ VM FIRST CRITICAL ERROR: {critical_error}")
+        return False
+
+def execute_vm_second_sequence(driver, listing_url, username):
+    """
+    MODIFIED: Execute second sequence in VM with monitoring
+    THIS ALL OCCURS IN THE VM
+    """
+    print("🔖 VM SECOND: Starting second sequence...")
+    
+    try:
+        # Open new tab for second sequence
+        driver.execute_script("window.open('');")
+        second_tab = driver.window_handles[-1]
+        driver.switch_to.window(second_tab)
+        print("✅ VM SECOND: New tab opened")
+        
+        # Navigate again
+        driver.get(listing_url)
+        print("✅ VM SECOND: Navigated to listing")
+        
+        # Look for buy button again
+        buy_selectors = [
+            "button[data-testid='item-buy-button']",
+            "//button[@data-testid='item-buy-button']",
+        ]
+        
+        second_buy_found = False
+        for selector in buy_selectors:
+            try:
+                if selector.startswith('//'):
+                    buy_button = WebDriverWait(driver, 15).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                else:
+                    buy_button = WebDriverWait(driver, 15).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                    )
+                
+                buy_button.click()
+                print(f"✅ VM SECOND: Second buy button clicked")
+                second_buy_found = True
+                break
+                
+            except TimeoutException:
+                continue
+        
+        if second_buy_found:
+            # Check for processing payment message (your logic)
+            processing_success = check_vm_processing_payment(driver)
+            if processing_success:
+                print("✅ VM SECOND: Processing payment found - bookmark successful!")
+                return True
+        
+        # If not found, continue with messages sequence (your logic)
+        print("🔖 VM SECOND: Continuing with messages sequence...")
+        return execute_vm_messages_sequence(driver, listing_url, username)
+        
+    except Exception as second_error:
+        print(f"❌ VM SECOND ERROR: {second_error}")
+        return False
+
+def check_vm_processing_payment(driver):
+    """
+    Check for processing payment message in VM
+    """
+    processing_selectors = [
+        "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
+        "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
+        "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+        "//*[contains(text(), 'Processing payment')]"
+    ]
+    
+    for selector in processing_selectors:
+        try:
+            element = WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.XPATH, selector))
+            )
+            print("🎉 VM: Processing payment message found!")
+            return True
+        except TimeoutException:
+            continue
+    
+    print("❌ VM: Processing payment message not found")
+    return False
+
+def execute_vm_messages_sequence(driver, listing_url, username):
+    """
+    Execute messages sequence in VM (your existing logic)
+    """
+    print("📧 VM MESSAGES: Starting messages sequence...")
+    
+    try:
+        # Open messages tab
+        driver.execute_script("window.open('');")
+        messages_tab = driver.window_handles[-1]
+        driver.switch_to.window(messages_tab)
+        
+        # Navigate to messages
+        driver.get(listing_url)
+        
+        # Look for messages button
+        messages_selectors = [
+            "a[data-testid='header-conversations-button']",
+            "a[href='/inbox'][data-testid='header-conversations-button']",
+        ]
+        
+        messages_found = False
+        for selector in messages_selectors:
+            try:
+                messages_button = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                )
+                messages_button.click()
+                print("✅ VM MESSAGES: Messages button clicked")
+                messages_found = True
+                break
+            except TimeoutException:
+                continue
+        
+        if messages_found:
+            # Search for username (your existing logic)
+            search_vm_username(driver, username, listing_url)
+        
+        # Clean up messages tab
+        driver.close()
+        if len(driver.window_handles) > 0:
+            driver.switch_to.window(driver.window_handles[0])
+        
+        return True
+        
+    except Exception as messages_error:
+        print(f"❌ VM MESSAGES ERROR: {messages_error}")
+        return False
+
+def search_vm_username(driver, username, listing_url):
+    """
+    Search for username in VM messages (your existing logic)
+    """
+    if not username:
+        print("❌ VM USERNAME: No username provided")
+        time.sleep(3)
+        return
+    
+    print(f"🔍 VM USERNAME: Searching for {username}")
+    time.sleep(2)  # Wait for messages to load
+    
+    try:
+        username_element = WebDriverWait(driver, 3).until(
+            EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
+        )
+        
+        print(f"⚠️ VM USERNAME: Found {username} in messages - possible accidental purchase!")
+        username_element.click()
+        time.sleep(3)
+        
+        # If username found, this indicates accidental purchase
+        print("❌ VM: ABORT - username found in messages")
+        return False
+        
+    except TimeoutException:
+        print(f"✅ VM USERNAME: {username} not found in messages - bookmark likely successful!")
+        return True
+    except Exception as search_error:
+        print(f"❌ VM USERNAME SEARCH ERROR: {search_error}")
+        return True  # Continue anyway
 
 class AudioNumberDetector:
     def __init__(self, driver=None):
