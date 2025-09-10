@@ -1,4 +1,237 @@
 # Continuation from line 6601
+                            print(f"🖼️  Skipping duplicate image {i+1} (hash: {content_hash[:8]}...)")
+                        continue
+                    
+                    seen_hashes.add(content_hash)
+                    
+                    img = Image.open(io.BytesIO(response.content))
+                    
+                    # Skip very small images
+                    if img.width < 200 or img.height < 200:
+                        print(f"🖼️  Skipping small image {i+1}: {img.width}x{img.height}")
+                        continue
+                    
+                    img = img.convert("RGB")
+                    
+                    # FIXED: Create proper copy to prevent memory issues
+                    img_copy = img.copy()
+                    processed_images.append(img_copy)
+                    img.close()  # Close original to free memory
+                    
+                    print(f"🖼️  Processed unique image {i+1}: {img_copy.width}x{img_copy.height}")
+                    
+                else:
+                    print(f"🖼️  Failed to download image {i+1}. Status code: {response.status_code}")
+            except Exception as e:
+                print(f"🖼️  Error processing image {i+1}: {str(e)}")
+        
+        print(f"🖼️  Final result: {len(processed_images)} unique processed images")
+        return processed_images
+
+
+    
+    def extract_vinted_listing_id(self, url):
+        """
+        Extract listing ID from Vinted URL
+        Example: https://www.vinted.co.uk/items/6862154542-sonic-forces?referrer=catalog
+        Returns: "6862154542"
+        """
+        debug_function_call("extract_vinted_listing_id")
+        import re  # FIXED: Import re at function level
+        
+        if not url:
+            return None
+        
+        # Match pattern: /items/[numbers]-
+        match = re.search(r'/items/(\d+)-', url)
+        if match:
+            return match.group(1)
+        
+        # Fallback: match any sequence of digits after /items/
+        match = re.search(r'/items/(\d+)', url)
+        if match:
+            return match.group(1)
+        
+        return None
+
+    def load_scanned_vinted_ids(self):
+        """Load previously scanned Vinted listing IDs from file"""
+        try:
+            if os.path.exists(VINTED_SCANNED_IDS_FILE):
+                with open(VINTED_SCANNED_IDS_FILE, 'r') as f:
+                    return set(line.strip() for line in f if line.strip())
+            return set()
+        except Exception as e:
+            print(f"Error loading scanned IDs: {e}")
+            return set()
+
+    def save_vinted_listing_id(self, listing_id):
+        """Save a Vinted listing ID to the scanned file"""
+        if not listing_id:
+            return
+        
+        try:
+            with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
+                f.write(f"{listing_id}\n")
+        except Exception as e:
+            print(f"Error saving listing ID {listing_id}: {e}")
+
+    def is_vinted_listing_already_scanned(self, url, scanned_ids):
+        """Check if a Vinted listing has already been scanned"""
+        listing_id = self.extract_vinted_listing_id(url)
+        if not listing_id:
+            return False
+        return listing_id in scanned_ids
+
+    def refresh_vinted_page_and_wait(self, driver, is_first_refresh=True):
+        """
+        Refresh the Vinted page and wait appropriate time
+        """
+        print("🔄 Refreshing Vinted page...")
+        
+        # Navigate back to first page
+        params = {
+            "search_text": SEARCH_QUERY,
+            "price_from": PRICE_FROM,
+            "price_to": PRICE_TO,
+            "currency": CURRENCY,
+            "order": ORDER,
+        }
+        driver.get(f"{BASE_URL}?{urlencode(params)}")
+        
+        # Wait for page to load
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+            )
+            print("✅ Page refreshed and loaded successfully")
+        except TimeoutException:
+            print("⚠️ Timeout waiting for page to reload")
+        
+        # Wait for new listings (except first refresh)
+        if not is_first_refresh:
+            print(f"⏳ Waiting {wait_after_max_reached_vinted} seconds for new listings...")
+            time.sleep(wait_after_max_reached_vinted)
+        
+        return True
+
+    def search_vinted_with_refresh(self, driver, search_query):
+        """
+        Enhanced search_vinted method with refresh and rescan functionality
+        UPDATED: Now restarts the main driver every 250 cycles to prevent freezing
+        """
+        global suitable_listings, current_listing_index
+        
+        # CLEAR THE VINTED SCANNED IDS FILE AT THE BEGINNING OF EACH RUN
+        try:
+            with open(VINTED_SCANNED_IDS_FILE, 'w') as f:
+                pass  # This creates an empty file, clearing any existing content
+            print(f"✅ Cleared {VINTED_SCANNED_IDS_FILE} at the start of the run")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not clear {VINTED_SCANNED_IDS_FILE}: {e}")
+        
+        # Clear previous results
+        suitable_listings.clear()
+        current_listing_index = 0
+        
+        # Ensure root download folder exists
+        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
+
+        # Load YOLO Model Once
+        print("🧠 Loading object detection model...")
+        if not os.path.exists(MODEL_WEIGHTS):
+            print(f"❌ Critical Error: Model weights not found at '{MODEL_WEIGHTS}'. Detection will be skipped.")
+        else:
+            try:
+                print("✅ Model loaded successfully.")
+            except Exception as e:
+                print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
+        
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
+
+        # Load model with explicit GPU usage
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
+        # Store original driver reference
+        current_driver = driver
+        
+        # Load previously scanned listing IDs
+        scanned_ids = self.load_scanned_vinted_ids()
+        print(f"📚 Loaded {len(scanned_ids)} previously scanned listing IDs")
+
+        page = 1
+        overall_listing_counter = 0
+        refresh_cycle = 1
+        is_first_refresh = True
+        
+        # NEW: Driver restart tracking
+        DRIVER_RESTART_INTERVAL = 100
+        cycles_since_restart = 0
+
+        # Main scanning loop with refresh functionality AND driver restart
+        while True:
+            print(f"\n{'='*60}")
+            print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
+            print(f"🔄 Cycles since last driver restart: {cycles_since_restart}")
+            print(f"{'='*60}")
+            
+            # NEW: Check if we need to restart the driver
+            if cycles_since_restart >= DRIVER_RESTART_INTERVAL:
+                print(f"\n🔄 DRIVER RESTART: Reached {DRIVER_RESTART_INTERVAL} cycles")
+                print("🔄 RESTARTING: Main scraping driver to prevent freezing...")
+                
+                try:
+                    # Close current driver safely
+                    print("🔄 CLOSING: Current driver...")
+                    current_driver.quit()
+                    time.sleep(2)  # Give time for cleanup
+                    
+                    # Create new driver
+                    print("🔄 CREATING: New driver...")
+                    current_driver = self.setup_driver()
+                    
+                    if current_driver is None:
+                        print("❌ CRITICAL: Failed to create new driver after restart")
+                        break
+                    
+                    print("✅ DRIVER RESTART: Successfully restarted main driver")
+                    cycles_since_restart = 0  # Reset counter
+                    
+                    # Re-navigate to search page after restart
+                    params = {
+                        "search_text": search_query,
+                        "price_from": PRICE_FROM,
+                        "price_to": PRICE_TO,
+                        "currency": CURRENCY,
+                        "order": ORDER,
+                    }
+                    current_driver.get(f"{BASE_URL}?{urlencode(params)}")
+                    
+                    # Wait for page to load after restart
+                    try:
+                        WebDriverWait(current_driver, 20).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                        )
+                        print("✅ RESTART: Page loaded successfully after driver restart")
+                    except TimeoutException:
+                        print("⚠️ RESTART: Timeout waiting for page after driver restart")
+                    
+                except Exception as restart_error:
+                    print(f"❌ RESTART ERROR: Failed to restart driver: {restart_error}")
+                    print("💥 CRITICAL: Cannot continue without working driver")
+                    break
+            
+            cycle_listing_counter = 0  # Listings processed in this cycle
+            found_already_scanned = False
+            
+            # Reset to first page for each cycle
+            page = 1
             
             while True:  # Page loop
                 try:

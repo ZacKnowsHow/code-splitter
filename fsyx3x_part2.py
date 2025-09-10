@@ -1,4 +1,237 @@
 # Continuation from line 2201
+                            # Otherwise collect individual numbers
+                            numbers = self.extract_numbers_sequence(text)
+                            if numbers:
+                                with self.numbers_lock:
+                                    new_numbers = []
+                                    for num in numbers:
+                                        if len(self.collected_numbers) < self.target_count:
+                                            self.collected_numbers.append(num)
+                                            new_numbers.append(num)
+                                    
+                                    if new_numbers:
+                                        print(f"[{timestamp}] NEW NUMBERS: {' '.join(new_numbers)}")
+                                        print(f"[{timestamp}] Full text: '{text}'")
+                                        print(f"[{timestamp}] Sequence so far ({len(self.collected_numbers)}/{self.target_count}): {' '.join(self.collected_numbers)}")
+                                    
+                                    if len(self.collected_numbers) >= self.target_count:
+                                        final_sequence = ''.join(self.collected_numbers[:self.target_count])
+                                        print("\n" + "="*60)
+                                        print(f"SUCCESS! Collected {self.target_count} numbers:")
+                                        print(f"FINAL SEQUENCE: {final_sequence}")
+                                        print("="*60)
+                                        
+                                        # Input the sequence into the captcha form
+                                        if self.input_captcha_solution(final_sequence):
+                                            print("Successfully inputted captcha solution!")
+                                        else:
+                                            print("Failed to input captcha solution")
+                                        
+                                        self.stop()
+                                        return
+                            else:
+                                print(f"[{timestamp}] No numbers found in: '{text}'")
+                        
+                finally:
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+                        
+        except Exception as e:
+            print(f"Audio processing error: {e}")
+    
+    def audio_processor_thread(self):
+        """Background thread to process audio chunks"""
+        while self.is_running:
+            try:
+                if not self.audio_queue.empty():
+                    audio_data = self.audio_queue.get(timeout=1)
+                    processor = threading.Thread(target=self.process_audio_data, args=(audio_data,), daemon=True)
+                    processor.start()
+                else:
+                    time.sleep(0.1)
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"Processor thread error: {e}")
+    
+    def start_listening(self):
+        """Start capturing system audio output"""
+        default_speakers = self.get_default_speakers()
+        
+        if not default_speakers:
+            print("Could not find system speakers!")
+            return
+        
+        try:
+            stream = self.p.open(
+                format=self.FORMAT,
+                channels=int(default_speakers["maxInputChannels"]),
+                rate=int(default_speakers["defaultSampleRate"]),
+                input=True,
+                input_device_index=default_speakers["index"],
+                frames_per_buffer=self.CHUNK
+            )
+            
+            print(f"Listening to PC system audio... Press Ctrl+C to stop.")
+            print("Looking for 6-digit number sequence...")
+            print("-" * 60)
+            
+            self.is_running = True
+            
+            # Start processor threads
+            for i in range(2):
+                processor = threading.Thread(target=self.audio_processor_thread, daemon=True)
+                processor.start()
+                print(f"Started audio processor thread {i+1}")
+            
+            audio_buffer = b""
+            buffer_size = self.RATE * self.buffer_duration * 2
+            overlap_size = self.RATE * self.overlap_duration * 2
+            
+            while self.is_running:
+                try:
+                    data = stream.read(self.CHUNK, exception_on_overflow=False)
+                    audio_buffer += data
+                    
+                    with self.numbers_lock:
+                        if len(self.collected_numbers) >= self.target_count or self.complete_sequence:
+                            break
+                    
+                    if len(audio_buffer) >= buffer_size:
+                        print(f"Processing {self.buffer_duration}s audio chunk...")
+                        
+                        if self.audio_queue.qsize() < 3:
+                            self.audio_queue.put(audio_buffer[:buffer_size])
+                        else:
+                            print("Audio queue full, skipping chunk...")
+                            
+                        audio_buffer = audio_buffer[-overlap_size:]
+                        
+                except Exception as e:
+                    print(f"Stream error: {e}")
+                    break
+            
+            stream.stop_stream()
+            stream.close()
+            
+        except Exception as e:
+            print(f"Error starting capture: {e}")
+
+    def stop(self):
+        """Stop the transcriber"""
+        self.is_running = False
+        self.p.terminate()
+
+def debug_function_call(func_name, line_number=None):
+    """Debug function to track where errors occur"""
+    if print_debug:
+        print(f"DEBUG: Entering function {func_name}" + (f" at line {line_number}" if line_number else ""))
+
+# Vinted profit suitability ranges (same structure as Facebook but independent variables)
+def check_vinted_profit_suitability(listing_price, profit_percentage):
+    if 10 <= listing_price < 16:
+        return 100 <= profit_percentage <= 600
+    elif 16 <= listing_price < 25:
+        return 50 <= profit_percentage <= 400
+    elif 25 <= listing_price < 50:
+        return 37.5 <= profit_percentage <= 550
+    elif 50 <= listing_price < 100:
+        return 35 <= profit_percentage <= 500
+    elif listing_price >= 100:
+        return 30 <= profit_percentage <= 450
+    else:
+        return False
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    # Remove the 'self' parameter and access global variables instead
+    global recent_listings, current_listing_title, current_listing_price, current_listing_description
+    global current_listing_join_date, current_detected_items, current_profit, current_listing_images
+    global current_listing_url
+    
+    if "authenticated" in session:
+        return render_main_page()  # Call the standalone function
+    
+    if request.method == "POST":
+        entered_pin = request.form.get("pin")
+        if int(entered_pin) == PIN_CODE:
+            session["authenticated"] = True
+            return redirect(url_for("index"))
+        else:
+            return '''
+            <html>
+            <head>
+                <title>Enter PIN</title>
+            </head>
+            <body>
+                <h2>Enter 5-digit PIN to access</h2>
+                <p style="color: red;">Incorrect PIN</p>
+                <form method="POST">
+                    <input type="password" name="pin" maxlength="5" required>
+                    <button type="submit">Submit</button>
+                </form>
+            </body>
+            </html>
+            '''
+    
+    return '''
+    <html>
+    <head>
+        <title>Enter PIN</title>
+    </head>
+    <body>
+        <h2>Enter 5-digit PIN to access</h2>
+        <form method="POST">
+            <input type="password" name="pin" maxlength="5" required>
+            <button type="submit">Submit</button>
+        </form>
+    </body>
+    </html>
+    '''
+
+@app.route("/logout")
+def logout():
+    session.pop("authenticated", None)
+    return redirect(url_for("index"))
+
+@app.route('/static/icon.png')
+def serve_icon():
+    #pc
+    #return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2 (1).png", mimetype='image/png')
+    #laptop
+    return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2.png", mimetype='image/png')
+
+@app.route('/change_listing', methods=['POST'])
+def change_listing():
+    direction = request.form.get('direction')
+    total_listings = len(recent_listings['listings'])
+    
+    if direction == 'next':
+        recent_listings['current_index'] = (recent_listings['current_index'] + 1) % total_listings
+    elif direction == 'previous':
+        recent_listings['current_index'] = (recent_listings['current_index'] - 1) % total_listings
+    
+    current_listing = recent_listings['listings'][recent_listings['current_index']]
+    
+    # Convert images to base64
+    processed_images_base64 = []
+    for img in current_listing['processed_images']:
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        processed_images_base64.append(img_str)
+    
+    return jsonify({
+        'title': current_listing['title'],
+        'description': current_listing['description'],
+        'join_date': current_listing['join_date'],
+        'price': current_listing['price'],
+        'expected_revenue': current_listing['expected_revenue'],
+        'profit': current_listing['profit'],
+        'detected_items': current_listing['detected_items'],
+        'processed_images': processed_images_base64,
         'bounding_boxes': current_listing['bounding_boxes'],
         'url': current_listing['url'],
         'suitability': current_listing['suitability'],
@@ -1966,236 +2199,3 @@ class VintedScraper:
                             
                             buy_button_clicked = True
                             print(f"✅ DRIVER {driver_num}: Buy button clicked using {click_method}")
-                            break
-                        except Exception as click_error:
-                            continue
-                    
-                    if buy_button_clicked:
-                        break
-                        
-                except Exception as selector_error:
-                    continue
-            
-            if not buy_button_clicked:
-                print(f"❌ DRIVER {driver_num}: Could not click buy button - item likely sold")
-                try:
-                    driver.close()
-                    if len(driver.window_handles) > 0:
-                        driver.switch_to.window(driver.window_handles[0])
-                except:
-                    pass
-                return
-            
-            # MODIFIED: Find and store pay button location BUT DON'T CLICK YET
-            print(f"🔍 DRIVER {driver_num}: Finding pay button (but not clicking yet)...")
-            
-            pay_button = None
-            pay_selectors = [
-                'button[data-testid="single-checkout-order-summary-purchase-button"]',
-                '//button[@data-testid="single-checkout-order-summary-purchase-button"]'
-            ]
-            
-            for selector in pay_selectors:
-                try:
-                    if selector.startswith('//'):
-                        pay_button = WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.XPATH, selector))
-                        )
-                    else:
-                        pay_button = WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                        )
-                    
-                    print(f"✅ DRIVER {driver_num}: Pay button found and stored")
-                    break
-                    
-                except Exception as selector_error:
-                    continue
-            
-            if not pay_button:
-                print(f"❌ DRIVER {driver_num}: Could not find pay button")
-                try:
-                    driver.close()
-                    if len(driver.window_handles) > 0:
-                        driver.switch_to.window(driver.window_handles[0])
-                except:
-                    pass
-                return
-            
-            # MODIFIED: Register this URL for "Purchase unsuccessful" monitoring
-            global purchase_unsuccessful_detected_urls
-            purchase_unsuccessful_detected_urls[url] = {
-                'driver': driver,
-                'driver_num': driver_num,
-                'pay_button': pay_button,
-                'waiting': True,
-                'start_time': time.time()
-            }
-            
-            print(f"🔍 DRIVER {driver_num}: Registered for 'Purchase unsuccessful' monitoring")
-            print(f"⏱️ DRIVER {driver_num}: Will wait for bookmark driver to detect 'Purchase unsuccessful'")
-            
-            # Start monitoring thread for this specific URL
-            monitoring_thread = threading.Thread(
-                target=self.monitor_for_purchase_unsuccessful,
-                args=(url, driver, driver_num, pay_button)
-            )
-            monitoring_thread.daemon = True
-            monitoring_thread.start()
-            
-        except Exception as critical_error:
-            print(f"❌ DRIVER {driver_num}: Critical error: {str(critical_error)}")
-            # Clean up
-            try:
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-            self.release_driver(driver_num)
-
-    def process_single_listing_with_driver(self, url, driver_num, driver):
-        """
-        ENHANCED: Process a single listing using the specified driver with robust error handling,
-        success rate logging, selector alternatives, and failure fast-path
-        """
-        
-        # SUCCESS RATE LOGGING - Track exactly where and when things break
-        process_log = {
-            'start_time': time.time(),
-            'url': url,
-            'driver_num': driver_num,
-            'steps_completed': [],
-            'failures': [],
-            'success': False,
-            'critical_operations': []
-        }
-        
-        def log_step(step_name, success=True, error_msg=None, duration=None):
-            """Log each step for debugging and success rate analysis"""
-            elapsed = duration if duration else time.time() - process_log['start_time']
-            
-            if success:
-                process_log['steps_completed'].append(f"{step_name} - {elapsed:.2f}s")
-                if print_debug:
-                    print(f"✅ DRIVER {driver_num}: {step_name}")
-            else:
-                process_log['failures'].append(f"{step_name}: {error_msg} - {elapsed:.2f}s")
-                print(f"❌ DRIVER {driver_num}: {step_name} - {error_msg}")
-        
-        def log_final_result():
-            """Log comprehensive results for success rate analysis"""
-            total_time = time.time() - process_log['start_time']
-            print(f"\n📊 PROCESSING ANALYSIS - Driver {driver_num}")
-            print(f"🔗 URL: {url[:60]}...")
-            print(f"⏱️  Total time: {total_time:.2f}s")
-            print(f"✅ Steps completed: {len(process_log['steps_completed'])}")
-            print(f"❌ Failures: {len(process_log['failures'])}")
-            print(f"🏆 Overall success: {'YES' if process_log['success'] else 'NO'}")
-            
-            if process_log['failures'] and print_debug:
-                print("🔍 FAILURE DETAILS:")
-                for failure in process_log['failures'][:5]:  # Show first 5 failures
-                    print(f"  • {failure}")
-
-        # SELECTOR ALTERNATIVES - Multiple backup selectors for each critical element
-        SELECTOR_SETS = {
-
-            'purchase_unsuccessful': [
-                 "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
-                "//*[text()='Purchase unsuccessful']"
-            ],
-            
-            'buy_button': [
-                'button[data-testid="item-buy-button"]',
-                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
-                'button.web_ui__Button__button[data-testid="item-buy-button"]',
-                '//button[@data-testid="item-buy-button"]',
-                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
-                '//span[text()="Buy now"]/parent::button'
-            ],
-            
-            'pay_button': [
-                'button[data-testid="single-checkout-order-summary-purchase-button"]',
-                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
-                '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
-                'button.web_ui__Button__primary[data-testid*="purchase"]',
-                '//button[contains(@data-testid, "purchase-button")]',
-                '//button[contains(@class, "web_ui__Button__primary")]'
-            ],
-            
-            'ship_to_home': [
-                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]',
-                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to home"]',
-                '//h2[text()="Ship to home"]',
-                '//*[text()="Ship to home"]'
-            ],
-            
-            'ship_to_pickup': [
-                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]',
-                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to pick-up point"]',
-                '//h2[text()="Ship to pick-up point"]',
-                '//*[text()="Ship to pick-up point"]'
-            ],
-            
-            'success_message': [
-                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Purchase successful']",
-                "//h2[contains(@class, 'web_ui__Text__title') and text()='Purchase successful']",
-                "//h2[text()='Purchase successful']",
-                "//*[contains(text(), 'Purchase successful')]"
-            ],
-            
-            'error_modal': [
-                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format']//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left' and contains(text(), 'Sorry, we couldn')]",
-                "//span[@data-testid='checkout-payment-error-modal--body']",
-                "//div[@data-testid='checkout-payment-error-modal--overlay']",
-                "//span[contains(text(), \"Sorry, we couldn't process your payment\")]",
-                "//*[contains(text(), 'Some of the items belong to another purchase')]"
-            ],
-            
-            'ok_button': [
-                "//button[@data-testid='checkout-payment-error-modal-action-button']",
-                "//button//span[@class='web_ui__Button__label' and text()='OK, close']",
-                "//button[contains(.//text(), 'OK, close')]",
-                "//button[contains(@class, 'web_ui__Button__primary')]",
-                "//*[text()='OK, close']"
-            ]
-        }
-        
-        def try_selectors_fast_fail(driver, selector_set_name, operation='find', timeout=3, click_method='standard'):
-            """
-            FAILURE FAST-PATH - Try selectors with quick timeouts and fail quickly
-            Returns (element, selector_used) or (None, None) if all fail
-            """
-            selectors = SELECTOR_SETS.get(selector_set_name, [])
-            if not selectors:
-                log_step(f"no_selectors_{selector_set_name}", False, "No selectors defined")
-                return None, None
-            
-            for i, selector in enumerate(selectors):
-                try:
-                    if print_debug:
-                        print(f"🔍 DRIVER {driver_num}: Trying selector {i+1}/{len(selectors)} for {selector_set_name}")
-                    
-                    # Use appropriate locator strategy
-                    if selector.startswith('//'):
-                        if operation == 'click':
-                            element = WebDriverWait(driver, timeout).until(
-                                EC.element_to_be_clickable((By.XPATH, selector))
-                            )
-                        else:
-                            element = WebDriverWait(driver, timeout).until(
-                                EC.presence_of_element_located((By.XPATH, selector))
-                            )
-                    else:
-                        if operation == 'click':
-                            element = WebDriverWait(driver, timeout).until(
-                                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                            )
-                        else:
-                            element = WebDriverWait(driver, timeout).until(
-                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                            )
