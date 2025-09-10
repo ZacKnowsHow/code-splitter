@@ -65,6 +65,8 @@ from scipy import signal
 import wave
 
 
+purchase_unsuccessful_wait_time = 900
+
 VM_DRIVER_USE = True
 google_login = True
 
@@ -1092,30 +1094,24 @@ def main_vm_driver():
 
 def start_vm_bookmarking_process(driver, main_tab):
     """
-    MODIFIED: Start the bookmarking process within the VM
-    THIS ALL OCCURS IN THE VM - BOOKMARKING USING THE SAME LOGGED-IN SESSION
+    Updated to use the ultra-fast streamlined version
     """
-    print("🔖 VM BOOKMARK: Starting VM bookmarking process...")
-    print("🔖 VM BOOKMARK: Using the same VM session that just logged in")
+    print("🔖 VM BOOKMARK: Starting ultra-fast bookmarking process...")
     
-    # For now, let's do a simple test bookmark on a sample URL
-    # You can modify this to integrate with your existing bookmark system
-    test_url = "https://www.vinted.co.uk/items/7050472217-batman-t-shirt?referrer=catalog"
+    # Your test URL and username
+    test_url = "https://www.vinted.co.uk/items/7050328846-bslm-grey-joggers?referrer=catalog"
     test_username = "test_user"
     
     try:
-        # Execute VM bookmark using the same logged-in driver
-        success = execute_vm_bookmark(driver, main_tab, test_url, test_username)
+        success = execute_vm_bookmark_enhanced_fast(driver, main_tab, test_url, test_username)
         
         if success:
-            print("✅ VM BOOKMARK: Bookmark process completed successfully")
+            print("✅ VM BOOKMARK: Ultra-fast bookmark process completed successfully")
         else:
-            print("❌ VM BOOKMARK: Bookmark process failed")
+            print("❌ VM BOOKMARK: Ultra-fast bookmark process failed")
             
     except Exception as e:
         print(f"❌ VM BOOKMARK ERROR: {e}")
-        import traceback
-        traceback.print_exc()
 
 def execute_vm_bookmark(driver, main_tab, listing_url, username):
     """
@@ -1149,7 +1145,7 @@ def execute_vm_bookmark(driver, main_tab, listing_url, username):
         
         # STEP 3: Execute the first buy sequence (replicating your existing logic)
         print("🔖 VM: Starting first buy sequence...")
-        first_sequence_success = execute_vm_first_buy_sequence(driver)
+        first_sequence_success = enhanced_execute_vm_first_buy_sequence(driver)
         
         if not first_sequence_success:
             print("❌ VM: First buy sequence failed")
@@ -1180,118 +1176,285 @@ def execute_vm_bookmark(driver, main_tab, listing_url, username):
         except Exception as cleanup_error:
             print(f"⚠️ VM CLEANUP ERROR: {cleanup_error}")
 
-def execute_vm_first_buy_sequence(driver):
+def find_buy_button_with_shadow_dom_support(driver, timeout=5):
     """
-    MODIFIED: Execute first buy sequence in VM (replicates your existing logic)
-    THIS ALL OCCURS IN THE VM
+    ULTRA FAST: Force Click primary method with minimal fallbacks
     """
-    print("🔖 VM FIRST: Starting first buy sequence...")
+    print("🔍 ULTRA FAST: Finding buy button...")
     
-    # Look for buy button (using your existing selectors)
-    buy_selectors = [
-        "button[data-testid='item-buy-button']",
-        "button.web_ui__Button__primary[data-testid='item-buy-button']",
-        "button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated",
-        "//button[@data-testid='item-buy-button']",
-        "//button[contains(@class, 'web_ui__Button__primary')]//span[text()='Buy now']"
-    ]
+    # SPEED: Primary selector that works (Force Click compatible)
+    shadow_dom_search_script = """
+    function findBuyButtonUltraFast() {
+        // PRIMARY: Direct testid selector (this worked in your log)
+        try {
+            const btn = document.querySelector('button[data-testid="item-buy-button"]');
+            if (btn) {
+                btn.setAttribute('data-vinted-found', 'primary');
+                console.log('PRIMARY: Found via data-testid');
+                return { found: true, method: 'primary_testid' };
+            }
+        } catch (e) {}
+        
+        // FALLBACK 1: Any button with buy in testid
+        try {
+            const btn = document.querySelector('button[data-testid*="buy"]');
+            if (btn) {
+                btn.setAttribute('data-vinted-found', 'fallback1');
+                console.log('FALLBACK1: Found via testid wildcard');
+                return { found: true, method: 'fallback1_testid' };
+            }
+        } catch (e) {}
+        
+        // FALLBACK 2: Quick button scan
+        const buttons = document.querySelectorAll('button');
+        for (let i = 0; i < Math.min(buttons.length, 10); i++) {
+            const btn = buttons[i];
+            const testId = btn.getAttribute('data-testid') || '';
+            const text = (btn.textContent || '').toLowerCase();
+            
+            if (testId.includes('buy') || text.includes('buy now') || text.includes('buy')) {
+                btn.setAttribute('data-vinted-found', 'fallback2');
+                console.log('FALLBACK2: Found via scan');
+                return { found: true, method: 'fallback2_scan' };
+            }
+        }
+        
+        return { found: false };
+    }
+    return findBuyButtonUltraFast();
+    """
     
-    buy_button_found = False
-    for selector in buy_selectors:
-        try:
-            print(f"🔖 VM: Trying buy button selector: {selector}")
+    try:
+        search_result = driver.execute_script(shadow_dom_search_script)
+        
+        if search_result.get('found'):
+            print(f"✅ ULTRA FAST: Buy button found via {search_result.get('method')}")
+            buy_button = driver.find_element(By.CSS_SELECTOR, '[data-vinted-found]')
+            return buy_button
+        else:
+            print("❌ ULTRA FAST: No buy button found")
+            return None
             
-            if selector.startswith('//'):
-                buy_button = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable((By.XPATH, selector))
-                )
-            else:
-                buy_button = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                )
-            
-            # Click the buy button
-            buy_button.click()
-            print(f"✅ VM FIRST: Buy button clicked with selector: {selector}")
-            buy_button_found = True
-            break
-            
-        except TimeoutException:
-            continue
-        except Exception as e:
-            print(f"❌ VM FIRST: Buy button error with {selector}: {e}")
-            continue
+    except Exception as e:
+        print(f"❌ ULTRA FAST: Search failed: {e}")
+        return None
+
+def click_buy_button_force_method(driver, buy_button):
+    """
+    FORCE CLICK: The method that worked in your log
+    """
+    print("🔄 FORCE CLICK: Using successful method...")
     
-    if not buy_button_found:
-        print("❌ VM FIRST: No buy button found - item likely sold")
+    try:
+        # PRIMARY METHOD: Force Click (this worked for you)
+        driver.execute_script("arguments[0].disabled=false; arguments[0].click();", buy_button)
+        print("✅ FORCE CLICK: Primary method successful")
+        
+        # Quick success check
+        time.sleep(0.5)  # Minimal wait
+        current_url = driver.current_url
+        
+        if 'checkout' in current_url or 'payment' in current_url:
+            return True
+        else:
+            print("⚠️ FORCE CLICK: No navigation detected, trying fallback...")
+            # FALLBACK: Standard JavaScript click
+            driver.execute_script("arguments[0].click();", buy_button)
+            time.sleep(0.5)
+            return 'checkout' in driver.current_url or 'payment' in driver.current_url
+            
+    except Exception as e:
+        print(f"❌ FORCE CLICK: Failed - {e}")
         return False
+
+
+def find_buy_button_traditional_fallback(driver):
+    """
+    FAST: Traditional search with aggressive timeouts
+    """
+    print("🔄 FALLBACK: Starting FAST traditional search...")
     
-    # Wait for payment page to load and look for pay button
-    print("💳 VM FIRST: Waiting for pay button to appear...")
-    
-    pay_button_found = False
-    pay_selectors = [
-        'button[data-testid="single-checkout-order-summary-purchase-button"]',
-        'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
-        '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
+    # SPEED: Most likely selectors first
+    fast_selectors = [
+        'button[data-testid="item-buy-button"]',
+        '//button[@data-testid="item-buy-button"]',
+        'button.web_ui__Button__primary[data-testid="item-buy-button"]',
+        '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+        '[role="button"][data-testid*="buy"]'
     ]
     
-    for selector in pay_selectors:
+    for i, selector in enumerate(fast_selectors):
         try:
+            print(f"🔍 FALLBACK: Selector {i+1}/{len(fast_selectors)}")
+            
+            # SPEED: Aggressive 2-second timeout per selector
             if selector.startswith('//'):
-                pay_button = WebDriverWait(driver, 10).until(
+                element = WebDriverWait(driver, 2).until(
                     EC.presence_of_element_located((By.XPATH, selector))
                 )
             else:
-                pay_button = WebDriverWait(driver, 10).until(
+                element = WebDriverWait(driver, 2).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                 )
             
-            print(f"✅ VM FIRST: Pay button found with selector: {selector}")
-            pay_button_found = True
-            break
+            print(f"✅ FALLBACK: Found with selector {i+1}")
+            return element
             
         except TimeoutException:
-            continue
+            continue  # SPEED: No logging for timeouts
+        except:
+            continue  # SPEED: Skip failed selectors immediately
     
-    if not pay_button_found:
-        print("❌ VM FIRST: Pay button not found")
-        return False
+    print("❌ FALLBACK: No buy button found")
+    return None
+
+def handle_payment_page_logic(driver):
+    """
+    ULTRA FAST: Payment page with minimal delays
+    """
+    print("💳 VM FIRST: ULTRA FAST payment handling...")
     
-    # Execute the critical pay sequence (your exact logic)
-    print("💳 VM FIRST: Executing critical pay sequence...")
-    
+    # SPEED: Quick pay button find
     try:
-        # Click pay button
+        pay_button = WebDriverWait(driver, 3).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 
+                'button[data-testid="single-checkout-order-summary-purchase-button"]'))
+        )
+        
+        # SPEED: Immediate click
         pay_button.click()
         print("💳 VM FIRST: Pay button clicked")
         
-        # CRITICAL: Wait exactly 0.25 seconds (your requirement)
-        print("⏱️ VM FIRST: Waiting exactly 0.25 seconds...")
+        # CRITICAL: Your exact timing requirement
         time.sleep(0.25)
         
         # CRITICAL: Close tab immediately
-        print("🗑️ VM FIRST: Closing tab immediately...")
         driver.close()
         
-        # Switch back to main tab
+        # Return to main tab
         if len(driver.window_handles) > 0:
             driver.switch_to.window(driver.window_handles[0])
-            print("✅ VM FIRST: Returned to main tab after critical sequence")
+            print("✅ VM FIRST: Back to main tab")
         
-        print("✅ VM FIRST: Critical sequence completed successfully")
         return True
         
-    except Exception as critical_error:
-        print(f"❌ VM FIRST CRITICAL ERROR: {critical_error}")
+    except Exception as e:
+        print(f"❌ VM FIRST: Payment failed - {e}")
         return False
+
+
+def debug_page_structure_fast(driver):
+    """
+    FAST: Quick page analysis for debugging
+    """
+    debug_script = """
+    function quickAnalysis() {
+        const buttons = document.querySelectorAll('button, [role="button"]');
+        const shadowRoots = Array.from(document.querySelectorAll('*')).filter(el => el.shadowRoot);
+        
+        return {
+            url: window.location.href,
+            readyState: document.readyState,
+            buttonCount: buttons.length,
+            shadowCount: shadowRoots.length,
+            topButtons: Array.from(buttons).slice(0, 5).map(btn => ({
+                text: btn.textContent?.trim() || '',
+                testId: btn.getAttribute('data-testid') || '',
+                className: btn.className || ''
+            }))
+        };
+    }
+    return quickAnalysis();
+    """
+    
+    try:
+        analysis = driver.execute_script(debug_script)
+        print(f"🔍 FAST DEBUG: {analysis['buttonCount']} buttons, {analysis['shadowCount']} shadow roots on {analysis['url']}")
+        if analysis['topButtons']:
+            for i, btn in enumerate(analysis['topButtons']):
+                print(f"  Button {i+1}: '{btn['text'][:20]}' testId='{btn['testId']}'")
+    except Exception as debug_error:
+        print(f"❌ FAST DEBUG: {debug_error}")
+
+
+def execute_vm_bookmark_enhanced_fast(driver, main_tab, listing_url, username):
+    """
+    STREAMLINED: Ultra-fast bookmark execution with fixed second sequence
+    """
+    print(f"🚀 VM ULTRA FAST: Bookmarking {listing_url[:50]}...")
+    
+    try:
+        # SPEED: Quick tab creation
+        driver.execute_script("window.open('');")
+        bookmark_tab = driver.window_handles[-1]
+        driver.switch_to.window(bookmark_tab)
+        
+        # SPEED: Fast navigation
+        driver.get(listing_url)
+        WebDriverWait(driver, 3).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        
+        # SPEED: Minimal wait
+        time.sleep(0.5)
+        
+        # Execute ultra-fast first sequence
+        first_success = enhanced_execute_vm_first_buy_sequence(driver)
+        
+        if not first_success:
+            print("❌ VM ULTRA FAST: First sequence failed")
+            return False
+        
+        # FIXED: Execute second sequence with proper buy button click
+        second_success = execute_vm_second_sequence(driver, listing_url, username)
+        
+        if second_success:
+            print("🎉 VM ULTRA FAST: Bookmark completed successfully!")
+            return True
+        else:
+            print("❌ VM ULTRA FAST: Second sequence failed")
+            return False
+            
+    except Exception as e:
+        print(f"❌ VM ULTRA FAST: Error - {e}")
+        return False
+        
+    finally:
+        # Quick cleanup
+        try:
+            if len(driver.window_handles) > 1:
+                driver.close()
+                driver.switch_to.window(main_tab)
+        except:
+            pass
+
+
+def enhanced_execute_vm_first_buy_sequence(driver):
+    """
+    ULTRA FAST: Streamlined first sequence using proven Force Click method
+    """
+    print("🔖 VM FIRST: ULTRA FAST first sequence...")
+    
+    # SPEED: Quick buy button detection
+    buy_button = find_buy_button_with_shadow_dom_support(driver, timeout=5)
+    
+    if buy_button is None:
+        print("❌ VM FIRST: No buy button found")
+        return False
+    
+    # SPEED: Use the proven Force Click method immediately
+    if not click_buy_button_force_method(driver, buy_button):
+        print("❌ VM FIRST: Force click failed")
+        return False
+    
+    # SPEED: Quick payment page handling
+    return handle_payment_page_logic(driver)
 
 def execute_vm_second_sequence(driver, listing_url, username):
     """
-    MODIFIED: Execute second sequence in VM with monitoring
-    THIS ALL OCCURS IN THE VM
+    FIXED: Second sequence with MISSING buy button click + processing payment detection
     """
-    print("🔖 VM SECOND: Starting second sequence...")
+    print("🔖 VM SECOND: Starting FIXED second sequence...")
     
     try:
         # Open new tab for second sequence
@@ -1300,50 +1463,120 @@ def execute_vm_second_sequence(driver, listing_url, username):
         driver.switch_to.window(second_tab)
         print("✅ VM SECOND: New tab opened")
         
-        # Navigate again
+        # Navigate to listing
         driver.get(listing_url)
+        WebDriverWait(driver, 5).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
         print("✅ VM SECOND: Navigated to listing")
         
-        # Look for buy button again
-        buy_selectors = [
-            "button[data-testid='item-buy-button']",
-            "//button[@data-testid='item-buy-button']",
-        ]
+        # FIXED: MISSING BUY BUTTON CLICK ON SECOND TAB
+        print("🔄 VM SECOND: CLICKING BUY BUTTON (was missing!)...")
         
-        second_buy_found = False
-        for selector in buy_selectors:
+        buy_button = find_buy_button_with_shadow_dom_support(driver, timeout=5)
+        if buy_button is None:
+            print("❌ VM SECOND: No buy button found on second tab")
+            return False
+        
+        # FIXED: Click buy button on second tab
+        if not click_buy_button_force_method(driver, buy_button):
+            print("❌ VM SECOND: Buy button click failed on second tab")
+            return False
+        
+        print("✅ VM SECOND: Buy button clicked on second tab")
+        
+        # FIXED: Look for 'Processing payment' message
+        print("🔍 VM SECOND: Looking for 'Processing payment' message...")
+        
+        processing_found = check_for_processing_payment(driver)
+        
+        if processing_found:
+            print("🎉 VM SECOND: 'Processing payment' found - bookmark successful!")
+            return True
+        else:
+            print("⚠️ VM SECOND: No 'Processing payment' found, waiting for 'Purchase unsuccessful'...")
+            return wait_for_purchase_unsuccessful(driver, listing_url, username)
+        
+    except Exception as e:
+        print(f"❌ VM SECOND: Error - {e}")
+        return False
+    
+    finally:
+        # Clean up second tab
+        try:
+            if len(driver.window_handles) > 1:
+                driver.close()
+                driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+
+def check_for_processing_payment(driver):
+    """
+    FAST: Check for 'Processing payment' message
+    """
+    processing_selectors = [
+        "//h2[text()='Processing payment']",
+        "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
+        "//*[contains(text(), 'Processing payment')]",
+        "//*[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]"
+    ]
+    
+    for selector in processing_selectors:
+        try:
+            element = WebDriverWait(driver, 2).until(
+                EC.presence_of_element_located((By.XPATH, selector))
+            )
+            print("✅ VM SECOND: 'Processing payment' message found!")
+            return True
+        except TimeoutException:
+            continue
+    
+    print("❌ VM SECOND: 'Processing payment' message not found")
+    return False
+
+
+def wait_for_purchase_unsuccessful(driver, listing_url, username):
+    """
+    FAST: Wait for 'Purchase unsuccessful' message
+    """
+    print("⏳ VM SECOND: Waiting for 'Purchase unsuccessful' message...")
+    
+    # Register this URL for monitoring (from your existing global system)
+    global purchase_unsuccessful_detected_urls
+    purchase_unsuccessful_detected_urls[listing_url] = {
+        'waiting': True,
+        'start_time': time.time()
+    }
+    
+    unsuccessful_selectors = [
+        "//h2[text()='Purchase unsuccessful']",
+        "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left web_ui__Text__warning' and text()='Purchase unsuccessful']",
+        "//*[contains(text(), 'Purchase unsuccessful')]"
+    ]
+    
+    # Wait up to 30 seconds for 'Purchase unsuccessful'
+    for attempt in range(purchase_unsuccessful_wait_time):  # 30 seconds total
+        for selector in unsuccessful_selectors:
             try:
-                if selector.startswith('//'):
-                    buy_button = WebDriverWait(driver, 15).until(
-                        EC.element_to_be_clickable((By.XPATH, selector))
-                    )
-                else:
-                    buy_button = WebDriverWait(driver, 15).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                    )
+                element = WebDriverWait(driver, 1).until(
+                    EC.presence_of_element_located((By.XPATH, selector))
+                )
+                print("🎯 VM SECOND: 'Purchase unsuccessful' detected!")
                 
-                buy_button.click()
-                print(f"✅ VM SECOND: Second buy button clicked")
-                second_buy_found = True
-                break
+                # Signal to buying drivers
+                if listing_url in purchase_unsuccessful_detected_urls:
+                    purchase_unsuccessful_detected_urls[listing_url]['waiting'] = False
+                
+                return True
                 
             except TimeoutException:
                 continue
         
-        if second_buy_found:
-            # Check for processing payment message (your logic)
-            processing_success = check_vm_processing_payment(driver)
-            if processing_success:
-                print("✅ VM SECOND: Processing payment found - bookmark successful!")
-                return True
-        
-        # If not found, continue with messages sequence (your logic)
-        print("🔖 VM SECOND: Continuing with messages sequence...")
-        return execute_vm_messages_sequence(driver, listing_url, username)
-        
-    except Exception as second_error:
-        print(f"❌ VM SECOND ERROR: {second_error}")
-        return False
+        print(f"⏳ VM SECOND: Waiting... attempt {attempt + 1}/30")
+        time.sleep(1)
+    
+    print("⏰ VM SECOND: Timeout waiting for 'Purchase unsuccessful'")
+    return False
 
 def check_vm_processing_payment(driver):
     """
