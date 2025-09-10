@@ -1,4 +1,156 @@
 # Continuation from line 2201
+                time.sleep(random.uniform(0.2, 0.5))
+                action.click().perform()
+                
+                print("Successfully clicked Verify button!")
+                
+                # Wait to see the result
+                time.sleep(random.uniform(2.0, 4.0))
+                
+                self.driver.switch_to.default_content()
+                return True
+                
+            else:
+                print("Could not find Verify button")
+                self.driver.switch_to.default_content()
+                return False
+                
+        except Exception as e:
+            print(f"Error inputting captcha solution: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                self.driver.switch_to.default_content()
+            except:
+                pass
+            return False
+
+    def preprocess_audio(self, audio_data, sample_rate):
+        """Enhanced audio preprocessing for better recognition"""
+        audio_np = np.frombuffer(audio_data, dtype=np.int16)
+        
+        if self.CHANNELS == 2:
+            audio_np = audio_np.reshape(-1, 2).mean(axis=1).astype(np.int16)
+        
+        if np.max(np.abs(audio_np)) > 0:
+            audio_np = audio_np.astype(np.float32)
+            audio_np = audio_np / np.max(np.abs(audio_np)) * 0.8
+        
+        nyquist = sample_rate / 2
+        high_cutoff = 100
+        high = high_cutoff / nyquist
+        b, a = signal.butter(2, high, btype='high')
+        audio_np = signal.filtfilt(b, a, audio_np)
+        
+        low_cutoff = 8000
+        low = low_cutoff / nyquist
+        b, a = signal.butter(2, low, btype='low')
+        audio_np = signal.filtfilt(b, a, audio_np)
+        
+        if HAS_NOISEREDUCE:
+            try:
+                noise_sample_length = min(sample_rate, len(audio_np) // 4)
+                if len(audio_np) > noise_sample_length * 2:
+                    audio_np = nr.reduce_noise(
+                        y=audio_np, 
+                        sr=sample_rate,
+                        stationary=False,
+                        prop_decrease=0.8
+                    )
+            except Exception as e:
+                print(f"Noise reduction failed: {e}")
+        
+        pre_emphasis = 0.97
+        audio_np = np.append(audio_np[0], audio_np[1:] - pre_emphasis * audio_np[:-1])
+        
+        if np.max(np.abs(audio_np)) > 0:
+            audio_np = audio_np / np.max(np.abs(audio_np)) * 0.9
+        
+        audio_np = (audio_np * 32767).astype(np.int16)
+        return audio_np.tobytes()
+    
+    def process_audio_data(self, audio_data):
+        """Process audio data and extract numbers"""
+        try:
+            audio_np = np.frombuffer(audio_data, dtype=np.int16)
+            volume = np.sqrt(np.mean(audio_np**2))
+            max_volume = np.max(np.abs(audio_np))
+            
+            print(f"Audio volume: {volume:.1f}, max: {max_volume}")
+            
+            if volume < 8:
+                print("Audio too quiet, skipping...")
+                return
+            
+            processed_audio = self.preprocess_audio(audio_data, self.RATE)
+            
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+                wf = wave.open(tmp_file.name, 'wb')
+                wf.setnchannels(1)
+                wf.setsampwidth(self.p.get_sample_size(self.FORMAT))
+                wf.setframerate(self.RATE)
+                wf.writeframes(processed_audio)
+                wf.close()
+                
+                try:
+                    with sr.AudioFile(tmp_file.name) as source:
+                        self.recognizer.adjust_for_ambient_noise(source, duration=0.3)
+                        audio = self.recognizer.record(source)
+                        
+                        print("Attempting speech recognition...")
+                        
+                        text = None
+                        try:
+                            # Try with show_all=True to get confidence scores and alternatives
+                            result = self.recognizer.recognize_google(audio, language='en-US', show_all=True)
+                            if isinstance(result, dict) and 'alternative' in result:
+                                # Get the most confident result
+                                text = result['alternative'][0]['transcript']
+                                print(f"Google Recognition (detailed): '{text}'")
+                                
+                                # Also check other alternatives for better matches
+                                for alt in result['alternative'][:3]:  # Check top 3 alternatives
+                                    alt_text = alt['transcript']
+                                    alt_numbers = self.extract_numbers_sequence(alt_text)
+                                    if len(alt_numbers) >= 6:
+                                        text = alt_text
+                                        print(f"Using alternative with more numbers: '{text}'")
+                                        break
+                            else:
+                                text = self.recognizer.recognize_google(audio, language='en-US', show_all=False)
+                                print(f"Google Recognition: '{text}'")
+                                
+                        except (sr.UnknownValueError, sr.RequestError):
+                            print("Google recognition failed, trying Sphinx...")
+                            try:
+                                text = self.recognizer.recognize_sphinx(audio)
+                                print(f"Sphinx Recognition: '{text}'")
+                            except:
+                                print("Sphinx recognition also failed")
+                        
+                        if text:
+                            timestamp = time.strftime("%H:%M:%S")
+                            
+                            # Try to find complete sequence
+                            complete_seq = self.find_complete_sequence(text)
+                            if complete_seq and len(complete_seq) == 6:
+                                with self.numbers_lock:
+                                    self.complete_sequence = complete_seq
+                                    print(f"\n[{timestamp}] *** COMPLETE SEQUENCE FOUND: {complete_seq} ***")
+                                    print(f"[{timestamp}] From text: '{text}'")
+                                    print("="*60)
+                                    print(f"SUCCESS! Complete 6-digit sequence: {complete_seq}")
+                                    print("="*60)
+                                    
+                                    # Input the sequence into the captcha form
+                                    if self.input_captcha_solution(complete_seq):
+                                        print("Successfully inputted captcha solution!")
+                                    else:
+                                        print("Failed to input captcha solution")
+                                    
+                                    self.stop()
+                                    return
+                            
                             # Otherwise collect individual numbers
                             numbers = self.extract_numbers_sequence(text)
                             if numbers:
@@ -2047,155 +2199,3 @@ class VintedScraper:
                 # Check timeout
                 if elapsed >= timeout:
                     print(f"⏰ DRIVER {driver_num}: Monitoring timeout after {elapsed/60:.1f} minutes")
-                    break
-                
-                # Check if driver is still alive
-                try:
-                    driver.current_url
-                except:
-                    print(f"💀 DRIVER {driver_num}: Driver died during monitoring")
-                    break
-                
-                # CRITICAL: Check if "Purchase unsuccessful" was detected
-                if url in purchase_unsuccessful_detected_urls:
-                    entry = purchase_unsuccessful_detected_urls[url]
-                    if not entry.get('waiting', True):  # Flag changed by bookmark driver
-                        print(f"🎯 DRIVER {driver_num}: 'Purchase unsuccessful' detected! CLICKING PAY NOW!")
-                        
-                        # IMMEDIATELY click pay button
-                        try:
-                            # Try multiple click methods for maximum reliability
-                            pay_clicked = False
-                            
-                            # Method 1: Standard click
-                            try:
-                                pay_button.click()
-                                pay_clicked = True
-                                print(f"✅ DRIVER {driver_num}: Pay clicked using standard method")
-                            except:
-                                # Method 2: JavaScript click
-                                try:
-                                    driver.execute_script("arguments[0].click();", pay_button)
-                                    pay_clicked = True
-                                    print(f"✅ DRIVER {driver_num}: Pay clicked using JavaScript")
-                                except:
-                                    # Method 3: Force enable and click
-                                    try:
-                                        driver.execute_script("""
-                                            arguments[0].disabled = false;
-                                            arguments[0].click();
-                                        """, pay_button)
-                                        pay_clicked = True
-                                        print(f"✅ DRIVER {driver_num}: Pay clicked using force method")
-                                    except Exception as final_error:
-                                        print(f"❌ DRIVER {driver_num}: All pay click methods failed: {final_error}")
-                            
-                            if pay_clicked:
-                                print(f"💳 DRIVER {driver_num}: Payment initiated successfully!")
-                                
-                                # Continue with existing purchase logic
-                                self.handle_post_payment_logic(driver, driver_num, url)
-                            
-                            break  # Exit monitoring loop
-                            
-                        except Exception as click_error:
-                            print(f"❌ DRIVER {driver_num}: Error clicking pay button: {click_error}")
-                            break
-                
-                # Sleep briefly before next check
-                time.sleep(check_interval)
-        
-        except Exception as monitoring_error:
-            print(f"❌ DRIVER {driver_num}: Monitoring error: {monitoring_error}")
-        
-        finally:
-            # Clean up monitoring entry
-            if url in purchase_unsuccessful_detected_urls:
-                del purchase_unsuccessful_detected_urls[url]
-            
-            print(f"🧹 DRIVER {driver_num}: Monitoring cleanup completed")
-
-
-    def process_single_listing_with_driver_modified(self, url, driver_num, driver):
-        """
-        MODIFIED: Process listing that immediately navigates to buy page and waits for "Purchase unsuccessful"
-        """
-        print(f"🔥 DRIVER {driver_num}: Starting MODIFIED processing of {url[:50]}...")
-        
-        try:
-            # Driver health check
-            try:
-                current_url = driver.current_url
-                print(f"✅ DRIVER {driver_num}: Driver alive")
-            except Exception as e:
-                print(f"❌ DRIVER {driver_num}: Driver is dead: {str(e)}")
-                return
-            
-            # Open new tab
-            try:
-                driver.execute_script("window.open('');")
-                new_tab = driver.window_handles[-1]
-                driver.switch_to.window(new_tab)
-                print(f"✅ DRIVER {driver_num}: New tab opened")
-            except Exception as e:
-                print(f"❌ DRIVER {driver_num}: Failed to open new tab: {str(e)}")
-                return
-            
-            # Navigate to URL
-            actual_url = test_purchase_url if test_purchase_not_true else url
-            
-            navigation_success = False
-            for nav_attempt in range(3):
-                try:
-                    driver.get(actual_url)
-                    WebDriverWait(driver, 8).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
-                    navigation_success = True
-                    print(f"✅ DRIVER {driver_num}: Navigation successful")
-                    break
-                except Exception as nav_error:
-                    print(f"❌ DRIVER {driver_num}: Navigation attempt {nav_attempt+1} failed: {str(nav_error)}")
-                    if nav_attempt < 2:
-                        time.sleep(1)
-            
-            if not navigation_success:
-                print(f"❌ DRIVER {driver_num}: All navigation attempts failed")
-                try:
-                    driver.close()
-                    if len(driver.window_handles) > 0:
-                        driver.switch_to.window(driver.window_handles[0])
-                except:
-                    pass
-                return
-            
-            # Click Buy now button
-            buy_button_clicked = False
-            buy_selectors = [
-                'button[data-testid="item-buy-button"]',
-                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
-                '//button[@data-testid="item-buy-button"]',
-                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]'
-            ]
-            
-            for selector in buy_selectors:
-                try:
-                    if selector.startswith('//'):
-                        buy_button = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.XPATH, selector))
-                        )
-                    else:
-                        buy_button = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                        )
-                    
-                    # Try multiple click methods
-                    for click_method in ['standard', 'javascript']:
-                        try:
-                            if click_method == 'standard':
-                                buy_button.click()
-                            else:
-                                driver.execute_script("arguments[0].click();", buy_button)
-                            
-                            buy_button_clicked = True
-                            print(f"✅ DRIVER {driver_num}: Buy button clicked using {click_method}")
