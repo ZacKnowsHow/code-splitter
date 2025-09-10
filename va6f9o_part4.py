@@ -1,4 +1,389 @@
 # Continuation from line 6601
+            
+            while True:  # Page loop
+                try:
+                    WebDriverWait(current_driver, 20).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                    )
+                except TimeoutException:
+                    print("⚠️ Timeout waiting for page to load - moving to next cycle")
+                    break
+
+                # Get listing URLs from current page
+                els = current_driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
+                urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
+                
+                if not urls:
+                    print(f"📄 No listings found on page {page} - moving to next cycle")
+                    break
+
+                print(f"📄 Processing page {page} with {len(urls)} listings")
+
+                for idx, url in enumerate(urls, start=1):
+                    cycle_listing_counter += 1
+                    
+                    print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
+                    
+                    # Extract listing ID and check if already scanned
+                    listing_id = self.extract_vinted_listing_id(url)
+                    
+                    if REFRESH_AND_RESCAN and listing_id:
+                        if listing_id in scanned_ids:
+                            print(f"🔁 DUPLICATE DETECTED: Listing ID {listing_id} already scanned")
+                            print(f"🔄 Initiating refresh and rescan process...")
+                            found_already_scanned = True
+                            break
+                    
+                    # Check if we've hit the maximum listings for this cycle
+                    if REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                        print(f"📊 Reached MAX_LISTINGS_VINTED_TO_SCAN ({MAX_LISTINGS_VINTED_TO_SCAN})")
+                        print(f"🔄 Initiating refresh cycle...")
+                        break
+
+                    overall_listing_counter += 1
+
+
+                    # Process the listing (using current_driver instead of driver)
+                    current_driver.execute_script("window.open();")
+                    current_driver.switch_to.window(current_driver.window_handles[-1])
+                    current_driver.get(url)
+
+                    try:
+                        listing_start_time = time.time()
+                        details = self.scrape_item_details(current_driver)
+                        second_price = self.extract_price(details["second_price"])
+                        postage = self.extract_price(details["postage"])
+                        total_price = second_price + postage
+
+                        print(f"  Link:         {url}")
+                        print(f"  Title:        {details['title']}")
+                        print(f"  Username:     {details.get('username', 'Username not found')}")
+                        print(f"  Price:        {details['price']}")
+                        print(f"  Second price: {details['second_price']} ({second_price:.2f})")
+                        print(f"  Postage:      {details['postage']} ({postage:.2f})")
+                        print(f"  Total price:  £{total_price:.2f}")
+                        print(f"  Uploaded:     {details['uploaded']}")
+
+                        # Download images for the current listing
+                        listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
+                        image_paths = self.download_images_for_listing(current_driver, listing_dir)
+
+                        # Perform object detection and get processed images
+                        detected_objects = {}
+                        processed_images = []
+                        if model and image_paths:
+                            detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
+                            
+                            # Print detected objects
+                            detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
+                            if detected_classes:
+                                for cls in sorted(detected_classes):
+                                    print(f"  • {cls}: {detected_objects[cls]}")
+
+                        # Process listing for pygame display
+                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
+
+                        # Mark this listing as scanned
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+                            print(f"✅ Saved listing ID: {listing_id}")
+
+                        print("-" * 40)
+                        self.cleanup_processed_images(processed_images)
+                        listing_end_time = time.time()
+                        elapsed_time = listing_end_time - listing_start_time
+                        print(f"⏱️ Listing {overall_listing_counter} processing completed in {elapsed_time:.2f} seconds")
+
+                        
+                    except Exception as e:
+                        print(f"  ❌ ERROR scraping listing: {e}")
+                        # Still mark as scanned even if there was an error
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+
+                    finally:
+                        current_driver.close()
+                        current_driver.switch_to.window(current_driver.window_handles[0])  # Use index 0 instead of main
+
+                # Check if we need to break out of page loop
+                if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
+                    break
+
+                # Try to go to next page
+                try:
+                    nxt = current_driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
+                    current_driver.execute_script("arguments[0].click();", nxt)
+                    page += 1
+                    time.sleep(2)
+                except NoSuchElementException:
+                    print("📄 No more pages available - moving to next cycle")
+                    break
+
+            # End of page loop - decide whether to continue or refresh
+            if not REFRESH_AND_RESCAN:
+                print("🏁 REFRESH_AND_RESCAN disabled - ending scan")
+                break
+            
+            if found_already_scanned:
+                print(f"🔁 Found already scanned listing - refreshing immediately")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+            elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+            else:
+                print("📄 No more pages and no max reached - refreshing for new listings")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+
+            refresh_cycle += 1
+            cycles_since_restart += 1  # NEW: Increment counter after each cycle
+            is_first_refresh = False
+
+    def start_cloudflare_tunnel(self, port=5000):
+        """
+        Starts a Cloudflare Tunnel using the cloudflared binary.
+        Adjust the cloudflared_path if your executable is in a different location.
+        """
+        # Path to the cloudflared executable
+        #pc
+        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #laptop
+        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
+        
+        # Start the tunnel with the desired command-line arguments
+        process = subprocess.Popen(
+            [cloudflared_path, "tunnel", "--url", f"http://localhost:{port}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Function to read and print cloudflared output asynchronously
+        def read_output(proc):
+            for line in proc.stdout:
+                print("[cloudflared]", line.strip())
+        
+        # Start a thread to print cloudflared output so you can see the public URL and any errors
+        threading.Thread(target=read_output, args=(process,), daemon=True).start()
+        
+        # Wait a few seconds for the tunnel to establish (adjust if needed).
+        time.sleep(5)
+        return process
+
+    def run_flask_app(self):
+        try:
+            print("Starting Flask app for https://fk43b0p45crc03r.xyz/")
+            
+            # Run Flask locally - your domain should be configured to tunnel to this
+            app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+            
+        except Exception as e:
+            print(f"Error starting Flask app: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def is_monitoring_active(self):
+        """Check if any monitoring threads are still active"""
+        # Check if current bookmark driver exists (indicates monitoring might be active)
+        if hasattr(self, 'current_bookmark_driver') and self.current_bookmark_driver is not None:
+            try:
+                # Try to access the driver - if it fails, monitoring is done
+                self.current_bookmark_driver.current_url
+                return True
+            except:
+                return False
+        return False
+
+    def _execute_bookmark_sequences_with_monitoring(self, current_driver, listing_url, username, step_log):
+        """Execute bookmark sequences with Purchase unsuccessful monitoring"""
+        actual_url = step_log['actual_url']
+        bookmark_start_time = time.time()
+        self._log_step(step_log, "function_start", True)
+        
+        # Create new tab and navigate
+        if not self._create_tab_and_navigate(current_driver, actual_url, step_log):
+            return False
+        
+        # Execute first buy sequence (critical sequence)
+        first_sequence_success = self._execute_first_buy_sequence(current_driver, step_log)
+        
+        if not first_sequence_success:
+            return False
+        
+        # Execute second sequence with monitoring (MODIFIED PART)
+        return self._execute_second_sequence_with_monitoring(current_driver, actual_url, username, step_log)
+
+
+    def _initialize_step_logging(self):
+        """Initialize the step logging dictionary"""
+        return {
+            'start_time': time.time(),
+            'driver_number': self.current_bookmark_driver_index + 1,
+            'steps_completed': [],
+            'failures': [],
+            'success': False,
+            'critical_sequence_completed': False
+        }
+
+    def _validate_bookmark_inputs(self, listing_url, username, step_log):
+        """Validate inputs for bookmark function"""
+        print(f'🔖 CYCLING: Starting bookmark process with driver {step_log["driver_number"]}/5')
+        
+        # Test mode handling
+        if test_bookmark_function:
+            actual_url = test_bookmark_link
+            self._log_step(step_log, "test_mode_activated", True, f"Using test URL: {actual_url}")
+        else:
+            actual_url = listing_url
+            self._log_step(step_log, "normal_mode_activated", True)
+        
+        # Username validation
+        if not username:
+            self._log_step(step_log, "username_validation", False, "No username provided")
+            print("⚠️ Could not extract username, possible unable to detect false buy, exiting.")
+            sys.exit(0)
+        
+        self._log_step(step_log, "username_validation", True, f"Username: {username}")
+        print(f"🔖 Looking at listing {actual_url} posted by {username}")
+        
+        # Store the actual URL for later use
+        step_log['actual_url'] = actual_url
+        return True
+
+    def _create_tab_and_navigate(self, current_driver, actual_url, step_log):
+        """Create new tab and navigate to the listing URL"""
+        try:
+            # ENHANCED TAB MANAGEMENT
+            stopwatch_start = time.time()
+            print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
+            current_driver.execute_script("window.open('');")
+            new_tab = current_driver.window_handles[-1]
+            current_driver.switch_to.window(new_tab)
+            self._log_step(step_log, "new_tab_created", True, f"Total tabs: {len(current_driver.window_handles)}")
+            
+            # ROBUST NAVIGATION with retry
+            navigation_success = False
+            for nav_attempt in range(3):
+                try:
+                    self._log_step(step_log, f"navigation_attempt_{nav_attempt+1}", True)
+                    current_driver.get(actual_url)
+                    navigation_success = True
+                    self._log_step(step_log, "navigation_complete", True)
+                    break
+                except Exception as nav_error:
+                    self._log_step(step_log, f"navigation_attempt_{nav_attempt+1}", False, str(nav_error))
+                    if nav_attempt == 2:
+                        self._log_step(step_log, "navigation_final_failure", False, "All navigation attempts failed")
+                        break
+                    time.sleep(1)
+            
+            if not navigation_success:
+                self._log_step(step_log, "navigation_failed", False, "Could not navigate to listing")
+                return False
+                
+            return True
+            
+        except Exception as e:
+            self._log_step(step_log, "tab_creation_error", False, str(e))
+            return False
+
+
+    def _execute_first_buy_sequence(self, current_driver, step_log):
+        """Execute the first buy sequence with NEW pay-button-first logic"""
+        self._log_step(step_log, "first_sequence_start", True)
+        
+        # Find and click first buy button
+        first_buy_element, first_buy_selector = self._try_selectors(
+            current_driver, 
+            'buy_button', 
+            operation='click', 
+            timeout=5, 
+            click_method='all',
+            step_log=step_log
+        )
+        
+        if not first_buy_element:
+            self._log_step(step_log, "first_buy_button_not_found", False, "Item likely already sold")
+            print('🔖 FIRST SEQUENCE: Buy button not found - this means ALREADY SOLD!!!')
+            return False
+        
+        self._log_step(step_log, "first_buy_button_clicked", True, f"Used: {first_buy_selector[:30]}...")
+        
+        # NEW LOGIC: Wait for pay button to appear (indicates page has loaded)
+        print("💳 PAY BUTTON WAIT: Waiting for pay button to determine page has loaded...")
+        
+        pay_button_found = False
+        pay_button = None
+        pay_selector = None
+        
+        # Repeatedly search for pay button until found
+        max_pay_wait_attempts = 20  # 20 attempts * 0.5s = 10 seconds max wait
+        pay_wait_attempt = 0
+        
+        while not pay_button_found and pay_wait_attempt < max_pay_wait_attempts:
+            pay_wait_attempt += 1
+            
+            pay_element, pay_sel = self._try_selectors(
+                current_driver,
+                'pay_button',
+                operation='find',
+                timeout=0.5,  # Short timeout for each attempt
+                step_log=step_log
+            )
+            
+            if pay_element:
+                pay_button_found = True
+                pay_button = pay_element
+                pay_selector = pay_sel
+                print(f"✅ PAY BUTTON FOUND: Page loaded (attempt {pay_wait_attempt})")
+                self._log_step(step_log, "pay_button_found", True, f"Found after {pay_wait_attempt} attempts")
+                break
+            
+            # Short wait between attempts
+            time.sleep(0.5)
+        
+        if not pay_button_found:
+            self._log_step(step_log, "pay_button_not_found", False, "Payment interface never loaded")
+            print("❌ PAY BUTTON: Never found - payment interface not available")
+            return False
+        
+        # NOW handle shipping options (page is confirmed loaded)
+        print("🚢 SHIPPING CHECK: Starting shipping option validation...")
+        
+        pay_button_is_valid = True  # Track if our pay button reference is still valid
+        
+        try:
+            # Check if "Ship to pick-up point" is selected (aria-checked="true")
+            pickup_selected = False
+            try:
+                pickup_element = current_driver.find_element(
+                    By.XPATH, 
+                    '//div[@data-testid="delivery-option-pickup" and @aria-checked="true"]'
+                )
+                pickup_selected = True
+                print("📦 PICKUP SELECTED: Ship to pick-up point is currently selected")
+                self._log_step(step_log, "pickup_point_selected", True)
+            except NoSuchElementException:
+                print("🏠 HOME SELECTED: Ship to home is selected (or pickup not selected)")
+                self._log_step(step_log, "ship_home_selected", True)
+                pickup_selected = False
+            
+            # If pickup is selected, check for "Choose a pick-up point" message
+            if pickup_selected:
+                try:
+                    choose_pickup_element = current_driver.find_element(
+                        By.XPATH,
+                        '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Choose a pick-up point"]'
+                    )
+                    
+                    # If we can see "Choose a pick-up point", we need to switch to Ship to home
+                    print("⚠️ PICKUP ISSUE: Found 'Choose a pick-up point' - need to switch to Ship to home")
+                    self._log_step(step_log, "choose_pickup_point_found", True)
+                    
+                    # Click "Ship to home"
+                    try:
+                        ship_home_element = current_driver.find_element(
                             By.XPATH,
                             '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
                         )
