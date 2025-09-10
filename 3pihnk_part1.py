@@ -211,7 +211,7 @@ recent_listings = {
 
 review_min = 3
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
-MAX_LISTINGS_VINTED_TO_SCAN = 1  # Maximum listings to scan before refresh
+MAX_LISTINGS_VINTED_TO_SCAN = 5  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 0  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
@@ -392,13 +392,12 @@ def send_keypress_with_pyautogui(key, hold_time=None):
         print(f"PyAutoGUI keystroke failed for {key}: {e}")
         return False
 
-def vm_clear_browser_data(self, vm_ip_address, profile_config):
+def clear_browser_data(vm_ip_address="192.168.56.101"):
     """
-    Clear browser data using VM - MATCHES the working script exactly
-    This creates a driver, clears data, then closes the driver
+    Clear browser data before main execution using same VM profile
     """
     print("=" * 50)
-    print("VM BOOKMARK: Clearing browser data...")
+    print("CLEARING BROWSER DATA...")
     print("=" * 50)
     
     clear_driver = None
@@ -406,16 +405,16 @@ def vm_clear_browser_data(self, vm_ip_address, profile_config):
     try:
         print("Step 1: Setting up temporary driver for data clearing...")
         
-        # Use same Chrome options as working script
+        # Use same Chrome options as main driver for consistency
         chrome_options = ChromeOptions()
-        chrome_options.add_argument(f'--user-data-dir={profile_config["user_data_dir"]}')
-        chrome_options.add_argument(f'--profile-directory={profile_config["profile_directory"]}')
+        chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
+        chrome_options.add_argument('--profile-directory=Profile 4')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         chrome_options.add_argument('--force-device-scale-factor=1')
         chrome_options.add_argument('--high-dpi-support=1')
-        chrome_options.add_argument('--remote-debugging-port=9223')  # Different port
+        chrome_options.add_argument('--remote-debugging-port=9223')  # Different port from main
         chrome_options.add_argument('--remote-allow-origins=*')
         chrome_options.add_argument('--disable-features=VizDisplayCompositor')
         chrome_options.add_argument('--disable-dev-shm-usage')
@@ -425,7 +424,7 @@ def vm_clear_browser_data(self, vm_ip_address, profile_config):
         chrome_options.add_argument('--disable-web-security')
         chrome_options.add_argument('--allow-running-insecure-content')
         
-        # Create driver connection - EXACTLY like working script
+        # Create driver connection
         clear_driver = webdriver.Remote(
             command_executor=f'http://{vm_ip_address}:4444',
             options=chrome_options
@@ -442,7 +441,7 @@ def vm_clear_browser_data(self, vm_ip_address, profile_config):
         
         print("Step 4: Accessing Shadow DOM to find clear button...")
         
-        # EXACT same JavaScript from working script
+        # JavaScript to navigate Shadow DOM and click the clear button
         shadow_dom_script = """
         function findAndClickClearButton() {
             // Multiple strategies to find the clear button in Shadow DOM
@@ -531,9 +530,10 @@ def vm_clear_browser_data(self, vm_ip_address, profile_config):
         else:
             print("✗ Failed to find clear button in Shadow DOM")
             
-            # Fallback: Try keyboard shortcut like working script
+            # Fallback: Try to trigger clear via keyboard shortcut
             print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
             try:
+                from selenium.webdriver.common.keys import Keys
                 body = clear_driver.find_element(By.TAG_NAME, "body")
                 body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
                 time.sleep(1)
@@ -546,12 +546,11 @@ def vm_clear_browser_data(self, vm_ip_address, profile_config):
         
     except Exception as e:
         print(f"✗ Browser data clearing failed: {str(e)}")
-        print("Continuing anyway...")
+        print("Continuing with main execution anyway...")
         import traceback
         traceback.print_exc()
     
     finally:
-        # CRITICAL: Always close the driver - MATCHES working script
         if clear_driver:
             try:
                 print("Step 6: Closing temporary driver...")
@@ -561,7 +560,7 @@ def vm_clear_browser_data(self, vm_ip_address, profile_config):
                 print(f"Warning: Failed to close temporary driver: {e}")
         
         print("=" * 50)
-        print("VM BOOKMARK: Browser data clear complete")
+        print("BROWSER DATA CLEAR COMPLETE")
         print("=" * 50)
         time.sleep(0.5)  # Brief pause before continuing
 
@@ -918,7 +917,7 @@ def main_vm_driver():
     vm_ip_address = "192.168.56.101"  # Replace with your actual VM IP
     
     # Clear browser data first using same VM profile
-    vm_clear_browser_data(vm_ip_address)
+    clear_browser_data(vm_ip_address)
     
     # Small delay before creating main driver
     time.sleep(1)
@@ -2198,3 +2197,4 @@ def render_main_page():
                     transform: translateY(-2px);
                     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
                 }}
+                .buy-no-button:active {{
