@@ -1,4 +1,156 @@
 # Continuation from line 4401
+                    break
+                
+                # Check if driver is still alive
+                try:
+                    driver.current_url
+                except:
+                    print(f"💀 DRIVER {driver_num}: Driver died during monitoring")
+                    break
+                
+                # CRITICAL: Check if "Purchase unsuccessful" was detected
+                if url in purchase_unsuccessful_detected_urls:
+                    entry = purchase_unsuccessful_detected_urls[url]
+                    if not entry.get('waiting', True):  # Flag changed by bookmark driver
+                        print(f"🎯 DRIVER {driver_num}: 'Purchase unsuccessful' detected! CLICKING PAY NOW!")
+                        
+                        # IMMEDIATELY click pay button
+                        try:
+                            # Try multiple click methods for maximum reliability
+                            pay_clicked = False
+                            
+                            # Method 1: Standard click
+                            try:
+                                pay_button.click()
+                                pay_clicked = True
+                                print(f"✅ DRIVER {driver_num}: Pay clicked using standard method")
+                            except:
+                                # Method 2: JavaScript click
+                                try:
+                                    driver.execute_script("arguments[0].click();", pay_button)
+                                    pay_clicked = True
+                                    print(f"✅ DRIVER {driver_num}: Pay clicked using JavaScript")
+                                except:
+                                    # Method 3: Force enable and click
+                                    try:
+                                        driver.execute_script("""
+                                            arguments[0].disabled = false;
+                                            arguments[0].click();
+                                        """, pay_button)
+                                        pay_clicked = True
+                                        print(f"✅ DRIVER {driver_num}: Pay clicked using force method")
+                                    except Exception as final_error:
+                                        print(f"❌ DRIVER {driver_num}: All pay click methods failed: {final_error}")
+                            
+                            if pay_clicked:
+                                print(f"💳 DRIVER {driver_num}: Payment initiated successfully!")
+                                
+                                # Continue with existing purchase logic
+                                self.handle_post_payment_logic(driver, driver_num, url)
+                            
+                            break  # Exit monitoring loop
+                            
+                        except Exception as click_error:
+                            print(f"❌ DRIVER {driver_num}: Error clicking pay button: {click_error}")
+                            break
+                
+                # Sleep briefly before next check
+                time.sleep(check_interval)
+        
+        except Exception as monitoring_error:
+            print(f"❌ DRIVER {driver_num}: Monitoring error: {monitoring_error}")
+        
+        finally:
+            # Clean up monitoring entry
+            if url in purchase_unsuccessful_detected_urls:
+                del purchase_unsuccessful_detected_urls[url]
+            
+            print(f"🧹 DRIVER {driver_num}: Monitoring cleanup completed")
+
+
+    def process_single_listing_with_driver_modified(self, url, driver_num, driver):
+        """
+        MODIFIED: Process listing that immediately navigates to buy page and waits for "Purchase unsuccessful"
+        """
+        print(f"🔥 DRIVER {driver_num}: Starting MODIFIED processing of {url[:50]}...")
+        
+        try:
+            # Driver health check
+            try:
+                current_url = driver.current_url
+                print(f"✅ DRIVER {driver_num}: Driver alive")
+            except Exception as e:
+                print(f"❌ DRIVER {driver_num}: Driver is dead: {str(e)}")
+                return
+            
+            # Open new tab
+            try:
+                driver.execute_script("window.open('');")
+                new_tab = driver.window_handles[-1]
+                driver.switch_to.window(new_tab)
+                print(f"✅ DRIVER {driver_num}: New tab opened")
+            except Exception as e:
+                print(f"❌ DRIVER {driver_num}: Failed to open new tab: {str(e)}")
+                return
+            
+            # Navigate to URL
+            actual_url = test_purchase_url if test_purchase_not_true else url
+            
+            navigation_success = False
+            for nav_attempt in range(3):
+                try:
+                    driver.get(actual_url)
+                    WebDriverWait(driver, 8).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                    navigation_success = True
+                    print(f"✅ DRIVER {driver_num}: Navigation successful")
+                    break
+                except Exception as nav_error:
+                    print(f"❌ DRIVER {driver_num}: Navigation attempt {nav_attempt+1} failed: {str(nav_error)}")
+                    if nav_attempt < 2:
+                        time.sleep(1)
+            
+            if not navigation_success:
+                print(f"❌ DRIVER {driver_num}: All navigation attempts failed")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                return
+            
+            # Click Buy now button
+            buy_button_clicked = False
+            buy_selectors = [
+                'button[data-testid="item-buy-button"]',
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]'
+            ]
+            
+            for selector in buy_selectors:
+                try:
+                    if selector.startswith('//'):
+                        buy_button = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        buy_button = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                    
+                    # Try multiple click methods
+                    for click_method in ['standard', 'javascript']:
+                        try:
+                            if click_method == 'standard':
+                                buy_button.click()
+                            else:
+                                driver.execute_script("arguments[0].click();", buy_button)
+                            
+                            buy_button_clicked = True
+                            print(f"✅ DRIVER {driver_num}: Buy button clicked using {click_method}")
                             break
                         except Exception as click_error:
                             continue
@@ -2047,155 +2199,3 @@
                 # Exclude profile pictures and small icons based on URL patterns
                 if (
                     # Skip small profile pictures (50x50, 75x75, etc.)
-                    '/50x50/' in src or 
-                    '/75x75/' in src or 
-                    '/100x100/' in src or
-                    # Skip if parent has circle class (usually profile pics)
-                    'circle' in parent_classes.lower() or
-                    # Skip SVG icons
-                    src.endswith('.svg') or
-                    # Skip very obviously small images by checking dimensions in URL
-                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
-                ):
-                    print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
-                    continue
-                
-                # Only include images that look like product photos
-                if (
-                    # Vinted product images typically have f800, f1200, etc.
-                    '/f800/' in src or 
-                    '/f1200/' in src or 
-                    '/f600/' in src or
-                    # Or contain vinted/cloudinary and are likely product images
-                    (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
-                    # And don't have small size indicators
-                    not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
-                ):
-                    valid_urls.append(src)
-                    if print_images_backend_info:
-                        print(f"    ✅ Added valid image URL: {src[:50]}...")
-
-        if not valid_urls:
-            print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
-            return []
-
-        if print_images_backend_info:
-            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
-        
-        os.makedirs(listing_dir, exist_ok=True)
-        
-        # FIXED: Enhanced duplicate detection using content hashes
-        def download_single_image(args):
-            """Download a single image with enhanced duplicate detection"""
-            url, index = args
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Cache-Control': 'no-cache',
-                'Referer': driver.current_url
-            }
-            
-            try:
-                resp = requests.get(url, timeout=10, headers=headers)
-                resp.raise_for_status()
-                
-                # FIXED: Use content hash to detect identical images with different URLs
-                content_hash = hashlib.md5(resp.content).hexdigest()
-                
-                # Check if we've already downloaded this exact image content
-                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
-                if os.path.exists(hash_file):
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
-                    return None
-                
-                img = Image.open(BytesIO(resp.content))
-                
-                # Skip very small images (likely icons or profile pics that got through)
-                if img.width < 200 or img.height < 200:
-                    print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
-                    return None
-                
-                # Resize image for YOLO detection optimization
-                MAX_SIZE = (1000, 1000)  # Slightly larger for better detection
-                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
-                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
-                    print(f"    📏 Resized image to: {img.width}x{img.height}")
-                
-                # Convert to RGB if needed
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                
-                # Save the image
-                save_path = os.path.join(listing_dir, f"{index}.png")
-                img.save(save_path, format="PNG", optimize=True)
-                
-                # Create hash marker file to prevent future duplicates
-                with open(hash_file, 'w') as f:
-                    f.write(f"Downloaded from: {url}")
-                if print_images_backend_info:
-                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
-                return save_path
-                
-            except Exception as e:
-                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
-                return None
-        if print_images_backend_info:
-            print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
-        
-        # FIXED: Dynamic batch size based on actual image count
-        batch_size = len(valid_urls)  # Each "batch" equals the number of listing images
-        max_workers = min(6, batch_size)  # Use appropriate number of workers
-        
-        if print_images_backend_info:
-            print(f"  ▶ Batch size set to: {batch_size} (= number of listing images)")
-            print(f"  ▶ Using {max_workers} concurrent workers")
-        
-        downloaded_paths = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Prepare arguments for concurrent download
-            download_args = [(url, i+1) for i, url in enumerate(valid_urls)]
-            
-            # Submit all download jobs
-            future_to_url = {executor.submit(download_single_image, args): args[0] for args in download_args}
-            
-            # Collect results as they complete
-            for future in concurrent.futures.as_completed(future_to_url):
-                result = future.result()
-                if result:  # Only add successful downloads
-                    downloaded_paths.append(result)
-
-        print(f"  ▶ Successfully downloaded {len(downloaded_paths)} unique images (from {len(valid_urls)} URLs)")
-        
-        # Clean up hash files (optional - you might want to keep them for faster future runs)
-        # Uncomment the next 6 lines if you want to clean up hash files after each listing
-        # try:
-        #     for file in os.listdir(listing_dir):
-        #         if file.startswith('.hash_'):
-        #             os.remove(os.path.join(listing_dir, file))
-        # except:
-        #     pass
-        
-        return downloaded_paths
-
-
-    def download_and_process_images_vinted(self, image_urls):
-        """FIXED: Process images without arbitrary limits and with better deduplication"""
-        processed_images = []
-        seen_hashes = set()  # Track content hashes to prevent duplicates
-        
-        print(f"🖼️  Processing {len(image_urls)} image URLs (NO LIMIT)")
-        
-        for i, url in enumerate(image_urls):  # REMOVED [:8] limit here
-            try:
-                response = requests.get(url, timeout=10)
-                if response.status_code == 200:
-                    # FIXED: Use content hash for duplicate detection
-                    content_hash = hashlib.md5(response.content).hexdigest()
-                    
-                    if content_hash in seen_hashes:
-                        if print_images_backend_info:

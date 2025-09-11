@@ -1099,7 +1099,7 @@ def start_vm_bookmarking_process(driver, main_tab):
     print("🔖 VM BOOKMARK: Starting ultra-fast bookmarking process...")
     
     # Your test URL and username
-    test_url = "https://www.vinted.co.uk/items/7050328846-bslm-grey-joggers?referrer=catalog"
+    test_url = "https://www.vinted.co.uk/items/7051140823-vintage-argyle-wool-vest?referrer=catalog"
     test_username = "test_user"
     
     try:
@@ -1239,9 +1239,10 @@ def find_buy_button_with_shadow_dom_support(driver, timeout=5):
         print(f"❌ ULTRA FAST: Search failed: {e}")
         return None
 
+
 def click_buy_button_force_method(driver, buy_button):
     """
-    FORCE CLICK: The method that worked in your log
+    MINIMAL FIX: Handle stale element reference in fallback
     """
     print("🔄 FORCE CLICK: Using successful method...")
     
@@ -1258,15 +1259,134 @@ def click_buy_button_force_method(driver, buy_button):
             return True
         else:
             print("⚠️ FORCE CLICK: No navigation detected, trying fallback...")
-            # FALLBACK: Standard JavaScript click
-            driver.execute_script("arguments[0].click();", buy_button)
-            time.sleep(0.5)
-            return 'checkout' in driver.current_url or 'payment' in driver.current_url
+            
+            # MINIMAL FIX: Re-find the buy button instead of using stale element
+            try:
+                # Re-find the buy button (it may have changed after the first click)
+                fresh_buy_button = driver.find_element(By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]')
+                driver.execute_script("arguments[0].click();", fresh_buy_button)
+                time.sleep(2.5)
+                return 'checkout' in driver.current_url or 'payment' in driver.current_url
+            except Exception as refind_error:
+                print(f"❌ FORCE CLICK: Could not re-find buy button: {refind_error}")
+                return False
             
     except Exception as e:
         print(f"❌ FORCE CLICK: Failed - {e}")
         return False
 
+
+def wait_for_pay_button_with_timeout(driver, timeout=8):
+    """
+    Wait up to 8 seconds for pay button, continue immediately when found
+    """
+    print(f"💳 PAY BUTTON WAIT: Waiting up to {timeout} seconds for pay button...")
+    
+    start_time = time.time()
+    check_interval = 0.2  # Check every 200ms
+    
+    while time.time() - start_time < timeout:
+        try:
+            pay_button = driver.find_element(By.CSS_SELECTOR, 
+                'button[data-testid="single-checkout-order-summary-purchase-button"]')
+            
+            if pay_button:
+                elapsed = time.time() - start_time
+                print(f"✅ PAY BUTTON FOUND: Found after {elapsed:.2f} seconds!")
+                return pay_button
+                
+        except:
+            pass  # Button not found yet
+        
+        time.sleep(check_interval)
+    
+    print(f"❌ PAY BUTTON TIMEOUT: Not found after {timeout} seconds")
+    return None
+
+def handle_shipping_options(driver, pay_button):
+    """
+    FIXED: Handle pickup/postage sequence like the original bookmarking
+    This replicates the logic from execute_first_buy_sequence
+    """
+    print("🚢 SHIPPING: Starting pickup/postage sequence...")
+    
+    try:
+        # Check if we're on the shipping selection page
+        # Look for "Ship to pick-up point" option
+        try:
+            pickup_element = driver.find_element(
+                By.XPATH, 
+                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
+            )
+            print("📦 SHIPPING: Found 'Ship to pick-up point' option")
+            
+            # Check if pickup is currently selected by looking for aria-checked="true"
+            try:
+                pickup_selected_element = driver.find_element(
+                    By.XPATH, 
+                    '//div[@data-testid="delivery-option-pickup" and @aria-checked="true"]'
+                )
+                pickup_is_selected = True
+                print("📦 SHIPPING: Pick-up point is currently selected")
+            except:
+                pickup_is_selected = False
+                print("🏠 SHIPPING: Ship to home is currently selected")
+            
+            # If pickup is selected, check for "Choose a pick-up point" message
+            if pickup_is_selected:
+                try:
+                    choose_pickup_element = driver.find_element(
+                        By.XPATH,
+                        '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Choose a pick-up point"]'
+                    )
+                    
+                    print("⚠️ SHIPPING: 'Choose a pick-up point' message found - need to switch to Ship to home")
+                    
+                    # Click "Ship to home" to avoid the pickup point selection
+                    try:
+                        ship_home_element = driver.find_element(
+                            By.XPATH,
+                            '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
+                        )
+                        ship_home_element.click()
+                        print("🏠 SHIPPING: Successfully switched to 'Ship to home'")
+                        
+                        # Wait for the page to update (0.3 seconds like in original code)
+                        time.sleep(2)
+                        
+                        # Re-find the pay button after shipping change
+                        print("🔍 SHIPPING: Re-finding pay button after shipping change...")
+                        new_pay_button = wait_for_pay_button_with_timeout(driver, timeout=5)
+                        
+                        if new_pay_button:
+                            print("✅ SHIPPING: Pay button re-found after shipping change")
+                            return new_pay_button
+                        else:
+                            print("⚠️ SHIPPING: Could not re-find pay button, using original")
+                            return pay_button
+                            
+                    except Exception as switch_error:
+                        print(f"❌ SHIPPING: Could not switch to Ship to home: {switch_error}")
+                        return pay_button
+                        
+                except:
+                    # No "Choose a pick-up point" message, pickup is ready
+                    print("✅ SHIPPING: Pick-up point is ready (no selection required)")
+                    return pay_button
+            else:
+                # Ship to home is already selected
+                print("✅ SHIPPING: Ship to home already selected - no changes needed")
+                return pay_button
+                
+        except:
+            # No shipping options found, might already be on payment page
+            print("ℹ️ SHIPPING: No shipping options found - might already be on payment page")
+            return pay_button
+            
+    except Exception as shipping_error:
+        print(f"❌ SHIPPING ERROR: {shipping_error}")
+        print("🔄 SHIPPING: Continuing with original pay button")
+        return pay_button
 
 def find_buy_button_traditional_fallback(driver):
     """
@@ -1429,6 +1549,34 @@ def execute_vm_bookmark_enhanced_fast(driver, main_tab, listing_url, username):
             pass
 
 
+def execute_critical_pay_sequence(driver, pay_button):
+    """
+    Execute the critical 0.25s wait + close sequence
+    """
+    try:
+        print("💳 VM FIRST: Executing critical pay sequence...")
+        
+        # Click the pay button
+        pay_button.click()
+        print("✅ VM FIRST: Pay button clicked")
+        
+        # CRITICAL: Exact 0.25 second wait
+        time.sleep(0.25)
+        
+        # CRITICAL: Close tab immediately
+        driver.close()
+        
+        # Return to main tab
+        if len(driver.window_handles) > 0:
+            driver.switch_to.window(driver.window_handles[0])
+            print("✅ VM FIRST: Back to main tab")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ VM FIRST: Critical sequence failed - {e}")
+        return False
+
 def enhanced_execute_vm_first_buy_sequence(driver):
     """
     ULTRA FAST: Streamlined first sequence using proven Force Click method
@@ -1450,9 +1598,10 @@ def enhanced_execute_vm_first_buy_sequence(driver):
     # SPEED: Quick payment page handling
     return handle_payment_page_logic(driver)
 
+
 def execute_vm_second_sequence(driver, listing_url, username):
     """
-    FIXED: Second sequence with MISSING buy button click + processing payment detection
+    MINIMAL FIX: Re-find buy button instead of using potentially stale element
     """
     print("🔖 VM SECOND: Starting FIXED second sequence...")
     
@@ -1470,32 +1619,32 @@ def execute_vm_second_sequence(driver, listing_url, username):
         )
         print("✅ VM SECOND: Navigated to listing")
         
-        # FIXED: MISSING BUY BUTTON CLICK ON SECOND TAB
-        print("🔄 VM SECOND: CLICKING BUY BUTTON (was missing!)...")
+        # MINIMAL FIX: Find buy button fresh (don't reuse from first tab)
+        print("🔄 VM SECOND: Finding buy button on second tab...")
         
-        buy_button = find_buy_button_with_shadow_dom_support(driver, timeout=5)
-        if buy_button is None:
-            print("❌ VM SECOND: No buy button found on second tab")
+        try:
+            # Find buy button fresh on this tab
+            buy_button = driver.find_element(By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]')
+            print("✅ VM SECOND: Buy button found on second tab")
+            
+            # Click it using JavaScript (most reliable)
+            driver.execute_script("arguments[0].disabled=false; arguments[0].click();", buy_button)
+            print("✅ VM SECOND: Buy button clicked on second tab")
+            
+        except Exception as buy_error:
+            print(f"❌ VM SECOND: Buy button click failed: {buy_error}")
             return False
         
-        # FIXED: Click buy button on second tab
-        if not click_buy_button_force_method(driver, buy_button):
-            print("❌ VM SECOND: Buy button click failed on second tab")
-            return False
-        
-        print("✅ VM SECOND: Buy button clicked on second tab")
-        
-        # FIXED: Look for 'Processing payment' message
+        # Look for 'Processing payment' message
         print("🔍 VM SECOND: Looking for 'Processing payment' message...")
-        
         processing_found = check_for_processing_payment(driver)
         
         if processing_found:
             print("🎉 VM SECOND: 'Processing payment' found - bookmark successful!")
             return True
         else:
-            print("⚠️ VM SECOND: No 'Processing payment' found, waiting for 'Purchase unsuccessful'...")
-            return wait_for_purchase_unsuccessful(driver, listing_url, username)
+            print("⚠️ VM SECOND: No 'Processing payment' found")
+            return False
         
     except Exception as e:
         print(f"❌ VM SECOND: Error - {e}")
@@ -1512,8 +1661,10 @@ def execute_vm_second_sequence(driver, listing_url, username):
 
 def check_for_processing_payment(driver):
     """
-    FAST: Check for 'Processing payment' message
+    CONTINUOUS: Check for 'Processing payment' message with 10-second timeout
     """
+    print("🔍 VM SECOND: Continuously checking for 'Processing payment'...")
+    
     processing_selectors = [
         "//h2[text()='Processing payment']",
         "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
@@ -1521,17 +1672,18 @@ def check_for_processing_payment(driver):
         "//*[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]"
     ]
     
+    # CONTINUOUS checking with 10-second timeout
     for selector in processing_selectors:
         try:
-            element = WebDriverWait(driver, 2).until(
+            element = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.XPATH, selector))
             )
-            print("✅ VM SECOND: 'Processing payment' message found!")
+            print("✅ VM SECOND: 'Processing payment' message found instantly!")
             return True
         except TimeoutException:
             continue
     
-    print("❌ VM SECOND: 'Processing payment' message not found")
+    print("❌ VM SECOND: 'Processing payment' message not found after 10 seconds")
     return False
 
 
@@ -1555,7 +1707,7 @@ def wait_for_purchase_unsuccessful(driver, listing_url, username):
     ]
     
     # Wait up to 30 seconds for 'Purchase unsuccessful'
-    for attempt in range(purchase_unsuccessful_wait_time):  # 30 seconds total
+    for attempt in range(30):  # 30 seconds total
         for selector in unsuccessful_selectors:
             try:
                 element = WebDriverWait(driver, 1).until(
@@ -2046,155 +2198,3 @@ class AudioNumberDetector:
                 action.move_to_element_with_offset(verify_button, offset_x, offset_y)
                 time.sleep(random.uniform(0.2, 0.4))
                 action.move_to_element(verify_button)
-                time.sleep(random.uniform(0.2, 0.5))
-                action.click().perform()
-                
-                print("Successfully clicked Verify button!")
-                
-                # Wait to see the result
-                time.sleep(random.uniform(2.0, 4.0))
-                
-                self.driver.switch_to.default_content()
-                return True
-                
-            else:
-                print("Could not find Verify button")
-                self.driver.switch_to.default_content()
-                return False
-                
-        except Exception as e:
-            print(f"Error inputting captcha solution: {e}")
-            import traceback
-            traceback.print_exc()
-            try:
-                self.driver.switch_to.default_content()
-            except:
-                pass
-            return False
-
-    def preprocess_audio(self, audio_data, sample_rate):
-        """Enhanced audio preprocessing for better recognition"""
-        audio_np = np.frombuffer(audio_data, dtype=np.int16)
-        
-        if self.CHANNELS == 2:
-            audio_np = audio_np.reshape(-1, 2).mean(axis=1).astype(np.int16)
-        
-        if np.max(np.abs(audio_np)) > 0:
-            audio_np = audio_np.astype(np.float32)
-            audio_np = audio_np / np.max(np.abs(audio_np)) * 0.8
-        
-        nyquist = sample_rate / 2
-        high_cutoff = 100
-        high = high_cutoff / nyquist
-        b, a = signal.butter(2, high, btype='high')
-        audio_np = signal.filtfilt(b, a, audio_np)
-        
-        low_cutoff = 8000
-        low = low_cutoff / nyquist
-        b, a = signal.butter(2, low, btype='low')
-        audio_np = signal.filtfilt(b, a, audio_np)
-        
-        if HAS_NOISEREDUCE:
-            try:
-                noise_sample_length = min(sample_rate, len(audio_np) // 4)
-                if len(audio_np) > noise_sample_length * 2:
-                    audio_np = nr.reduce_noise(
-                        y=audio_np, 
-                        sr=sample_rate,
-                        stationary=False,
-                        prop_decrease=0.8
-                    )
-            except Exception as e:
-                print(f"Noise reduction failed: {e}")
-        
-        pre_emphasis = 0.97
-        audio_np = np.append(audio_np[0], audio_np[1:] - pre_emphasis * audio_np[:-1])
-        
-        if np.max(np.abs(audio_np)) > 0:
-            audio_np = audio_np / np.max(np.abs(audio_np)) * 0.9
-        
-        audio_np = (audio_np * 32767).astype(np.int16)
-        return audio_np.tobytes()
-    
-    def process_audio_data(self, audio_data):
-        """Process audio data and extract numbers"""
-        try:
-            audio_np = np.frombuffer(audio_data, dtype=np.int16)
-            volume = np.sqrt(np.mean(audio_np**2))
-            max_volume = np.max(np.abs(audio_np))
-            
-            print(f"Audio volume: {volume:.1f}, max: {max_volume}")
-            
-            if volume < 8:
-                print("Audio too quiet, skipping...")
-                return
-            
-            processed_audio = self.preprocess_audio(audio_data, self.RATE)
-            
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
-                wf = wave.open(tmp_file.name, 'wb')
-                wf.setnchannels(1)
-                wf.setsampwidth(self.p.get_sample_size(self.FORMAT))
-                wf.setframerate(self.RATE)
-                wf.writeframes(processed_audio)
-                wf.close()
-                
-                try:
-                    with sr.AudioFile(tmp_file.name) as source:
-                        self.recognizer.adjust_for_ambient_noise(source, duration=0.3)
-                        audio = self.recognizer.record(source)
-                        
-                        print("Attempting speech recognition...")
-                        
-                        text = None
-                        try:
-                            # Try with show_all=True to get confidence scores and alternatives
-                            result = self.recognizer.recognize_google(audio, language='en-US', show_all=True)
-                            if isinstance(result, dict) and 'alternative' in result:
-                                # Get the most confident result
-                                text = result['alternative'][0]['transcript']
-                                print(f"Google Recognition (detailed): '{text}'")
-                                
-                                # Also check other alternatives for better matches
-                                for alt in result['alternative'][:3]:  # Check top 3 alternatives
-                                    alt_text = alt['transcript']
-                                    alt_numbers = self.extract_numbers_sequence(alt_text)
-                                    if len(alt_numbers) >= 6:
-                                        text = alt_text
-                                        print(f"Using alternative with more numbers: '{text}'")
-                                        break
-                            else:
-                                text = self.recognizer.recognize_google(audio, language='en-US', show_all=False)
-                                print(f"Google Recognition: '{text}'")
-                                
-                        except (sr.UnknownValueError, sr.RequestError):
-                            print("Google recognition failed, trying Sphinx...")
-                            try:
-                                text = self.recognizer.recognize_sphinx(audio)
-                                print(f"Sphinx Recognition: '{text}'")
-                            except:
-                                print("Sphinx recognition also failed")
-                        
-                        if text:
-                            timestamp = time.strftime("%H:%M:%S")
-                            
-                            # Try to find complete sequence
-                            complete_seq = self.find_complete_sequence(text)
-                            if complete_seq and len(complete_seq) == 6:
-                                with self.numbers_lock:
-                                    self.complete_sequence = complete_seq
-                                    print(f"\n[{timestamp}] *** COMPLETE SEQUENCE FOUND: {complete_seq} ***")
-                                    print(f"[{timestamp}] From text: '{text}'")
-                                    print("="*60)
-                                    print(f"SUCCESS! Complete 6-digit sequence: {complete_seq}")
-                                    print("="*60)
-                                    
-                                    # Input the sequence into the captcha form
-                                    if self.input_captcha_solution(complete_seq):
-                                        print("Successfully inputted captcha solution!")
-                                    else:
-                                        print("Failed to input captcha solution")
-                                    
-                                    self.stop()
-                                    return
-                            
