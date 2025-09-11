@@ -1099,7 +1099,7 @@ def start_vm_bookmarking_process(driver, main_tab):
     print("🔖 VM BOOKMARK: Starting ultra-fast bookmarking process...")
     
     # Your test URL and username
-    test_url = "https://www.vinted.co.uk/items/7059487716-2-x-wolves-croc-charm-bundle-new?referrer=catalog"
+    test_url = "https://www.vinted.co.uk/items/7060804087-case-only-super-mario-odyssey?homepage_session_id=510d32df-eb84-403a-9602-360abde35e43"
     test_username = "test_user"
     
     try:
@@ -1263,9 +1263,11 @@ def click_buy_button_force_method(driver, buy_button):
         
         # MINIMAL FIX: Re-find the buy button instead of using stale element
         try:
+            print('attempting to find buy button')
             # Re-find the buy button (it may have changed after the first click)
             fresh_buy_button = driver.find_element(By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]')
             driver.execute_script("arguments[0].click();", fresh_buy_button)
+            print('but button clicked')
 
             try:
 
@@ -1511,7 +1513,7 @@ def debug_page_structure_fast(driver):
 
 def execute_vm_bookmark_enhanced_fast(driver, main_tab, listing_url, username):
     """
-    STREAMLINED: Ultra-fast bookmark execution with fixed second sequence
+    UPDATED: Ultra-fast bookmark execution with FIXED second sequence monitoring
     """
     print(f"🚀 VM ULTRA FAST: Bookmarking {listing_url[:50]}...")
     
@@ -1537,11 +1539,11 @@ def execute_vm_bookmark_enhanced_fast(driver, main_tab, listing_url, username):
             print("❌ VM ULTRA FAST: First sequence failed")
             return False
         
-        # FIXED: Execute second sequence with proper buy button click
+        # FIXED: Execute second sequence with Purchase unsuccessful monitoring
         second_success = execute_vm_second_sequence(driver, listing_url, username)
         
         if second_success:
-            print("🎉 VM ULTRA FAST: Bookmark completed successfully!")
+            print("🎉 VM ULTRA FAST: Bookmark completed with monitoring!")
             return True
         else:
             print("❌ VM ULTRA FAST: Second sequence failed")
@@ -1552,11 +1554,13 @@ def execute_vm_bookmark_enhanced_fast(driver, main_tab, listing_url, username):
         return False
         
     finally:
-        # Quick cleanup
+        # Quick cleanup - but only if not monitoring
+        # The monitoring function handles its own cleanup
         try:
             if len(driver.window_handles) > 1:
-                driver.close()
-                driver.switch_to.window(main_tab)
+                # Only switch back if we're not in monitoring mode
+                if driver.current_window_handle != main_tab:
+                    driver.switch_to.window(main_tab)
         except:
             pass
 
@@ -1610,12 +1614,153 @@ def enhanced_execute_vm_first_buy_sequence(driver):
     # SPEED: Quick payment page handling
     return handle_payment_page_logic(driver)
 
+def check_for_processing_payment_vm(driver):
+    """
+    Check for processing payment message in VM (same as existing but renamed for clarity)
+    """
+    processing_selectors = [
+        "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
+        "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
+        "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+        "//*[contains(text(), 'Processing payment')]"
+    ]
+    
+    for selector in processing_selectors:
+        try:
+            element = WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.XPATH, selector))
+            )
+            print("🎉 VM: Processing payment message found!")
+            return True
+        except TimeoutException:
+            continue
+    
+    print("❌ VM: Processing payment message not found")
+    return False
+
+def monitor_purchase_unsuccessful_vm(driver, listing_url):
+    """
+    NEW: VM version of Purchase unsuccessful monitoring
+    This mirrors the host machine _monitor_purchase_unsuccessful functionality
+    """
+    import time
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.common.by import By
+    from selenium.common.exceptions import TimeoutException
+    
+    print("🔍 VM MONITORING: Starting 'Purchase unsuccessful' monitoring...")
+    
+    # Get current URL for tracking
+    current_url = listing_url
+    
+    # Start monitoring stopwatch
+    monitoring_start_time = time.time()
+    print(f"⏱️ VM STOPWATCH: Started monitoring at {time.strftime('%H:%M:%S')}")
+    
+    # Maximum wait time: 25 minutes (same as host machine)
+    max_wait_time = 25 * 60  # 1500 seconds
+    
+    # Purchase unsuccessful selectors (same as host machine)
+    unsuccessful_selectors = [
+        "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+        "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+        "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+        "//*[text()='Purchase unsuccessful']"
+    ]
+    
+    print(f"🔍 VM MONITORING: Watching for 'Purchase unsuccessful' for up to {max_wait_time/60:.0f} minutes...")
+    
+    # Access the global purchase_unsuccessful_detected_urls from host machine
+    global purchase_unsuccessful_detected_urls
+    
+    try:
+        while True:
+            elapsed_time = time.time() - monitoring_start_time
+            
+            # Check timeout
+            if elapsed_time >= max_wait_time:
+                print(f"⏰ VM TIMEOUT: Maximum wait time of {max_wait_time/60:.0f} minutes reached")
+                print(f"⏱️ VM STOPWATCH: Monitoring ended after {elapsed_time/60:.2f} minutes (TIMEOUT)")
+                break
+            
+            # Check if driver is still alive
+            try:
+                driver.current_url
+            except Exception as driver_dead:
+                print(f"💀 VM MONITORING: Driver died during monitoring: {driver_dead}")
+                print(f"⏱️ VM STOPWATCH: Monitoring ended after {elapsed_time/60:.2f} minutes (DRIVER DIED)")
+                break
+            
+            # Try each selector to find "Purchase unsuccessful"
+            found_unsuccessful = False
+            for selector in unsuccessful_selectors:
+                try:
+                    element = WebDriverWait(driver, 1).until(
+                        EC.presence_of_element_located((By.XPATH, selector))
+                    )
+                    
+                    # Found it!
+                    end_time = time.time()
+                    total_elapsed = end_time - monitoring_start_time
+                    
+                    print(f"🎯 VM FOUND! 'Purchase unsuccessful' detected!")
+                    print(f"📍 VM ELEMENT: Found using selector: {selector}")
+                    print(f"⏱️ VM STOPWATCH: Monitoring completed in {total_elapsed/60:.2f} minutes ({total_elapsed:.2f} seconds)")
+                    print(f"🕒 VM TIME: Found at {time.strftime('%H:%M:%S')}")
+                    
+                    # CRITICAL: Signal all waiting buying drivers to click pay NOW
+                    # This integrates with the host machine buying system
+                    print(f"🚀 VM TRIGGERING: All waiting buying drivers to click pay NOW!")
+                    
+                    # Signal the global purchase_unsuccessful_detected_urls system
+                    for url, entry in purchase_unsuccessful_detected_urls.items():
+                        if entry.get('waiting', True):
+                            print(f"🎯 VM TRIGGERING: Buying driver for {url[:50]}...")
+                            entry['waiting'] = False  # Signal the buying driver
+                    
+                    print(f"✅ VM MONITORING: Successfully triggered buying drivers")
+                    found_unsuccessful = True
+                    break
+                    
+                except TimeoutException:
+                    continue
+                except Exception as selector_error:
+                    print(f"⚠️ VM MONITORING: Error with selector {selector}: {selector_error}")
+                    continue
+            
+            if found_unsuccessful:
+                break
+                
+            # Wait before checking again (faster response time)
+            time.sleep(0.5)  # Check every 500ms
+    
+    except Exception as monitoring_error:
+        end_time = time.time()
+        total_elapsed = end_time - monitoring_start_time
+        print(f"❌ VM MONITORING ERROR: {monitoring_error}")
+        print(f"⏱️ VM STOPWATCH: Monitoring ended after {total_elapsed/60:.2f} minutes (ERROR)")
+    
+    finally:
+        # Clean up the monitoring tab
+        print(f"🗑️ VM CLEANUP: Closing monitoring tab...")
+        try:
+            driver.close()
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+            print(f"✅ VM CLEANUP: Closed monitoring tab and returned to main tab")
+        except Exception as cleanup_error:
+            print(f"⚠️ VM CLEANUP: Error closing tab: {cleanup_error}")
+        
+        print(f"🔄 VM MONITORING COMPLETE: Ready for next operation")
+        return True
+
 
 def execute_vm_second_sequence(driver, listing_url, username):
     """
-    MINIMAL FIX: Re-find buy button instead of using potentially stale element
+    FIXED: Execute second sequence with Purchase unsuccessful monitoring for VM
     """
-    print("🔖 VM SECOND: Starting FIXED second sequence...")
+    print("🔖 VM SECOND: Starting FIXED second sequence with monitoring...")
     
     try:
         # Open new tab for second sequence
@@ -1631,7 +1776,7 @@ def execute_vm_second_sequence(driver, listing_url, username):
         )
         print("✅ VM SECOND: Navigated to listing")
         
-        # MINIMAL FIX: Find buy button fresh (don't reuse from first tab)
+        # Find and click buy button on second tab
         print("🔄 VM SECOND: Finding buy button on second tab...")
         
         try:
@@ -1649,13 +1794,22 @@ def execute_vm_second_sequence(driver, listing_url, username):
         
         # Look for 'Processing payment' message
         print("🔍 VM SECOND: Looking for 'Processing payment' message...")
-        processing_found = check_for_processing_payment(driver)
+        processing_found = check_for_processing_payment_vm(driver)
         
         if processing_found:
-            print("🎉 VM SECOND: 'Processing payment' found - bookmark successful!")
-            return True
+            print("🎉 VM SECOND: 'Processing payment' found - starting Purchase unsuccessful monitoring!")
+            
+            # FIXED: Start monitoring for "Purchase unsuccessful" - DO NOT CLOSE TAB
+            success = monitor_purchase_unsuccessful_vm(driver, listing_url)
+            
+            if success:
+                print("✅ VM SECOND: Purchase unsuccessful monitoring completed successfully")
+                return True
+            else:
+                print("⚠️ VM SECOND: Purchase unsuccessful monitoring completed without detection")
+                return True
         else:
-            print("⚠️ VM SECOND: No 'Processing payment' found")
+            print("⚠️ VM SECOND: No 'Processing payment' found - closing tab")
             return False
         
     except Exception as e:
@@ -1663,13 +1817,9 @@ def execute_vm_second_sequence(driver, listing_url, username):
         return False
     
     finally:
-        # Clean up second tab
-        try:
-            if len(driver.window_handles) > 1:
-                driver.close()
-                driver.switch_to.window(driver.window_handles[0])
-        except:
-            pass
+        # Only clean up if monitoring is not active
+        # The monitoring function will handle tab cleanup when it's done
+        pass
 
 def check_for_processing_payment(driver):
     """
@@ -2048,153 +2198,3 @@ class AudioNumberDetector:
                             for selector in input_selectors:
                                 try:
                                     first_input = WebDriverWait(self.driver, 3).until(
-                                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                                    )
-                                    print(f"Found first input field in nested iframe {i} with selector: {selector}")
-                                    input_found = True
-                                    break
-                                except:
-                                    continue
-                            
-                            if input_found:
-                                break
-                            
-                            self.driver.switch_to.parent_frame()
-                            
-                        except Exception as e:
-                            print(f"Error with nested iframe {i}: {e}")
-                            try:
-                                self.driver.switch_to.parent_frame()
-                            except:
-                                self.driver.switch_to.default_content()
-                                for sel in iframe_selectors:
-                                    try:
-                                        iframe = self.driver.find_element(By.CSS_SELECTOR, sel)
-                                        self.driver.switch_to.frame(iframe)
-                                        break
-                                    except:
-                                        continue
-                            continue
-                
-                except Exception as e:
-                    print(f"Error searching nested iframes for inputs: {e}")
-            
-            if not input_found or not first_input:
-                print("Could not find input fields")
-                self.driver.switch_to.default_content()
-                return False
-            
-            print("Starting to input digits using native Selenium methods...")
-            
-            # Click on the first input field
-            time.sleep(random.uniform(0.5, 1.0))
-            
-            # Scroll into view
-            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", first_input)
-            time.sleep(random.uniform(0.3, 0.6))
-
-            action = ActionChains(self.driver)
-
-
-            # Click with ActionChains (this generates trusted events)
-
-
-            offset_x = random.randint(-2, 2)
-            offset_y = random.randint(-2, 2)
-
-            action.move_to_element_with_offset(first_input, offset_x, offset_y)
-            time.sleep(random.uniform(0.2, 0.4))
-            action.move_to_element(first_input)
-            time.sleep(random.uniform(0.1, 0.3))
-            action.click().perform()
-            
-            print("Clicked on first input field")
-
-
-            # Input each digit using send_keys (generates TRUSTED events)
-            # Input each digit using PyAutoGUI
-            for i, digit in enumerate(sequence):
-                print(f"Inputting digit {i+1}: {digit}")
-                
-                if digit == '1':
-                    time.sleep(2.3)
-                
-                # Random delay before typing
-                time.sleep(random.uniform(0.2, 0.6))
-                
-                # Use PyAutoGUI instead of Windows API
-                if not send_keypress_with_pyautogui(digit):
-                    print(f"Failed to send PyAutoGUI keystroke for digit: {digit}")
-                
-                time.sleep(random.uniform(0.3, 0.4))
-                
-                print(f"Typed digit: {digit}")
-                
-                # If not the last digit, move to next field with arrow key
-                if i < len(sequence) - 1:
-                    time.sleep(random.uniform(0.2, 0.6))
-                    
-                    # Use PyAutoGUI for arrow key
-                    if not send_keypress_with_pyautogui('right'):
-                        print(f"Failed to send PyAutoGUI RIGHT key")
-                    
-                    print(f"Moved to next input field")
-                    time.sleep(random.uniform(0.05, 0.25))
-
-            print("All digits entered successfully!")
-                
-                # Wait a moment for any validation
-            time.sleep(random.uniform(1.0, 2.0))
-                
-                # Find and click the Verify button (same as before)
-            print("Looking for Verify button...")
-            
-            verify_button_selectors = [
-                "button.audio-captcha-submit-button",
-                "button[class*='audio-captcha-submit-button']",
-                "button.push-button.no-margin",
-                "button[role='button'][class*='submit']",
-                "button:contains('Verify')",
-                "//button[contains(@class, 'audio-captcha-submit-button')]",
-                "//button[text()='Verify']",
-                "//button[contains(text(), 'Verify')]"
-            ]
-            
-            verify_button = None
-            for selector in verify_button_selectors:
-                try:
-                    if selector.startswith("//"):
-                        verify_button = WebDriverWait(self.driver, 5).until(
-                            EC.element_to_be_clickable((By.XPATH, selector))
-                        )
-                    else:
-                        verify_button = WebDriverWait(self.driver, 5).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                        )
-                    print(f"Found Verify button with selector: {selector}")
-                    break
-                except TimeoutException:
-                    continue
-            
-            if not verify_button:
-                print("Verify button not found, trying to find any submit-like button...")
-                try:
-                    all_buttons = self.driver.find_elements(By.TAG_NAME, "button")
-                    for button in all_buttons:
-                        button_text = button.text.lower().strip()
-                        button_class = button.get_attribute("class") or ""
-                        
-                        if ("verify" in button_text or 
-                            "submit" in button_text or 
-                            "confirm" in button_text or
-                            "submit" in button_class.lower() or
-                            "verify" in button_class.lower()):
-                            verify_button = button
-                            print(f"Found potential verify button: text='{button_text}', class='{button_class}'")
-                            break
-                except Exception as e:
-                    print(f"Error searching for buttons: {e}")
-            
-            if verify_button:
-                # Wait a moment before clicking verify
-                time.sleep(random.uniform(0.5, 1.0))

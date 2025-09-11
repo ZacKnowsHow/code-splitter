@@ -1,4 +1,154 @@
 # Continuation from line 6601
+                                if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
+                                    confidences[class_name] = max(confidences[class_name], confidence)
+                                else:
+                                    image_detections[class_name] += 1
+                                
+                                # Draw bounding box
+                                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
+
+                # Update overall detected objects with max from this image
+                for class_name, count in image_detections.items():
+                    detected_objects[class_name].append(count)
+
+                # Convert to PIL Image for pygame compatibility
+                processed_images.append(Image.fromarray(cv2.cvtColor(
+                    cv2.copyMakeBorder(img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0]),
+                    cv2.COLOR_BGR2RGB)))
+
+            except Exception as e:
+                print(f"Error processing image {image_path}: {str(e)}")
+                continue
+
+        # Convert lists to max values
+        final_detected_objects = {class_name: max(counts) if counts else 0 for class_name, counts in detected_objects.items()}
+        
+        # Handle mutually exclusive items
+        final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
+        
+        # VINTED-SPECIFIC POST-SCAN GAME DEDUPLICATION
+        # Define game classes that should be capped at 1 per listing
+        vinted_game_classes = [
+            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
+            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
+            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
+            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
+            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
+            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
+            'sword_p', 'tears_z', 'violet_p'
+        ]
+        
+        # Cap each game type to maximum 1 per listing for Vinted
+        games_before_cap = {}
+        for game_class in vinted_game_classes:
+            if final_detected_objects.get(game_class, 0) > 1:
+                games_before_cap[game_class] = final_detected_objects[game_class]
+                final_detected_objects[game_class] = 1
+        
+        # Log the capping if any games were capped
+        if games_before_cap:
+            print("🎮 VINTED GAME DEDUPLICATION APPLIED:")
+            for game, original_count in games_before_cap.items():
+                print(f"  • {game}: {original_count} → 1")
+        
+        # NEW: PRICE THRESHOLD FILTERING FOR NINTENDO SWITCH ITEMS
+        try:
+            # Get the current listing price stored during scraping
+            listing_price = getattr(self, 'current_listing_price_float', 0.0)
+            
+            # If the listing price is below the threshold, remove Nintendo Switch detections
+            if listing_price > 0 and listing_price < PRICE_THRESHOLD:
+                filtered_classes = []
+                for switch_class in NINTENDO_SWITCH_CLASSES:
+                    if final_detected_objects.get(switch_class, 0) > 0:
+                        filtered_classes.append(switch_class)
+                        final_detected_objects[switch_class] = 0
+                
+                if filtered_classes:
+                    print(f"🚫 PRICE FILTER: Removed Nintendo Switch detections due to low price (£{listing_price:.2f} < £{PRICE_THRESHOLD:.2f})")
+                    print(f"    Filtered classes: {', '.join(filtered_classes)}")
+            elif listing_price >= PRICE_THRESHOLD:
+                # Optional: Log when price threshold allows detection
+                detected_switch_classes = [cls for cls in NINTENDO_SWITCH_CLASSES if final_detected_objects.get(cls, 0) > 0]
+                if detected_switch_classes:
+                    print(f"✅ PRICE FILTER: Nintendo Switch detections allowed (£{listing_price:.2f} >= £{PRICE_THRESHOLD:.2f})")
+        
+        except Exception as price_filter_error:
+            print(f"⚠️ Warning: Price filtering failed: {price_filter_error}")
+            # Continue without price filtering if there's an error
+        
+        return final_detected_objects, processed_images
+
+
+    def download_images_for_listing(self, driver, listing_dir):
+        """FIXED: Download ALL listing images without limits and prevent duplicates"""
+        import concurrent.futures
+        import requests
+        from PIL import Image
+        from io import BytesIO
+        import os
+        import hashlib
+        
+        # Wait for the page to fully load
+        try:
+            WebDriverWait(driver, 10).until(  # Increased timeout for better reliability
+                EC.presence_of_element_located((By.TAG_NAME, "img"))
+            )
+        except TimeoutException:
+            print("  ▶ Timeout waiting for images to load")
+            return []
+        
+        # Try multiple selectors in order of preference - focusing on product images only
+        img_selectors = [
+            # Target product images specifically (avoid profile pictures)
+            "img.web_ui__Image__content[data-testid^='item-photo-']",
+            "img[data-testid^='item-photo-']",
+            # Target images within containers that suggest product photos
+            "div.web_ui__Image__cover img.web_ui__Image__content",
+            "div.web_ui__Image__scaled img.web_ui__Image__content", 
+            "div.web_ui__Image__rounded img.web_ui__Image__content",
+            # Broader selectors but still avoiding profile images
+            "div.feed-grid img",
+            "div[class*='photo'] img",
+        ]
+        
+        imgs = []
+        for selector in img_selectors:
+            imgs = driver.find_elements(By.CSS_SELECTOR, selector)
+            if imgs:
+                if print_images_backend_info:
+                    print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
+                break
+        
+        if not imgs:
+            print("  ▶ No images found with any selector")
+            return []
+        
+        # FIXED: Remove the [:8] limit - process ALL images found
+        valid_urls = []
+        seen_urls = set()  # Track URLs to prevent duplicates
+        
+        if print_images_backend_info:
+            print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
+        
+        for img in imgs:  # REMOVED [:8] limit here
+            src = img.get_attribute("src")
+            parent_classes = ""
+            
+            # Get parent element classes to check for profile picture indicators
+            try:
+                parent = img.find_element(By.XPATH, "..")
+                parent_classes = parent.get_attribute("class") or ""
+            except:
+                pass
+            
+            # Check if this is a valid product image
+            if src and src.startswith('http'):
+                # FIXED: Better duplicate detection using URL normalization
+                # Remove query parameters and fragments for duplicate detection
                 normalized_url = src.split('?')[0].split('#')[0]
                 
                 if normalized_url in seen_urls:
@@ -2049,153 +2199,3 @@
                 self.cleanup_persistent_buying_driver()
                 self.cleanup_persistent_bookmark_driver()
             
-            # Exit immediately after test
-            print("🔖💳 TEST_BOOKMARK_BUYING_FUNCTIONALITY COMPLETE - EXITING")
-            sys.exit(0)
-                
-        if BOOKMARK_TEST_MODE:
-            print("🧪 BOOKMARK TEST MODE ENABLED")
-            print(f"🔗 URL: {BOOKMARK_TEST_URL}")
-            print(f"👤 USERNAME: {BOOKMARK_TEST_USERNAME}")
-            
-            # Initialize all required global variables for proper operation
-            suitable_listings = []
-            current_listing_index = 0
-            recent_listings = {'listings': [], 'current_index': 0}
-            
-            # Initialize all current listing variables
-            current_listing_title = "No title"
-            current_listing_description = "No description"
-            current_listing_join_date = "No join date"
-            current_listing_price = "0"
-            current_expected_revenue = "0"
-            current_profit = "0"
-            current_detected_items = "None"
-            current_listing_images = []
-            current_listing_url = ""
-            current_suitability = "Suitability unknown"
-            current_seller_reviews = "No reviews yet"
-            
-            try:
-                # Start the bookmark process
-                success = self.bookmark_driver(BOOKMARK_TEST_URL, BOOKMARK_TEST_USERNAME)
-                
-                if success:
-                    print("✅ BOOKMARK TEST SUCCESSFUL")
-                    
-                    # STAY ALIVE and wait for monitoring to complete
-                    print("⏳ STAYING ALIVE: Waiting for monitoring thread to complete...")
-                    
-                    # Wait for the monitoring thread to finish
-                    while self.monitoring_threads_active.is_set():
-                        time.sleep(1)
-                        print("🔍 MONITORING: Still active, waiting...")
-                    
-                    print("✅ MONITORING: Complete - all threads finished")
-                    
-                else:
-                    print("❌ BOOKMARK TEST FAILED")
-                
-            except KeyboardInterrupt:
-                print("\n🛑 BOOKMARK TEST: Stopped by user")
-                # Force cleanup if user interrupts
-                self.cleanup_all_cycling_bookmark_drivers()
-            
-            except Exception as e:
-                print(f"❌ BOOKMARK TEST ERROR: {e}")
-                import traceback
-                traceback.print_exc()
-            
-            finally:
-                # Final cleanup
-                print("🧹 FINAL CLEANUP: Closing any remaining drivers...")
-                self.cleanup_all_cycling_bookmark_drivers()
-                self.cleanup_all_buying_drivers()
-                self.cleanup_persistent_buying_driver()
-                self.cleanup_persistent_bookmark_driver()
-            
-            # Only exit after monitoring is truly complete
-            print("🧪 BOOKMARK TEST MODE COMPLETE - EXITING")
-            sys.exit(0)
-
-        if BUYING_TEST_MODE:
-            print("💳 BUYING TEST MODE ENABLED")
-            print(f"🔗 URL: {BUYING_TEST_URL}")
-            
-            # Skip all driver initialization, pygame, flask, etc.
-            # Just run the buying functionality directly
-            try:
-                # Get an available driver (this will create one if needed)
-                driver_num, driver = self.get_available_driver()
-                
-                if driver is not None:
-                    print(f"✅ BUYING TEST: Got driver {driver_num}")
-                    # Execute the purchase process using process_single_vinted_listing
-                    self.process_single_listing_with_driver(BUYING_TEST_URL, driver_num, driver)
-                    print("✅ BUYING TEST PROCESS COMPLETED")
-                else:
-                    print("❌ BUYING TEST: Could not get available driver")
-                    
-            except Exception as e:
-                print(f"❌ BUYING TEST ERROR: {e}")
-                import traceback
-                traceback.print_exc()
-            finally:
-                # Clean up
-                self.cleanup_all_buying_drivers()
-                self.cleanup_persistent_buying_driver()
-            
-            # Exit immediately after test
-            print("💳 BUYING TEST MODE COMPLETE - EXITING")
-            sys.exit(0)
-            
-        # Initialize ALL global variables properly
-        suitable_listings = []
-        current_listing_index = 0
-        
-        # **CRITICAL FIX: Initialize recent_listings for website navigation**
-        recent_listings = {
-            'listings': [],
-            'current_index': 0
-        }
-        
-        # Initialize all current listing variables
-        current_listing_title = "No title"
-        current_listing_description = "No description"
-        current_listing_join_date = "No join date"
-        current_listing_price = "0"
-        current_expected_revenue = "0"
-        current_profit = "0"
-        current_detected_items = "None"
-        current_listing_images = []
-        current_listing_url = ""
-        current_suitability = "Suitability unknown"
-        
-        # Initialize pygame display with default values
-        self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
-        
-        # Start Flask app in separate thread.
-        flask_thread = threading.Thread(target=self.run_flask_app)
-        flask_thread.daemon = True
-        flask_thread.start()
-        
-        # Start pygame window in separate thread
-        #pygame_thread = threading.Thread(target=self.run_pygame_window)
-        #pygame_thread.start()
-        
-        # NEW: Start thread monitoring system
-
-
-        
-        # NEW: Main scraping driver thread - THIS IS THE KEY CHANGE
-        def main_scraping_driver():
-            """Main scraping driver function that runs in its own thread"""
-            print("🚀 SCRAPING THREAD: Starting main scraping driver thread")
-            
-            # Clear download folder and start scraping
-            self.clear_download_folder()
-            driver = self.setup_driver()
-            
-            if driver is None:
-                print("❌ SCRAPING THREAD: Failed to setup main driver")
-                return

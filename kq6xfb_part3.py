@@ -1,4 +1,154 @@
 # Continuation from line 4401
+        if processed_images:
+            for img in processed_images:
+                try:
+                    img_copy = img.copy()  # Create a fresh copy
+                    current_listing_images.append(img_copy)
+                except Exception as e:
+                    print(f"Error copying image: {str(e)}")
+        
+        # Store bounding boxes with more robust handling
+        current_bounding_boxes = {
+            'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
+            'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
+        }
+
+        # Handle detected_items for Box 1 - show raw detected objects with counts
+        if isinstance(detected_items, dict):
+            # Format as "item_name: count" for items with count > 0
+            formatted_detected_items = {}
+            for item, count in detected_items.items():
+                try:
+                    count_int = int(count) if isinstance(count, str) else count
+                    if count_int > 0:
+                        formatted_detected_items[item] = str(count_int)
+                except (ValueError, TypeError):
+                    continue
+            
+            if not formatted_detected_items:
+                formatted_detected_items = {"no_items": "No items detected"}
+        else:
+            formatted_detected_items = {"no_items": "No items detected"}
+
+        # FIXED: Use the join_date parameter directly instead of generating new timestamp
+        # The join_date parameter now contains the stored timestamp from when item was processed
+        stored_append_time = join_date if join_date else "No timestamp"
+
+        # Explicitly set the global variables
+        current_detected_items = formatted_detected_items
+        current_listing_title = title[:50] + '...' if len(title) > 50 else title
+        current_listing_description = description[:200] + '...' if len(description) > 200 else description if description else "No description"
+        current_listing_join_date = stored_append_time  # FIXED: Use stored timestamp, not current time
+        current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
+        current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
+        current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
+        current_listing_url = url
+        current_suitability = suitability if suitability else "Suitability unknown"
+        current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
+
+    def handle_post_payment_logic(self, driver, driver_num, url):
+        """
+        Handle the logic after payment is clicked - check for success/errors
+        """
+        print(f"💳 DRIVER {driver_num}: Handling post-payment logic...")
+        
+        max_attempts = 250
+        attempt = 0
+        purchase_successful = False
+        
+        while not purchase_successful and attempt < max_attempts:
+            attempt += 1
+            
+            if attempt % 10 == 0:  # Print progress every 10 attempts
+                print(f"💳 DRIVER {driver_num}: Payment attempt {attempt}/{max_attempts}")
+            
+            # Check for error first (appears quickly)
+            try:
+                error_element = WebDriverWait(driver, 2).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//span[contains(text(), \"Sorry, we couldn't process your payment\")]"))
+                )
+                
+                if error_element:
+                    print(f"❌ DRIVER {driver_num}: Payment error detected, retrying...")
+                    
+                    # Click OK to dismiss error
+                    try:
+                        ok_button = WebDriverWait(driver, 3).until(
+                            EC.element_to_be_clickable((By.XPATH, "//button[contains(.//text(), 'OK, close')]"))
+                        )
+                        ok_button.click()
+                        print(f"✅ DRIVER {driver_num}: Error dismissed")
+                    except:
+                        print(f"⚠️ DRIVER {driver_num}: Could not dismiss error")
+                    
+                    # Wait and try to click pay again
+                    time.sleep(buying_driver_click_pay_wait_time)
+                    
+                    # Re-find and click pay button
+                    try:
+                        pay_button = driver.find_element(By.CSS_SELECTOR, 
+                            'button[data-testid="single-checkout-order-summary-purchase-button"]')
+                        pay_button.click()
+                    except:
+                        print(f"❌ DRIVER {driver_num}: Could not re-click pay button")
+                        break
+                    
+                    continue
+            
+            except TimeoutException:
+                pass  # No error found, continue
+            
+            # Check for success
+            try:
+                success_element = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//h2[text()='Purchase successful']"))
+                )
+                
+                if success_element:
+                    print(f"🎉 DRIVER {driver_num}: PURCHASE SUCCESSFUL!")
+                    purchase_successful = True
+                    
+                    # Send success notification
+                    try:
+                        self.send_pushover_notification(
+                            "Vinted Purchase Successful",
+                            f"Successfully purchased: {url}",
+                            'aks3to8guqjye193w7ajnydk9jaxh5',
+                            'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                        )
+                    except Exception as notification_error:
+                        print(f"⚠️ DRIVER {driver_num}: Notification failed: {notification_error}")
+                    
+                    break
+            
+            except TimeoutException:
+                # No success message yet, continue trying
+                continue
+        
+        if not purchase_successful:
+            print(f"❌ DRIVER {driver_num}: Purchase failed after {attempt} attempts")
+        
+        # Clean up
+        try:
+            driver.close()
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+        
+        self.release_driver(driver_num)
+        print(f"✅ DRIVER {driver_num}: Post-payment cleanup completed")
+
+
+    def monitor_for_purchase_unsuccessful(self, url, driver, driver_num, pay_button):
+        """
+        Monitor for "Purchase unsuccessful" detection from bookmark driver and click pay immediately
+        """
+        print(f"🔍 DRIVER {driver_num}: Starting 'Purchase unsuccessful' monitoring for {url[:50]}...")
+        
+        start_time = time.time()
         check_interval = 0.1  # Check every 100ms for ultra-fast response
         timeout = 25 * 60  # 25 minutes timeout
         
@@ -2049,153 +2199,3 @@
                             min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
                             
                             if confidence >= min_confidence:
-                                if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
-                                    confidences[class_name] = max(confidences[class_name], confidence)
-                                else:
-                                    image_detections[class_name] += 1
-                                
-                                # Draw bounding box
-                                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
-
-                # Update overall detected objects with max from this image
-                for class_name, count in image_detections.items():
-                    detected_objects[class_name].append(count)
-
-                # Convert to PIL Image for pygame compatibility
-                processed_images.append(Image.fromarray(cv2.cvtColor(
-                    cv2.copyMakeBorder(img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0]),
-                    cv2.COLOR_BGR2RGB)))
-
-            except Exception as e:
-                print(f"Error processing image {image_path}: {str(e)}")
-                continue
-
-        # Convert lists to max values
-        final_detected_objects = {class_name: max(counts) if counts else 0 for class_name, counts in detected_objects.items()}
-        
-        # Handle mutually exclusive items
-        final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
-        
-        # VINTED-SPECIFIC POST-SCAN GAME DEDUPLICATION
-        # Define game classes that should be capped at 1 per listing
-        vinted_game_classes = [
-            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
-            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
-            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
-            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
-            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
-            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
-            'sword_p', 'tears_z', 'violet_p'
-        ]
-        
-        # Cap each game type to maximum 1 per listing for Vinted
-        games_before_cap = {}
-        for game_class in vinted_game_classes:
-            if final_detected_objects.get(game_class, 0) > 1:
-                games_before_cap[game_class] = final_detected_objects[game_class]
-                final_detected_objects[game_class] = 1
-        
-        # Log the capping if any games were capped
-        if games_before_cap:
-            print("🎮 VINTED GAME DEDUPLICATION APPLIED:")
-            for game, original_count in games_before_cap.items():
-                print(f"  • {game}: {original_count} → 1")
-        
-        # NEW: PRICE THRESHOLD FILTERING FOR NINTENDO SWITCH ITEMS
-        try:
-            # Get the current listing price stored during scraping
-            listing_price = getattr(self, 'current_listing_price_float', 0.0)
-            
-            # If the listing price is below the threshold, remove Nintendo Switch detections
-            if listing_price > 0 and listing_price < PRICE_THRESHOLD:
-                filtered_classes = []
-                for switch_class in NINTENDO_SWITCH_CLASSES:
-                    if final_detected_objects.get(switch_class, 0) > 0:
-                        filtered_classes.append(switch_class)
-                        final_detected_objects[switch_class] = 0
-                
-                if filtered_classes:
-                    print(f"🚫 PRICE FILTER: Removed Nintendo Switch detections due to low price (£{listing_price:.2f} < £{PRICE_THRESHOLD:.2f})")
-                    print(f"    Filtered classes: {', '.join(filtered_classes)}")
-            elif listing_price >= PRICE_THRESHOLD:
-                # Optional: Log when price threshold allows detection
-                detected_switch_classes = [cls for cls in NINTENDO_SWITCH_CLASSES if final_detected_objects.get(cls, 0) > 0]
-                if detected_switch_classes:
-                    print(f"✅ PRICE FILTER: Nintendo Switch detections allowed (£{listing_price:.2f} >= £{PRICE_THRESHOLD:.2f})")
-        
-        except Exception as price_filter_error:
-            print(f"⚠️ Warning: Price filtering failed: {price_filter_error}")
-            # Continue without price filtering if there's an error
-        
-        return final_detected_objects, processed_images
-
-
-    def download_images_for_listing(self, driver, listing_dir):
-        """FIXED: Download ALL listing images without limits and prevent duplicates"""
-        import concurrent.futures
-        import requests
-        from PIL import Image
-        from io import BytesIO
-        import os
-        import hashlib
-        
-        # Wait for the page to fully load
-        try:
-            WebDriverWait(driver, 10).until(  # Increased timeout for better reliability
-                EC.presence_of_element_located((By.TAG_NAME, "img"))
-            )
-        except TimeoutException:
-            print("  ▶ Timeout waiting for images to load")
-            return []
-        
-        # Try multiple selectors in order of preference - focusing on product images only
-        img_selectors = [
-            # Target product images specifically (avoid profile pictures)
-            "img.web_ui__Image__content[data-testid^='item-photo-']",
-            "img[data-testid^='item-photo-']",
-            # Target images within containers that suggest product photos
-            "div.web_ui__Image__cover img.web_ui__Image__content",
-            "div.web_ui__Image__scaled img.web_ui__Image__content", 
-            "div.web_ui__Image__rounded img.web_ui__Image__content",
-            # Broader selectors but still avoiding profile images
-            "div.feed-grid img",
-            "div[class*='photo'] img",
-        ]
-        
-        imgs = []
-        for selector in img_selectors:
-            imgs = driver.find_elements(By.CSS_SELECTOR, selector)
-            if imgs:
-                if print_images_backend_info:
-                    print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
-                break
-        
-        if not imgs:
-            print("  ▶ No images found with any selector")
-            return []
-        
-        # FIXED: Remove the [:8] limit - process ALL images found
-        valid_urls = []
-        seen_urls = set()  # Track URLs to prevent duplicates
-        
-        if print_images_backend_info:
-            print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
-        
-        for img in imgs:  # REMOVED [:8] limit here
-            src = img.get_attribute("src")
-            parent_classes = ""
-            
-            # Get parent element classes to check for profile picture indicators
-            try:
-                parent = img.find_element(By.XPATH, "..")
-                parent_classes = parent.get_attribute("class") or ""
-            except:
-                pass
-            
-            # Check if this is a valid product image
-            if src and src.startswith('http'):
-                # FIXED: Better duplicate detection using URL normalization
-                # Remove query parameters and fragments for duplicate detection
