@@ -1,4 +1,154 @@
 # Continuation from line 2201
+                                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                                    )
+                                    print(f"Found first input field in nested iframe {i} with selector: {selector}")
+                                    input_found = True
+                                    break
+                                except:
+                                    continue
+                            
+                            if input_found:
+                                break
+                            
+                            self.driver.switch_to.parent_frame()
+                            
+                        except Exception as e:
+                            print(f"Error with nested iframe {i}: {e}")
+                            try:
+                                self.driver.switch_to.parent_frame()
+                            except:
+                                self.driver.switch_to.default_content()
+                                for sel in iframe_selectors:
+                                    try:
+                                        iframe = self.driver.find_element(By.CSS_SELECTOR, sel)
+                                        self.driver.switch_to.frame(iframe)
+                                        break
+                                    except:
+                                        continue
+                            continue
+                
+                except Exception as e:
+                    print(f"Error searching nested iframes for inputs: {e}")
+            
+            if not input_found or not first_input:
+                print("Could not find input fields")
+                self.driver.switch_to.default_content()
+                return False
+            
+            print("Starting to input digits using native Selenium methods...")
+            
+            # Click on the first input field
+            time.sleep(random.uniform(0.5, 1.0))
+            
+            # Scroll into view
+            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", first_input)
+            time.sleep(random.uniform(0.3, 0.6))
+
+            action = ActionChains(self.driver)
+
+
+            # Click with ActionChains (this generates trusted events)
+
+
+            offset_x = random.randint(-2, 2)
+            offset_y = random.randint(-2, 2)
+
+            action.move_to_element_with_offset(first_input, offset_x, offset_y)
+            time.sleep(random.uniform(0.2, 0.4))
+            action.move_to_element(first_input)
+            time.sleep(random.uniform(0.1, 0.3))
+            action.click().perform()
+            
+            print("Clicked on first input field")
+
+
+            # Input each digit using send_keys (generates TRUSTED events)
+            # Input each digit using PyAutoGUI
+            for i, digit in enumerate(sequence):
+                print(f"Inputting digit {i+1}: {digit}")
+                
+                if digit == '1':
+                    time.sleep(2.3)
+                
+                # Random delay before typing
+                time.sleep(random.uniform(0.2, 0.6))
+                
+                # Use PyAutoGUI instead of Windows API
+                if not send_keypress_with_pyautogui(digit):
+                    print(f"Failed to send PyAutoGUI keystroke for digit: {digit}")
+                
+                time.sleep(random.uniform(0.3, 0.4))
+                
+                print(f"Typed digit: {digit}")
+                
+                # If not the last digit, move to next field with arrow key
+                if i < len(sequence) - 1:
+                    time.sleep(random.uniform(0.2, 0.6))
+                    
+                    # Use PyAutoGUI for arrow key
+                    if not send_keypress_with_pyautogui('right'):
+                        print(f"Failed to send PyAutoGUI RIGHT key")
+                    
+                    print(f"Moved to next input field")
+                    time.sleep(random.uniform(0.05, 0.25))
+
+            print("All digits entered successfully!")
+                
+                # Wait a moment for any validation
+            time.sleep(random.uniform(1.0, 2.0))
+                
+                # Find and click the Verify button (same as before)
+            print("Looking for Verify button...")
+            
+            verify_button_selectors = [
+                "button.audio-captcha-submit-button",
+                "button[class*='audio-captcha-submit-button']",
+                "button.push-button.no-margin",
+                "button[role='button'][class*='submit']",
+                "button:contains('Verify')",
+                "//button[contains(@class, 'audio-captcha-submit-button')]",
+                "//button[text()='Verify']",
+                "//button[contains(text(), 'Verify')]"
+            ]
+            
+            verify_button = None
+            for selector in verify_button_selectors:
+                try:
+                    if selector.startswith("//"):
+                        verify_button = WebDriverWait(self.driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        verify_button = WebDriverWait(self.driver, 5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                    print(f"Found Verify button with selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not verify_button:
+                print("Verify button not found, trying to find any submit-like button...")
+                try:
+                    all_buttons = self.driver.find_elements(By.TAG_NAME, "button")
+                    for button in all_buttons:
+                        button_text = button.text.lower().strip()
+                        button_class = button.get_attribute("class") or ""
+                        
+                        if ("verify" in button_text or 
+                            "submit" in button_text or 
+                            "confirm" in button_text or
+                            "submit" in button_class.lower() or
+                            "verify" in button_class.lower()):
+                            verify_button = button
+                            print(f"Found potential verify button: text='{button_text}', class='{button_class}'")
+                            break
+                except Exception as e:
+                    print(f"Error searching for buttons: {e}")
+            
+            if verify_button:
+                # Wait a moment before clicking verify
+                time.sleep(random.uniform(0.5, 1.0))
                 
                 # Scroll into view
                 self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", verify_button)
@@ -2049,153 +2199,3 @@ class VintedScraper:
                     print(f"Error closing image: {str(e)}")
             current_listing_images.clear()
 
-        if processed_images:
-            for img in processed_images:
-                try:
-                    img_copy = img.copy()  # Create a fresh copy
-                    current_listing_images.append(img_copy)
-                except Exception as e:
-                    print(f"Error copying image: {str(e)}")
-        
-        # Store bounding boxes with more robust handling
-        current_bounding_boxes = {
-            'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
-            'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
-        }
-
-        # Handle detected_items for Box 1 - show raw detected objects with counts
-        if isinstance(detected_items, dict):
-            # Format as "item_name: count" for items with count > 0
-            formatted_detected_items = {}
-            for item, count in detected_items.items():
-                try:
-                    count_int = int(count) if isinstance(count, str) else count
-                    if count_int > 0:
-                        formatted_detected_items[item] = str(count_int)
-                except (ValueError, TypeError):
-                    continue
-            
-            if not formatted_detected_items:
-                formatted_detected_items = {"no_items": "No items detected"}
-        else:
-            formatted_detected_items = {"no_items": "No items detected"}
-
-        # FIXED: Use the join_date parameter directly instead of generating new timestamp
-        # The join_date parameter now contains the stored timestamp from when item was processed
-        stored_append_time = join_date if join_date else "No timestamp"
-
-        # Explicitly set the global variables
-        current_detected_items = formatted_detected_items
-        current_listing_title = title[:50] + '...' if len(title) > 50 else title
-        current_listing_description = description[:200] + '...' if len(description) > 200 else description if description else "No description"
-        current_listing_join_date = stored_append_time  # FIXED: Use stored timestamp, not current time
-        current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
-        current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
-        current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
-        current_listing_url = url
-        current_suitability = suitability if suitability else "Suitability unknown"
-        current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
-
-    def handle_post_payment_logic(self, driver, driver_num, url):
-        """
-        Handle the logic after payment is clicked - check for success/errors
-        """
-        print(f"💳 DRIVER {driver_num}: Handling post-payment logic...")
-        
-        max_attempts = 250
-        attempt = 0
-        purchase_successful = False
-        
-        while not purchase_successful and attempt < max_attempts:
-            attempt += 1
-            
-            if attempt % 10 == 0:  # Print progress every 10 attempts
-                print(f"💳 DRIVER {driver_num}: Payment attempt {attempt}/{max_attempts}")
-            
-            # Check for error first (appears quickly)
-            try:
-                error_element = WebDriverWait(driver, 2).until(
-                    EC.presence_of_element_located((By.XPATH, 
-                        "//span[contains(text(), \"Sorry, we couldn't process your payment\")]"))
-                )
-                
-                if error_element:
-                    print(f"❌ DRIVER {driver_num}: Payment error detected, retrying...")
-                    
-                    # Click OK to dismiss error
-                    try:
-                        ok_button = WebDriverWait(driver, 3).until(
-                            EC.element_to_be_clickable((By.XPATH, "//button[contains(.//text(), 'OK, close')]"))
-                        )
-                        ok_button.click()
-                        print(f"✅ DRIVER {driver_num}: Error dismissed")
-                    except:
-                        print(f"⚠️ DRIVER {driver_num}: Could not dismiss error")
-                    
-                    # Wait and try to click pay again
-                    time.sleep(buying_driver_click_pay_wait_time)
-                    
-                    # Re-find and click pay button
-                    try:
-                        pay_button = driver.find_element(By.CSS_SELECTOR, 
-                            'button[data-testid="single-checkout-order-summary-purchase-button"]')
-                        pay_button.click()
-                    except:
-                        print(f"❌ DRIVER {driver_num}: Could not re-click pay button")
-                        break
-                    
-                    continue
-            
-            except TimeoutException:
-                pass  # No error found, continue
-            
-            # Check for success
-            try:
-                success_element = WebDriverWait(driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, 
-                        "//h2[text()='Purchase successful']"))
-                )
-                
-                if success_element:
-                    print(f"🎉 DRIVER {driver_num}: PURCHASE SUCCESSFUL!")
-                    purchase_successful = True
-                    
-                    # Send success notification
-                    try:
-                        self.send_pushover_notification(
-                            "Vinted Purchase Successful",
-                            f"Successfully purchased: {url}",
-                            'aks3to8guqjye193w7ajnydk9jaxh5',
-                            'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
-                        )
-                    except Exception as notification_error:
-                        print(f"⚠️ DRIVER {driver_num}: Notification failed: {notification_error}")
-                    
-                    break
-            
-            except TimeoutException:
-                # No success message yet, continue trying
-                continue
-        
-        if not purchase_successful:
-            print(f"❌ DRIVER {driver_num}: Purchase failed after {attempt} attempts")
-        
-        # Clean up
-        try:
-            driver.close()
-            if len(driver.window_handles) > 0:
-                driver.switch_to.window(driver.window_handles[0])
-        except:
-            pass
-        
-        self.release_driver(driver_num)
-        print(f"✅ DRIVER {driver_num}: Post-payment cleanup completed")
-
-
-    def monitor_for_purchase_unsuccessful(self, url, driver, driver_num, pay_button):
-        """
-        Monitor for "Purchase unsuccessful" detection from bookmark driver and click pay immediately
-        """
-        print(f"🔍 DRIVER {driver_num}: Starting 'Purchase unsuccessful' monitoring for {url[:50]}...")
-        
-        start_time = time.time()
