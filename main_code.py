@@ -1099,7 +1099,7 @@ def start_vm_bookmarking_process(driver, main_tab):
     print("🔖 VM BOOKMARK: Starting ultra-fast bookmarking process...")
     
     # Your test URL and username
-    test_url = "https://www.vinted.co.uk/items/7051140823-vintage-argyle-wool-vest?referrer=catalog"
+    test_url = "https://www.vinted.co.uk/items/7059487716-2-x-wolves-croc-charm-bundle-new?referrer=catalog"
     test_username = "test_user"
     
     try:
@@ -1247,29 +1247,41 @@ def click_buy_button_force_method(driver, buy_button):
     print("🔄 FORCE CLICK: Using successful method...")
     
     try:
-        # PRIMARY METHOD: Force Click (this worked for you)
-        driver.execute_script("arguments[0].disabled=false; arguments[0].click();", buy_button)
-        print("✅ FORCE CLICK: Primary method successful")
+        # PREVIOUS METHOD@ FROM WHAT I CANT TELL NOT WORKING
+        #driver.execute_script("arguments[0].disabled=false; arguments[0].click();", buy_button)
+        #print("✅ FORCE CLICK: Primary method successful")
         
         # Quick success check
-        time.sleep(0.5)  # Minimal wait
-        current_url = driver.current_url
+        #time.sleep(0.5)  # Minimal wait
+        #print('initial click, 0.5s wait done')
+        #current_url = driver.current_url
         
-        if 'checkout' in current_url or 'payment' in current_url:
-            return True
-        else:
-            print("⚠️ FORCE CLICK: No navigation detected, trying fallback...")
-            
-            # MINIMAL FIX: Re-find the buy button instead of using stale element
+        #if 'checkout' in current_url or 'payment' in current_url:
+        #    return True
+        #else:
+        #print("⚠️ FORCE CLICK: No navigation detected, trying fallback...")
+        
+        # MINIMAL FIX: Re-find the buy button instead of using stale element
+        try:
+            # Re-find the buy button (it may have changed after the first click)
+            fresh_buy_button = driver.find_element(By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]')
+            driver.execute_script("arguments[0].click();", fresh_buy_button)
+
             try:
-                # Re-find the buy button (it may have changed after the first click)
-                fresh_buy_button = driver.find_element(By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]')
-                driver.execute_script("arguments[0].click();", fresh_buy_button)
-                time.sleep(2.5)
-                return 'checkout' in driver.current_url or 'payment' in driver.current_url
-            except Exception as refind_error:
-                print(f"❌ FORCE CLICK: Could not re-find buy button: {refind_error}")
-                return False
+
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'button[data-testid="single-checkout-order-summary-purchase-button"]'))
+                )
+                print('Pay button found, continuing')
+            except TimeoutException:
+                
+                print('Error: Pay button not found within 10 seconds')
+
+            return 'checkout' in driver.current_url or 'payment' in driver.current_url
+        
+        except Exception as refind_error:
+            print(f"❌ FORCE CLICK: Could not re-find buy button: {refind_error}")
+            return False
             
     except Exception as e:
         print(f"❌ FORCE CLICK: Failed - {e}")
