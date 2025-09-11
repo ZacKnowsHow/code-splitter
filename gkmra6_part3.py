@@ -1,4 +1,108 @@
 # Continuation from line 4401
+    def extract_price(self, text):
+        import re
+        """
+        Extracts a float from a string like '£4.50' or '4.50 GBP'
+        Returns 0.0 if nothing is found or text is None
+        """
+        if not text:
+            return 0.0
+        match = re.search(r"[\d,.]+", text)
+        if match:
+            return float(match.group(0).replace(",", ""))
+        return 0.0
+    
+    def render_multiline_text(self, screen, font, text, rect, color):
+        # Convert dictionary to formatted string if need
+        if isinstance(text, dict):
+            text_lines = []
+            for key, value in text.items():
+                text_lines.append(f"{key}: {value}")
+            text = '\n'.join(text_lines)
+        
+        # Rest of the existing function remains the same
+        words = text.split()
+        lines = []
+        current_line = []
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            test_width, _ = font.size(test_line)
+            if test_width <= rect.width - 20:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                    current_line = [word]
+                else:
+                    lines.append(word)
+        if current_line:
+            lines.append(' '.join(current_line))
+
+        total_height = sum(font.size(line)[1] for line in lines)
+        if total_height > rect.height:
+            scale_factor = rect.height / total_height
+            new_font_size = max(1, int(font.get_height() * scale_factor))
+            try:
+                font = pygame.font.Font(None, new_font_size)  # Use default font
+            except pygame.error:
+                print(f"Error creating font with size {new_font_size}")
+                return  # Skip rendering if font creation fails
+
+        y_offset = rect.top + 10
+        for line in lines:
+            try:
+                text_surface = font.render(line, True, color)
+                text_rect = text_surface.get_rect(centerx=rect.centerx, top=y_offset)
+                screen.blit(text_surface, text_rect)
+                y_offset += font.get_linesize()
+                if y_offset + font.get_linesize() > rect.bottom - 10:
+                    break
+            except pygame.error as e:
+                print(f"Error rendering text: {e}")
+                continue  # Skip this line if rendering fails
+        
+
+
+    def bookmark_stopwatch_wrapper(self, func_name, tab_open_func, *args, **kwargs):
+        """
+        Wrapper function that times bookmark operations from tab open to ctrl+w
+        """
+        import time
+        
+        # Start timing when tab is opened
+        start_time = time.time()
+        print(f"⏱️ STOPWATCH START: {func_name} - Tab opening...")
+        
+        try:
+            # Execute the tab opening and bookmark operation
+            result = tab_open_func(*args, **kwargs)
+            
+            # Stop timing immediately after the 0.25s wait and ctrl+w
+            end_time = time.time()
+            elapsed = end_time - start_time
+            
+            print(f"⏱️ STOPWATCH END: {func_name} completed in {elapsed:.3f} seconds")
+            return result
+            
+        except Exception as e:
+            end_time = time.time()
+            elapsed = end_time - start_time
+            print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
+            raise
+    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
+        global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
+        global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
+        global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
+
+        # Close and clear existing images
+        if 'current_listing_images' in globals():
+            for img in current_listing_images:
+                try:
+                    img.close()  # Explicitly close the image
+                except Exception as e:
+                    print(f"Error closing image: {str(e)}")
+            current_listing_images.clear()
+
         if processed_images:
             for img in processed_images:
                 try:
@@ -2095,107 +2199,3 @@
             'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
             'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
             'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
-            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
-            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
-            'sword_p', 'tears_z', 'violet_p'
-        ]
-
-        # Get all prices
-        all_prices = self.fetch_all_prices()
-
-        # Count detected games
-        detected_games_count = sum(detected_objects.get(game, 0) for game in game_classes)
-
-        # Detect anonymous games from title and description
-        text_games_count = self.detect_anonymous_games_vinted(title, description)
-
-        # Calculate miscellaneous games
-        misc_games_count = max(0, text_games_count - detected_games_count)
-        misc_games_revenue = misc_games_count * 5 # Using same price as Facebook
-
-        # Handle box adjustments (same as Facebook)
-        adjustments = {
-            'oled_box': ['switch', 'comfort_h', 'tv_white'],
-            'switch_box': ['switch', 'comfort_h', 'tv_black'],
-            'lite_box': ['lite']
-        }
-
-        for box, items in adjustments.items():
-            box_count = detected_objects.get(box, 0)
-            for item in items:
-                detected_objects[item] = max(0, detected_objects.get(item, 0) - box_count)
-
-        # Remove switch_screen if present
-        detected_objects.pop('switch_screen', None)
-
-        # Detect SD card and add revenue
-        total_revenue = misc_games_revenue
-
-        # Calculate revenue from detected objects
-        for item, count in detected_objects.items():
-            if isinstance(count, str):
-                count_match = re.match(r'(\d+)', count)
-                count = int(count_match.group(1)) if count_match else 0
-
-            if count > 0 and item in all_prices:
-                item_price = all_prices[item]
-                if item == 'controller' and 'pro' in title.lower():
-                    item_price += 7.50
-                
-                item_revenue = item_price * count
-                total_revenue += item_revenue
-
-        expected_profit = total_revenue - listing_price
-        profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
-
-        print(f"Listing Price: £{listing_price:.2f}")
-        print(f"Total Expected Revenue: £{total_revenue:.2f}")
-        print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
-
-        # CRITICAL FIX: Filter out zero-count items for display (matching Facebook behavior)
-        display_objects = {k: v for k, v in detected_objects.items() if v > 0}
-
-        # Add miscellaneous games to display if present
-        if misc_games_count > 0:
-            display_objects['misc_games'] = misc_games_count
-
-        return total_revenue, expected_profit, profit_percentage, display_objects
-
-    def perform_detection_on_listing_images(self, model, listing_dir):
-        """
-        Enhanced object detection with all Facebook exceptions and logic
-        PLUS Vinted-specific post-scan game deduplication
-        NEW: Price threshold filtering for Nintendo Switch related items
-        """
-        if not os.path.isdir(listing_dir):
-            return {}, []
-
-        detected_objects = {class_name: [] for class_name in CLASS_NAMES}
-        processed_images = []
-        confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
-
-        image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
-        if not image_files:
-            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
-
-        for image_file in image_files:
-            image_path = os.path.join(listing_dir, image_file)
-            try:
-                img = cv2.imread(image_path)
-                if img is None:
-                    continue
-
-                # Track detections for this image
-                image_detections = {class_name: 0 for class_name in CLASS_NAMES}
-                results = model(img, verbose=False)
-                
-                for result in results:
-                    for box in result.boxes.cpu().numpy():
-                        class_id = int(box.cls[0])
-                        confidence = box.conf[0]
-                        
-                        if class_id < len(CLASS_NAMES):
-                            class_name = CLASS_NAMES[class_id]
-                            min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
-                            
-                            if confidence >= min_confidence:

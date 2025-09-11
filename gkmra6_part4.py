@@ -1,4 +1,108 @@
 # Continuation from line 6601
+            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
+            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
+            'sword_p', 'tears_z', 'violet_p'
+        ]
+
+        # Get all prices
+        all_prices = self.fetch_all_prices()
+
+        # Count detected games
+        detected_games_count = sum(detected_objects.get(game, 0) for game in game_classes)
+
+        # Detect anonymous games from title and description
+        text_games_count = self.detect_anonymous_games_vinted(title, description)
+
+        # Calculate miscellaneous games
+        misc_games_count = max(0, text_games_count - detected_games_count)
+        misc_games_revenue = misc_games_count * 5 # Using same price as Facebook
+
+        # Handle box adjustments (same as Facebook)
+        adjustments = {
+            'oled_box': ['switch', 'comfort_h', 'tv_white'],
+            'switch_box': ['switch', 'comfort_h', 'tv_black'],
+            'lite_box': ['lite']
+        }
+
+        for box, items in adjustments.items():
+            box_count = detected_objects.get(box, 0)
+            for item in items:
+                detected_objects[item] = max(0, detected_objects.get(item, 0) - box_count)
+
+        # Remove switch_screen if present
+        detected_objects.pop('switch_screen', None)
+
+        # Detect SD card and add revenue
+        total_revenue = misc_games_revenue
+
+        # Calculate revenue from detected objects
+        for item, count in detected_objects.items():
+            if isinstance(count, str):
+                count_match = re.match(r'(\d+)', count)
+                count = int(count_match.group(1)) if count_match else 0
+
+            if count > 0 and item in all_prices:
+                item_price = all_prices[item]
+                if item == 'controller' and 'pro' in title.lower():
+                    item_price += 7.50
+                
+                item_revenue = item_price * count
+                total_revenue += item_revenue
+
+        expected_profit = total_revenue - listing_price
+        profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
+
+        print(f"Listing Price: £{listing_price:.2f}")
+        print(f"Total Expected Revenue: £{total_revenue:.2f}")
+        print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
+
+        # CRITICAL FIX: Filter out zero-count items for display (matching Facebook behavior)
+        display_objects = {k: v for k, v in detected_objects.items() if v > 0}
+
+        # Add miscellaneous games to display if present
+        if misc_games_count > 0:
+            display_objects['misc_games'] = misc_games_count
+
+        return total_revenue, expected_profit, profit_percentage, display_objects
+
+    def perform_detection_on_listing_images(self, model, listing_dir):
+        """
+        Enhanced object detection with all Facebook exceptions and logic
+        PLUS Vinted-specific post-scan game deduplication
+        NEW: Price threshold filtering for Nintendo Switch related items
+        """
+        if not os.path.isdir(listing_dir):
+            return {}, []
+
+        detected_objects = {class_name: [] for class_name in CLASS_NAMES}
+        processed_images = []
+        confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
+
+        image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
+        if not image_files:
+            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
+
+        for image_file in image_files:
+            image_path = os.path.join(listing_dir, image_file)
+            try:
+                img = cv2.imread(image_path)
+                if img is None:
+                    continue
+
+                # Track detections for this image
+                image_detections = {class_name: 0 for class_name in CLASS_NAMES}
+                results = model(img, verbose=False)
+                
+                for result in results:
+                    for box in result.boxes.cpu().numpy():
+                        class_id = int(box.cls[0])
+                        confidence = box.conf[0]
+                        
+                        if class_id < len(CLASS_NAMES):
+                            class_name = CLASS_NAMES[class_id]
+                            min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
+                            
+                            if confidence >= min_confidence:
                                 if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
                                     confidences[class_name] = max(confidences[class_name], confidence)
                                 else:
@@ -2095,107 +2199,3 @@
             
             try:
                 # Start pygame FIRST so it's ready to display results
-                print("🎮 Starting pygame window...")
-                pygame_thread = threading.Thread(target=self.run_pygame_window)
-                pygame_thread.daemon = True
-                pygame_thread.start()
-                
-                # Give pygame time to initialize
-                time.sleep(2)
-                
-                # Process the test URLs
-                self.test_suitable_urls_mode(driver)
-                
-                # Keep pygame running to display results
-                print("🎮 Pygame running - use arrow keys to navigate, ESC to exit")
-                pygame_thread.join()  # Wait for pygame to finish
-                
-            except KeyboardInterrupt:
-                print("\n🛑 Test mode stopped by user")
-            finally:
-                driver.quit()
-                pygame.quit()
-                print("✅ Driver closed, exiting")
-                sys.exit(0)
-
-        # NEW: Check for TEST_NUMBER_OF_LISTINGS mode
-        if TEST_NUMBER_OF_LISTINGS:
-            print("🧪 TEST_NUMBER_OF_LISTINGS = True - Starting URL collection mode")
-            
-            # Skip all the complex initialization, just setup basic driver
-            driver = self.setup_driver()
-            
-            try:
-                self.test_url_collection_mode(driver, SEARCH_QUERY)
-            except KeyboardInterrupt:
-                print("\n🛑 URL collection stopped by user")
-            finally:
-                driver.quit()
-                print("✅ Driver closed, exiting")
-                sys.exit(0)
-        
-        # NEW: TEST_BOOKMARK_BUYING_FUNCTIONALITY implementation
-        if TEST_BOOKMARK_BUYING_FUNCTIONALITY:
-            print("🔖💳 TEST_BOOKMARK_BUYING_FUNCTIONALITY ENABLED")
-            print(f"🔗 URL: {TEST_BOOKMARK_BUYING_URL}")
-                    
-            # Start Flask app in separate thread.
-            flask_thread = threading.Thread(target=self.run_flask_app)
-            flask_thread.daemon = True
-            flask_thread.start()
-            
-            # Skip all driver initialization, pygame, flask, etc.
-            # Only run bookmark + buying process on the test URL
-            try:
-                print("🔖 STEP 1: Starting bookmark process...")
-                
-                # First, run the bookmark function
-                # Extract username from the URL if possible or use a test username
-                test_username = "test_user"  # You might want to make this configurable
-                
-                bookmark_success = self.bookmark_driver(TEST_BOOKMARK_BUYING_URL, test_username)
-                
-                if bookmark_success:
-                    if wait_for_bookmark_stopwatch_to_buy:
-                        print("✅ BOOKMARK: Successfully bookmarked the item")
-                        print(f"⏱️ WAITING: Waiting {bookmark_stopwatch_length} seconds for bookmark timer...")
-                        
-                        # Wait for the full bookmark stopwatch duration
-                        time.sleep(bookmark_stopwatch_length)
-                        
-                        print("✅ WAIT COMPLETE: Bookmark timer finished, starting buying process...")
-                        
-                    # Now start the buying process using process_single_listing_with_driver
-                    driver_num, driver = self.get_available_driver()
-                    
-                    if driver is not None:
-                        print(f"✅ BUYING: Got driver {driver_num}")
-                        print("💳 STARTING: Buying process...")
-                        
-                        # MODIFIED: Use a simulation method when actual buying isn't possible
-                        try:
-                            self.process_single_listing_with_driver(TEST_BOOKMARK_BUYING_URL, driver_num, driver)
-                        except Exception as buying_error:
-                            print(f"⚠️ BUYING: Normal buying process failed: {buying_error}")
-                            print("🧪 BUYING: Switching to test simulation mode...")
-                            
-                            # Simulate the buying process steps for testing
-                            self._simulate_buying_process_for_test(driver, driver_num, TEST_BOOKMARK_BUYING_URL)
-                        
-                        print("✅ TEST COMPLETE: Bookmark + Buying process finished")
-                    else:
-                        print("❌ BUYING ERROR: Could not get available driver")
-                        
-                else:
-                    print("❌ BOOKMARK FAILED: Could not bookmark the item, skipping buying process")
-                    
-            except Exception as e:
-                print(f"❌ TEST ERROR: {e}")
-                import traceback
-                traceback.print_exc()
-            finally:
-                # Clean up all drivers
-                self.cleanup_all_buying_drivers()
-                self.cleanup_persistent_buying_driver()
-                self.cleanup_persistent_bookmark_driver()
-            

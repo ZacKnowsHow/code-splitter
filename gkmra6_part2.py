@@ -1,4 +1,108 @@
 # Continuation from line 2201
+        numbers = self.extract_numbers_sequence(text)
+        
+        if len(numbers) == 6:
+            return ''.join(numbers)
+        
+        sequence_patterns = [r'(\w+)\s+(\w+)\s+(\w+)\s+(\w+)\s+(\w+)\s+(\w+)']
+        
+        word_to_num = {
+            'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
+        }
+        
+        for pattern in sequence_patterns:
+            matches = re.findall(pattern, text_clean)
+            for match in matches:
+                sequence = []
+                for word in match:
+                    if word in word_to_num:
+                        sequence.append(word_to_num[word])
+                    elif word.isdigit() and len(word) == 1:
+                        sequence.append(word)
+                
+                if len(sequence) == 6:
+                    return ''.join(sequence)
+        
+        return None
+
+    def input_captcha_solution(self, sequence):
+        """Input the 6-digit sequence into the captcha form using trusted events"""
+        if not self.driver or not sequence or len(sequence) != 6:
+            print("Cannot input solution: missing driver or invalid sequence")
+            return False
+        
+        print(f"Starting to input captcha solution: {sequence}")
+        
+        try:
+            # Navigate to the correct iframe (same as before)
+            self.driver.switch_to.default_content()
+            
+            iframe_selectors = [
+                "iframe[src*='captcha']",
+                "iframe[src*='datadome']",
+                "iframe[id*='datadome']",
+                "iframe[class*='datadome']",
+                "iframe[title*='captcha']",
+                "iframe[title*='DataDome']"
+            ]
+            
+            iframe_found = False
+            for selector in iframe_selectors:
+                try:
+                    iframe = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    print(f"Found main iframe with selector: {selector}")
+                    self.driver.switch_to.frame(iframe)
+                    iframe_found = True
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not iframe_found:
+                print("Could not find captcha iframe for input")
+                return False
+            
+            # Find input fields
+            input_selectors = [
+                "input.audio-captcha-inputs",
+                "input[class*='audio-captcha-inputs']",
+                "input[data-index='1']",
+                "input[maxlength='1'][inputmode='numeric']",
+                "input[data-form-type='other'][maxlength='1']"
+            ]
+            
+            input_found = False
+            first_input = None
+            
+            for selector in input_selectors:
+                try:
+                    first_input = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    print(f"Found first input field with selector: {selector}")
+                    input_found = True
+                    break
+                except TimeoutException:
+                    continue
+            
+            # Check nested iframes if not found
+            if not input_found:
+                print("Input fields not found in current iframe, checking nested iframes...")
+                
+                try:
+                    nested_iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
+                    print(f"Found {len(nested_iframes)} nested iframes")
+                    
+                    for i, nested_iframe in enumerate(nested_iframes):
+                        try:
+                            print(f"Trying nested iframe {i}...")
+                            self.driver.switch_to.frame(nested_iframe)
+                            
+                            for selector in input_selectors:
+                                try:
+                                    first_input = WebDriverWait(self.driver, 3).until(
                                         EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                                     )
                                     print(f"Found first input field in nested iframe {i} with selector: {selector}")
@@ -2094,108 +2198,4 @@ class VintedScraper:
             except pygame.error as e:
                 print(f"Error rendering text: {e}")
                 continue  # Skip this line if rendering fails
-
-    def extract_price(self, text):
-        import re
-        """
-        Extracts a float from a string like '£4.50' or '4.50 GBP'
-        Returns 0.0 if nothing is found or text is None
-        """
-        if not text:
-            return 0.0
-        match = re.search(r"[\d,.]+", text)
-        if match:
-            return float(match.group(0).replace(",", ""))
-        return 0.0
-    
-    def render_multiline_text(self, screen, font, text, rect, color):
-        # Convert dictionary to formatted string if need
-        if isinstance(text, dict):
-            text_lines = []
-            for key, value in text.items():
-                text_lines.append(f"{key}: {value}")
-            text = '\n'.join(text_lines)
-        
-        # Rest of the existing function remains the same
-        words = text.split()
-        lines = []
-        current_line = []
-        for word in words:
-            test_line = ' '.join(current_line + [word])
-            test_width, _ = font.size(test_line)
-            if test_width <= rect.width - 20:
-                current_line.append(word)
-            else:
-                if current_line:
-                    lines.append(' '.join(current_line))
-                    current_line = [word]
-                else:
-                    lines.append(word)
-        if current_line:
-            lines.append(' '.join(current_line))
-
-        total_height = sum(font.size(line)[1] for line in lines)
-        if total_height > rect.height:
-            scale_factor = rect.height / total_height
-            new_font_size = max(1, int(font.get_height() * scale_factor))
-            try:
-                font = pygame.font.Font(None, new_font_size)  # Use default font
-            except pygame.error:
-                print(f"Error creating font with size {new_font_size}")
-                return  # Skip rendering if font creation fails
-
-        y_offset = rect.top + 10
-        for line in lines:
-            try:
-                text_surface = font.render(line, True, color)
-                text_rect = text_surface.get_rect(centerx=rect.centerx, top=y_offset)
-                screen.blit(text_surface, text_rect)
-                y_offset += font.get_linesize()
-                if y_offset + font.get_linesize() > rect.bottom - 10:
-                    break
-            except pygame.error as e:
-                print(f"Error rendering text: {e}")
-                continue  # Skip this line if rendering fails
-        
-
-
-    def bookmark_stopwatch_wrapper(self, func_name, tab_open_func, *args, **kwargs):
-        """
-        Wrapper function that times bookmark operations from tab open to ctrl+w
-        """
-        import time
-        
-        # Start timing when tab is opened
-        start_time = time.time()
-        print(f"⏱️ STOPWATCH START: {func_name} - Tab opening...")
-        
-        try:
-            # Execute the tab opening and bookmark operation
-            result = tab_open_func(*args, **kwargs)
-            
-            # Stop timing immediately after the 0.25s wait and ctrl+w
-            end_time = time.time()
-            elapsed = end_time - start_time
-            
-            print(f"⏱️ STOPWATCH END: {func_name} completed in {elapsed:.3f} seconds")
-            return result
-            
-        except Exception as e:
-            end_time = time.time()
-            elapsed = end_time - start_time
-            print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
-            raise
-    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
-        global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
-        global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
-        global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
-
-        # Close and clear existing images
-        if 'current_listing_images' in globals():
-            for img in current_listing_images:
-                try:
-                    img.close()  # Explicitly close the image
-                except Exception as e:
-                    print(f"Error closing image: {str(e)}")
-            current_listing_images.clear()
 
