@@ -1,4 +1,16 @@
 # Continuation from line 6601
+                normalized_url = src.split('?')[0].split('#')[0]
+                
+                if normalized_url in seen_urls:
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
+                    continue
+                
+                seen_urls.add(normalized_url)
+                
+                # Exclude profile pictures and small icons based on URL patterns
+                if (
+                    # Skip small profile pictures (50x50, 75x75, etc.)
                     '/50x50/' in src or 
                     '/75x75/' in src or 
                     '/100x100/' in src or
@@ -2187,15 +2199,3 @@
             if driver is None:
                 print("❌ SCRAPING THREAD: Failed to setup main driver")
                 return
-                
-            try:
-                print("🔍 SCRAPING THREAD: Setting up persistent buying driver...")
-                self.setup_persistent_buying_driver()
-                
-                print("🚀 SCRAPING THREAD: Starting Vinted search with refresh...")
-                self.search_vinted_with_refresh(driver, SEARCH_QUERY)
-                
-            except Exception as scraping_error:
-                print(f"❌ SCRAPING THREAD ERROR: {scraping_error}")
-                import traceback
-                traceback.print_exc()
