@@ -1,4 +1,16 @@
 # Continuation from line 4401
+        check_interval = 0.1  # Check every 100ms for ultra-fast response
+        timeout = 25 * 60  # 25 minutes timeout
+        
+        global purchase_unsuccessful_detected_urls
+        
+        try:
+            while True:
+                elapsed = time.time() - start_time
+                
+                # Check timeout
+                if elapsed >= timeout:
+                    print(f"⏰ DRIVER {driver_num}: Monitoring timeout after {elapsed/60:.1f} minutes")
                     break
                 
                 # Check if driver is still alive
@@ -2187,15 +2199,3 @@
             if src and src.startswith('http'):
                 # FIXED: Better duplicate detection using URL normalization
                 # Remove query parameters and fragments for duplicate detection
-                normalized_url = src.split('?')[0].split('#')[0]
-                
-                if normalized_url in seen_urls:
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
-                    continue
-                
-                seen_urls.add(normalized_url)
-                
-                # Exclude profile pictures and small icons based on URL patterns
-                if (
-                    # Skip small profile pictures (50x50, 75x75, etc.)

@@ -1,4 +1,16 @@
 # Continuation from line 2201
+                
+                # Scroll into view
+                self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", verify_button)
+                time.sleep(random.uniform(0.3, 0.6))
+                
+                # Human-like click with ActionChains (generates trusted events)
+                action = ActionChains(self.driver)
+                offset_x = random.randint(-3, 3)
+                offset_y = random.randint(-3, 3)
+                action.move_to_element_with_offset(verify_button, offset_x, offset_y)
+                time.sleep(random.uniform(0.2, 0.4))
+                action.move_to_element(verify_button)
                 time.sleep(random.uniform(0.2, 0.5))
                 action.click().perform()
                 
@@ -2187,15 +2199,3 @@ class VintedScraper:
         print(f"🔍 DRIVER {driver_num}: Starting 'Purchase unsuccessful' monitoring for {url[:50]}...")
         
         start_time = time.time()
-        check_interval = 0.1  # Check every 100ms for ultra-fast response
-        timeout = 25 * 60  # 25 minutes timeout
-        
-        global purchase_unsuccessful_detected_urls
-        
-        try:
-            while True:
-                elapsed = time.time() - start_time
-                
-                # Check timeout
-                if elapsed >= timeout:
-                    print(f"⏰ DRIVER {driver_num}: Monitoring timeout after {elapsed/60:.1f} minutes")
