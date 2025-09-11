@@ -20,7 +20,7 @@ jobs:
       with:
         python-version: '3.9'
 
-    - name: Generate random filename and split into 4 parts
+    - name: Generate random filename and split into 5 parts
       run: |
         python3 - <<PY
         import random
@@ -36,22 +36,25 @@ jobs:
         with open('main_code.py', 'r') as f:
             lines = f.readlines()
 
-        # Split into 4 parts: 0-2200, 2201-4400, 4401-6600, 6601-8800
+        # Split into 5 parts: 0-2200, 2201-4400, 4401-6600, 6601-8800, 8801-11000
         split_line_1 = 2200
         split_line_2 = 4400
         split_line_3 = 6600
         split_line_4 = 8800
+        split_line_5 = 11000
         
         part1_lines = lines[:split_line_1]
         part2_lines = lines[split_line_1:split_line_2]
         part3_lines = lines[split_line_2:split_line_3]
         part4_lines = lines[split_line_3:split_line_4] if len(lines) > split_line_3 else []
+        part5_lines = lines[split_line_4:split_line_5] if len(lines) > split_line_4 else []
 
         # Create files with random names
         part1_filename = f"{random_name}_part1.py"
         part2_filename = f"{random_name}_part2.py"
         part3_filename = f"{random_name}_part3.py"
         part4_filename = f"{random_name}_part4.py"
+        part5_filename = f"{random_name}_part5.py"
 
         with open(part1_filename, 'w') as f:
             f.writelines(part1_lines)
@@ -69,6 +72,11 @@ jobs:
                 f.write(f"# Continuation from line {split_line_3 + 1}\n")
                 f.writelines(part4_lines)
 
+        if part5_lines:
+            with open(part5_filename, 'w') as f:
+                f.write(f"# Continuation from line {split_line_4 + 1}\n")
+                f.writelines(part5_lines)
+
         # Get repo info from environment variables  
         github_repo = os.environ.get('GITHUB_REPOSITORY', '')
         if '/' in github_repo:
@@ -83,6 +91,7 @@ jobs:
             "part2_filename": part2_filename,
             "part3_filename": part3_filename,
             "part4_filename": part4_filename,
+            "part5_filename": part5_filename,
             "repo_owner": repo_owner,
             "repo_name": repo_name
         }
@@ -95,14 +104,16 @@ jobs:
         part2_link = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/{part2_filename}"
         part3_link = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/{part3_filename}"
         part4_link = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/{part4_filename}"
+        part5_link = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/{part5_filename}"
         
-        final_message = f"I have a vinted web scraper. The following 4 files show you the code of my scraper, the first link shows the first 2200 lines, the second shows lines 2201-4400, the third shows lines 4401-6600, and the fourth shows lines 6601-8800: line 0-2200: {part1_link} line 2201-4400: {part2_link} line 4401-6600: {part3_link} line 6601-8800: {part4_link}"
+        final_message = f"I have a vinted web scraper. The following 5 files show you the code of my scraper, the first link shows the first 2200 lines, the second shows lines 2201-4400, the third shows lines 4401-6600, the fourth shows lines 6601-8800, and the fifth shows lines 8801-11000: line 0-2200: {part1_link} line 2201-4400: {part2_link} line 4401-6600: {part3_link} line 6601-8800: {part4_link} line 8801-11000: {part5_link}"
 
-        print(f"Split complete: {len(part1_lines)} + {len(part2_lines)} + {len(part3_lines)} + {len(part4_lines)} lines")
+        print(f"Split complete: {len(part1_lines)} + {len(part2_lines)} + {len(part3_lines)} + {len(part4_lines)} + {len(part5_lines)} lines")
         print(f"Part 1 (0-2200): {part1_filename}")
         print(f"Part 2 (2201-4400): {part2_filename}")
         print(f"Part 3 (4401-6600): {part3_filename}")
         print(f"Part 4 (6601-8800): {part4_filename}")
+        print(f"Part 5 (8801-11000): {part5_filename}")
         print("")
         print("=" * 80)
         print("COPY THIS MESSAGE:")
@@ -114,12 +125,12 @@ jobs:
     - name: Remove old split files
       run: |
         # Remove any old part files (but keep the new ones and main_code.py)
-        find . -name "*_part*.py" -not -name "$(cat latest_files.json | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['part1_filename'])")" -not -name "$(cat latest_files.json | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['part2_filename'])")" -not -name "$(cat latest_files.json | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['part3_filename'])")" -not -name "$(cat latest_files.json | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['part4_filename'])")" -delete
+        find . -name "*_part*.py" -not -name "$(cat latest_files.json | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['part1_filename'])")" -not -name "$(cat latest_files.json | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['part2_filename'])")" -not -name "$(cat latest_files.json | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['part3_filename'])")" -not -name "$(cat latest_files.json | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['part4_filename'])")" -not -name "$(cat latest_files.json | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['part5_filename'])")" -delete
 
     - name: Commit split files
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add -A
-        git diff --staged --quiet || git commit -m "Auto-split code files into 4 parts with random names"
+        git diff --staged --quiet || git commit -m "Auto-split code files into 5 parts with random names"
         git push
