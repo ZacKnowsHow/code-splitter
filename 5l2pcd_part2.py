@@ -1559,32 +1559,290 @@ class VintedScraper:
             self.bookmark_driver_locks[i] = threading.Lock()
 
 
+        self.bookmark_drivers = {}  # {0: driver, 1: driver, 2: driver, 3: driver, 4: driver}
+        self.bookmark_driver_status = {}  # {0: 'preparing', 1: 'ready', 2: 'busy', 3: 'not_created', 4: 'not_created'}
         self.current_bookmark_driver_index = 0
+        self.bookmark_queue = Queue()  # Queue of listings waiting to be bookmarked
+        self.scraping_paused = threading.Event()  # Event to pause/resume scraping
+        self.scraping_paused.set()  # Initially allow scraping
+        
+        # Lock for thread safety
+        self.bookmark_system_lock = threading.Lock()
+        
+        # Configuration for each of the 5 drivers
         self.bookmark_driver_configs = [
             {
                 'user_data_dir': 'C:\\VintedScraper_Default_Bookmark',
-                'profile_directory': 'Profile 4'
+                'profile_directory': 'Profile 4',
+                'google_login': True,  # Original driver uses Google login
+                'driver_name': 'BookmarkDriver-1'
             },
             {
                 'user_data_dir': 'C:\\VintedScraper_Default2_Bookmark', 
-                'profile_directory': 'Profile 17'
+                'profile_directory': 'Profile 17',
+                'google_login': False,  # This one uses email login
+                'driver_name': 'BookmarkDriver-2'
             },
             {
                 'user_data_dir': 'C:\\VintedScraper_Default3_Bookmark',
-                'profile_directory': 'Profile 6' 
+                'profile_directory': 'Profile 6',
+                'google_login': True,  # Uses Google login
+                'driver_name': 'BookmarkDriver-3'
             },
             {
                 'user_data_dir': 'C:\\VintedScraper_Default4_Bookmark',
-                'profile_directory': 'Profile 12'
+                'profile_directory': 'Profile 12',
+                'google_login': False,  # Uses email login
+                'driver_name': 'BookmarkDriver-4'
             },
             {
                 'user_data_dir': 'C:\\VintedScraper_Default5_Bookmark',
-                'profile_directory': 'Profile 18'
+                'profile_directory': 'Profile 18',
+                'google_login': True,  # Uses Google login
+                'driver_name': 'BookmarkDriver-5'
             }
         ]
+        
+        # Initialize all driver statuses
+        for i in range(5):
+            self.bookmark_driver_status[i] = 'not_created'
+        
+        # Start the bookmark system
+        self._initialize_bookmark_system()
         self.current_bookmark_driver = None
         self.shutdown_event = threading.Event()
 
+
+    def _initialize_bookmark_system(self):
+        """Initialize the 5-driver cycling bookmark system"""
+        print("🔖 INIT: Starting 5-driver cycling bookmark system")
+        
+        # Start the bookmark queue processor in a separate thread
+        bookmark_processor_thread = threading.Thread(
+            target=self._bookmark_queue_processor,
+            name="Bookmark-Queue-Processor",
+            daemon=True
+        )
+        bookmark_processor_thread.start()
+        
+        # Prepare the first driver immediately
+        self._prepare_next_driver_async(0)
+        
+        print("✅ INIT: 5-driver bookmark system initialized")
+
+    def _bookmark_queue_processor(self):
+        """Main queue processor that handles bookmark requests"""
+        print("🔖 PROCESSOR: Bookmark queue processor started")
+        
+        while True:
+            try:
+                # Wait for a bookmark request
+                try:
+                    listing_url, username = self.bookmark_queue.get(timeout=1)
+                    print(f"🔖 PROCESSOR: Got bookmark request for {listing_url[:50]}...")
+                except Empty:
+                    continue
+                
+                # PAUSE SCRAPING while processing bookmark
+                print("⏸️ PAUSE: Pausing main scraping during bookmark process")
+                self.scraping_paused.clear()
+                
+                try:
+                    # Process the bookmark request
+                    success = self._process_bookmark_with_cycling(listing_url, username)
+                    if success:
+                        print(f"✅ PROCESSOR: Bookmark successful for {listing_url[:50]}...")
+                    else:
+                        print(f"❌ PROCESSOR: Bookmark failed for {listing_url[:50]}...")
+                
+                finally:
+                    # RESUME SCRAPING after bookmark processing
+                    print("▶️ RESUME: Resuming main scraping after bookmark")
+                    self.scraping_paused.set()
+                    self.bookmark_queue.task_done()
+                
+            except Exception as processor_error:
+                print(f"❌ PROCESSOR ERROR: {processor_error}")
+                # Make sure to resume scraping even if there's an error
+                self.scraping_paused.set()
+                continue
+
+    def _process_bookmark_with_cycling(self, listing_url, username):
+        """Process bookmark using the cycling driver system"""
+        with self.bookmark_system_lock:
+            print(f"🔖 CYCLE: Processing bookmark with driver {self.current_bookmark_driver_index + 1}/5")
+            
+            # Get the current driver (should be ready)
+            current_driver = self._get_ready_bookmark_driver()
+            
+            if current_driver is None:
+                print(f"❌ CYCLE: No ready driver available")
+                return False
+            
+            # Mark current driver as busy
+            self.bookmark_driver_status[self.current_bookmark_driver_index] = 'busy'
+            
+            # Start preparing the next driver IMMEDIATELY (async)
+            next_driver_index = (self.current_bookmark_driver_index + 1) % 5
+            self._prepare_next_driver_async(next_driver_index)
+            
+            print(f"🔖 EXEC: Executing bookmark with driver {self.current_bookmark_driver_index + 1}")
+            
+        # Execute bookmark outside the lock to prevent blocking
+        success = self._execute_enhanced_bookmark(current_driver, listing_url, username, self.current_bookmark_driver_index)
+        
+        with self.bookmark_system_lock:
+            # After bookmarking completes, advance to next driver
+            if success:
+                print(f"✅ CYCLE: Driver {self.current_bookmark_driver_index + 1} completed successfully")
+            else:
+                print(f"❌ CYCLE: Driver {self.current_bookmark_driver_index + 1} failed")
+            
+            # Clean up current driver and advance
+            self._cleanup_current_driver()
+            self._advance_to_next_driver()
+            
+        return success
+
+    def _get_ready_bookmark_driver(self):
+        """Get the current ready bookmark driver"""
+        current_index = self.current_bookmark_driver_index
+        
+        if (current_index in self.bookmark_drivers and 
+            self.bookmark_driver_status[current_index] == 'ready'):
+            return self.bookmark_drivers[current_index]
+        
+        print(f"⚠️ CYCLE: Driver {current_index + 1} not ready (status: {self.bookmark_driver_status.get(current_index, 'unknown')})")
+        return None
+
+    def _prepare_next_driver_async(self, driver_index):
+        """Prepare the next driver asynchronously"""
+        prepare_thread = threading.Thread(
+            target=self._prepare_driver,
+            args=(driver_index,),
+            name=f"Prepare-Driver-{driver_index + 1}",
+            daemon=True
+        )
+        prepare_thread.start()
+        print(f"🔧 ASYNC: Started preparing driver {driver_index + 1} in background")
+
+    def _prepare_driver(self, driver_index):
+        """Prepare a specific bookmark driver (login, clear cookies, etc.)"""
+        config = self.bookmark_driver_configs[driver_index]
+        driver_name = config['driver_name']
+        
+        print(f"🔧 PREPARE: Starting preparation of {driver_name}")
+        
+        try:
+            # Mark as preparing
+            self.bookmark_driver_status[driver_index] = 'preparing'
+            
+            # Create the driver with VM connection
+            driver = self._create_vm_bookmark_driver(config, driver_index)
+            
+            if driver is None:
+                print(f"❌ PREPARE: Failed to create {driver_name}")
+                self.bookmark_driver_status[driver_index] = 'error'
+                return
+            
+            # Clear cookies
+            print(f"🧹 PREPARE: Clearing cookies for {driver_name}")
+            driver.delete_all_cookies()
+            
+            # Navigate to Vinted
+            print(f"🌐 PREPARE: Navigating to Vinted for {driver_name}")
+            driver.get("https://vinted.co.uk")
+            
+            # Handle cookie consent
+            self._handle_cookie_consent(driver, driver_name)
+            
+            # Perform login based on configuration
+            login_success = self._perform_vinted_login(driver, config, driver_name)
+            
+            if not login_success:
+                print(f"❌ PREPARE: Login failed for {driver_name}")
+                driver.quit()
+                self.bookmark_driver_status[driver_index] = 'error'
+                return
+            
+            # Handle any captcha that appears
+            captcha_result = handle_datadome_audio_captcha(driver)
+            
+            if captcha_result == "no_captcha":
+                print(f"✅ PREPARE: {driver_name} ready - no captcha needed")
+            elif captcha_result == True:
+                print(f"🎧 PREPARE: {driver_name} captcha solved")
+            else:
+                print(f"⚠️ PREPARE: {driver_name} captcha handling failed, continuing anyway")
+            
+            # Store the driver and mark as ready
+            with self.bookmark_system_lock:
+                self.bookmark_drivers[driver_index] = driver
+                self.bookmark_driver_status[driver_index] = 'ready'
+                
+            print(f"✅ PREPARE: {driver_name} is now ready for bookmarking")
+            
+        except Exception as prepare_error:
+            print(f"❌ PREPARE ERROR: {driver_name} preparation failed: {prepare_error}")
+            self.bookmark_driver_status[driver_index] = 'error'
+
+    def _create_vm_bookmark_driver(self, config, driver_index):
+        """Create a bookmark driver connected to the VM"""
+        vm_ip_address = "192.168.56.101"  # Your VM IP
+        
+        try:
+            chrome_options = ChromeOptions()
+            chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
+            chrome_options.add_argument(f"--profile-directory={config['profile_directory']}")
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            chrome_options.add_argument('--force-device-scale-factor=1')
+            chrome_options.add_argument('--high-dpi-support=1')
+            chrome_options.add_argument(f'--remote-debugging-port={9230 + driver_index}')  # Unique port for each driver
+            chrome_options.add_argument('--remote-allow-origins=*')
+            chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--disable-web-security')
+            chrome_options.add_argument('--allow-running-insecure-content')
+            
+            # Create driver connection to VM
+            driver = webdriver.Remote(
+                command_executor=f'http://{vm_ip_address}:4444',
+                options=chrome_options
+            )
+            
+            # Apply stealth modifications
+            stealth_script = """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            window.chrome = {runtime: {}};
+            Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+            """
+            driver.execute_script(stealth_script)
+            
+            print(f"✅ CREATE: Driver {driver_index + 1} connected to VM successfully")
+            return driver
+            
+        except Exception as e:
+            print(f"❌ CREATE: Failed to create VM driver {driver_index + 1}: {e}")
+            return None
+
+    def _handle_cookie_consent(self, driver, driver_name):
+        """Handle cookie consent for the driver"""
+        try:
+            cookie_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler"))
+            )
+            cookie_button.click()
+            print(f"🍪 COOKIES: Accepted for {driver_name}")
+            time.sleep(random.uniform(1, 2))
+        except TimeoutException:
+            print(f"🍪 COOKIES: No consent dialog for {driver_name}")
 
     def cleanup_all_bookmark_threads(self):
         """
@@ -1610,224 +1868,8 @@ class VintedScraper:
                     print(f"✅ CLEANUP: BookmarkDriver-{driver_num} completed")
         
         print("✅ CLEANUP: Bookmark thread cleanup completed")
+            
 
-    def bookmark_driver_threaded(self, listing_url, username=None):
-        """
-        THREADED VERSION: Run each bookmark driver in its own thread
-        """
-        # Get the next available driver index (cycle through 0-4)
-        with threading.Lock():  # Ensure thread-safe driver selection
-            driver_index = self.current_bookmark_driver_index
-            self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
-        
-        # Start the bookmark process in a separate thread for this driver
-        thread_name = f"BookmarkDriver-{driver_index + 1}"
-        bookmark_thread = threading.Thread(
-            target=self._bookmark_driver_thread_worker,
-            args=(driver_index, listing_url, username),
-            name=thread_name
-        )
-        bookmark_thread.daemon = True
-        bookmark_thread.start()
-        
-        # Track the thread
-        self.bookmark_driver_threads[driver_index] = bookmark_thread
-        
-        print(f"🧵 BOOKMARK: Started {thread_name} for URL: {listing_url[:50]}...")
-        return True
-
-    def _bookmark_driver_thread_worker(self, driver_index, listing_url, username):
-        """
-        Worker function that runs in each bookmark driver thread
-        """
-        thread_name = f"BookmarkDriver-{driver_index + 1}"
-        
-        with self.bookmark_driver_locks[driver_index]:
-            print(f"🔖 {thread_name}: Starting bookmark process...")
-            
-            try:
-                # Create driver for this specific thread
-                config = self.bookmark_driver_configs[driver_index]
-                driver = self._create_bookmark_driver(config, driver_index)
-                
-                if driver is None:
-                    print(f"❌ {thread_name}: Failed to create driver")
-                    return
-                
-                # Execute the bookmark process using existing logic
-                step_log = self._initialize_step_logging()
-                step_log['driver_number'] = driver_index + 1
-                
-                # Validate inputs
-                if not self._validate_bookmark_inputs(listing_url, username, step_log):
-                    print(f"❌ {thread_name}: Input validation failed")
-                    return
-                
-                # Execute bookmark sequences
-                success = self._execute_bookmark_sequences_with_monitoring(
-                    driver, listing_url, username, step_log
-                )
-                
-                if success:
-                    print(f"✅ {thread_name}: Bookmark process completed successfully")
-                else:
-                    print(f"❌ {thread_name}: Bookmark process failed")
-                    
-            except Exception as e:
-                print(f"❌ {thread_name}: Thread error: {e}")
-                import traceback
-                traceback.print_exc()
-                
-            finally:
-                # Clean up driver
-                try:
-                    if 'driver' in locals() and driver:
-                        driver.quit()
-                        print(f"🗑️ {thread_name}: Driver cleaned up")
-                except Exception as cleanup_error:
-                    print(f"⚠️ {thread_name}: Cleanup error: {cleanup_error}")
-                
-                print(f"🏁 {thread_name}: Thread completed")
-
-    def _create_bookmark_driver(self, config, driver_index):
-        """
-        Create a bookmark driver with the specified configuration
-        """
-        try:
-            # Ensure ChromeDriver is cached
-            if not hasattr(self, '_cached_chromedriver_path'):
-                self._cached_chromedriver_path = ChromeDriverManager().install()
-            
-            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
-            
-            chrome_opts = Options()
-            chrome_opts.add_argument(f"--user-data-dir={config['user_data_dir']}")
-            chrome_opts.add_argument(f"--profile-directory={config['profile_directory']}")
-            chrome_opts.add_argument("--no-sandbox")
-            chrome_opts.add_argument("--headless")
-            chrome_opts.add_argument("--disable-dev-shm-usage")
-            chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument("--window-size=800,600")
-            chrome_opts.add_argument("--log-level=3")
-            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-            chrome_opts.add_experimental_option('useAutomationExtension', False)
-            
-            # Create the driver
-            driver = webdriver.Chrome(service=service, options=chrome_opts)
-            
-            # Set timeouts
-            driver.implicitly_wait(1)
-            driver.set_page_load_timeout(8)
-            driver.set_script_timeout(3)
-            
-            print(f"✅ DRIVER {driver_index + 1}: Created successfully")
-            return driver
-            
-        except Exception as e:
-            print(f"❌ DRIVER {driver_index + 1}: Creation failed: {e}")
-            return None
-                
-    def get_next_bookmark_driver(self):
-        """
-        Get the current ready bookmark driver (already created and waiting)
-        If no driver exists (first call), create the first one
-        """
-        # If no driver exists yet (program startup), create the first one
-        if self.current_bookmark_driver is None:
-            print(f"🚀 CYCLING: Creating FIRST bookmark driver {self.current_bookmark_driver_index + 1}/5")
-            config = self.bookmark_driver_configs[self.current_bookmark_driver_index]
-            
-            try:
-                # Ensure ChromeDriver is cached
-                if not hasattr(self, '_cached_chromedriver_path'):
-                    self._cached_chromedriver_path = ChromeDriverManager().install()
-                
-                service = Service(self._cached_chromedriver_path, log_path=os.devnull)
-                
-                chrome_opts = Options()
-                chrome_opts.add_argument(f"--user-data-dir={config['user_data_dir']}")
-                chrome_opts.add_argument(f"--profile-directory={config['profile_directory']}")
-                chrome_opts.add_argument("--no-sandbox")
-                chrome_opts.add_argument("--disable-dev-shm-usage")
-                chrome_opts.add_argument("--disable-gpu")
-                chrome_opts.add_argument("--window-size=800,600")
-                chrome_opts.add_argument("--log-level=3")
-                chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-                chrome_opts.add_experimental_option('useAutomationExtension', False)
-                
-                # Create the driver
-                self.current_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
-                
-                # Set timeouts
-                self.current_bookmark_driver.implicitly_wait(1)
-                self.current_bookmark_driver.set_page_load_timeout(8)
-                self.current_bookmark_driver.set_script_timeout(3)
-                
-                # DON'T navigate anywhere - leave it blank as requested
-                print(f"✅ CYCLING: First driver {self.current_bookmark_driver_index + 1}/5 created and ready (blank page)")
-                
-            except Exception as e:
-                print(f"❌ CYCLING: Failed to create first bookmark driver: {e}")
-                return None
-        
-        # Return the current ready driver (either just created or already waiting from previous close)
-        print(f"📋 CYCLING: Using ready driver {self.current_bookmark_driver_index + 1}/5")
-        return self.current_bookmark_driver
-
-    def close_current_bookmark_driver(self):
-        """
-        Close the current bookmark driver, advance to next index, and IMMEDIATELY open the next driver
-        """
-        if self.current_bookmark_driver is not None:
-            try:
-                print(f"🗑️ CYCLING: Closing bookmark driver {self.current_bookmark_driver_index + 1}")
-                self.current_bookmark_driver.quit()
-                time.sleep(0.5)  # Brief pause for cleanup
-                print(f"✅ CYCLING: Closed bookmark driver {self.current_bookmark_driver_index + 1}")
-            except Exception as e:
-                print(f"⚠️ CYCLING: Error closing driver {self.current_bookmark_driver_index + 1}: {e}")
-            finally:
-                self.current_bookmark_driver = None
-        
-        # Advance to next driver (cycle back to 0 after 4)
-        self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
-        
-        # IMMEDIATELY open the next driver and keep it ready
-        print(f"🚀 CYCLING: IMMEDIATELY opening next driver {self.current_bookmark_driver_index + 1}/5")
-        next_config = self.bookmark_driver_configs[self.current_bookmark_driver_index]
-        
-        try:
-            # Ensure ChromeDriver is cached
-            if not hasattr(self, '_cached_chromedriver_path'):
-                self._cached_chromedriver_path = ChromeDriverManager().install()
-            
-            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
-            
-            chrome_opts = Options()
-            chrome_opts.add_argument(f"--user-data-dir={next_config['user_data_dir']}")
-            chrome_opts.add_argument(f"--profile-directory={next_config['profile_directory']}")
-            chrome_opts.add_argument("--no-sandbox")
-            chrome_opts.add_argument("--disable-dev-shm-usage")
-            chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument("--window-size=800,600")
-            chrome_opts.add_argument("--log-level=3")
-            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-            chrome_opts.add_experimental_option('useAutomationExtension', False)
-            
-            # Create the NEXT driver immediately
-            self.current_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
-            
-            # Set timeouts
-            self.current_bookmark_driver.implicitly_wait(1)
-            self.current_bookmark_driver.set_page_load_timeout(8)
-            self.current_bookmark_driver.set_script_timeout(3)
-            
-            # DON'T navigate anywhere - leave it blank as requested
-            print(f"✅ CYCLING: Driver {self.current_bookmark_driver_index + 1}/5 is now open and ready (blank page)")
-            
-        except Exception as e:
-            print(f"❌ CYCLING: Failed to open next driver {self.current_bookmark_driver_index + 1}: {e}")
-            self.current_bookmark_driver = None
     def get_available_driver(self):
         """
         FIXED: Find and reserve the first available driver with proper initialization
@@ -2156,46 +2198,4 @@ class VintedScraper:
 
     def load_rectangle_config(self):
         return json.load(open(CONFIG_FILE, 'r')) if os.path.exists(CONFIG_FILE) else None
-
-    def save_rectangle_config(self, rectangles):
-        json.dump([(rect.x, rect.y, rect.width, rect.height) for rect in rectangles], open(CONFIG_FILE, 'w'))
-        
-    def render_text_in_rect(self, screen, font, text, rect, color):
-        words = text.split()
-        lines = []
-        current_line = []
-        for word in words:
-            test_line = ' '.join(current_line + [word])
-            test_width, _ = font.size(test_line)
-            if test_width <= rect.width - 10:
-                current_line.append(word)
-            else:
-                if current_line:
-                    lines.append(' '.join(current_line))
-                    current_line = [word]
-                else:
-                    lines.append(word)
-        if current_line:
-            lines.append(' '.join(current_line))
-
-        total_height = sum(font.size(line)[1] for line in lines)
-        if total_height > rect.height:
-            scale_factor = rect.height / total_height
-            new_font_size = max(1, int(font.get_height() * scale_factor))
-            try:
-                font = pygame.font.Font(None, new_font_size)  # Use default font
-            except pygame.error:
-                print(f"Error creating font with size {new_font_size}")
-                return  # Skip rendering if font creation fail
-
-        y = rect.top + 5
-        for line in lines:
-            try:
-                text_surface = font.render(line, True, color)
-                text_rect = text_surface.get_rect(centerx=rect.centerx, top=y)
-                screen.blit(text_surface, text_rect)
-                y += font.get_linesize()
-            except pygame.error as e:
-                print(f"Error rendering text: {e}")
-                continue  # Skip this line if rendering fails
 
