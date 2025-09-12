@@ -1099,7 +1099,7 @@ def start_vm_bookmarking_process(driver, main_tab):
     print("🔖 VM BOOKMARK: Starting ultra-fast bookmarking process...")
     
     # Your test URL and username
-    test_url = "https://www.vinted.co.uk/items/7060804087-case-only-super-mario-odyssey?homepage_session_id=510d32df-eb84-403a-9602-360abde35e43"
+    test_url = " https://www.vinted.co.uk/items/7062762570-paw-patrol-on-a-roll-nintendo-switch-cartridge-only?homepage_session_id=492da37e-ce59-4e58-bea2-b35b225940e7"
     test_username = "test_user"
     
     try:
@@ -1596,6 +1596,7 @@ def execute_critical_pay_sequence(driver, pay_button):
 def enhanced_execute_vm_first_buy_sequence(driver):
     """
     ULTRA FAST: Streamlined first sequence using proven Force Click method
+    UPDATED: Now includes shipping option validation matching host machine logic
     """
     print("🔖 VM FIRST: ULTRA FAST first sequence...")
     
@@ -1611,8 +1612,111 @@ def enhanced_execute_vm_first_buy_sequence(driver):
         print("❌ VM FIRST: Force click failed")
         return False
     
-    # SPEED: Quick payment page handling
-    return handle_payment_page_logic(driver)
+    # NEW ADDITION: Wait for pay button to appear (indicates page has loaded)
+    print("💳 VM PAY BUTTON WAIT: Waiting for pay button to determine page has loaded...")
+    
+    pay_button = wait_for_pay_button_with_timeout(driver, timeout=8)
+    
+    if not pay_button:
+        print("❌ VM FIRST: Pay button not found - payment interface not available")
+        return False
+    
+    print("✅ VM PAY BUTTON: Page loaded, starting shipping validation...")
+    
+    # NEW ADDITION: Shipping option validation (EXACT same logic as host machine)
+    pay_button = handle_vm_shipping_options(driver, pay_button)
+    
+    if not pay_button:
+        print("❌ VM FIRST: Shipping validation failed")
+        return False
+    
+    # SPEED: Execute critical pay sequence with validated pay button
+    return execute_critical_pay_sequence(driver, pay_button)
+
+def handle_vm_shipping_options(driver, pay_button):
+    """
+    NEW FUNCTION: Handle pickup/postage sequence exactly like host machine
+    This replicates the EXACT logic from _execute_first_buy_sequence
+    """
+    print("🚢 VM SHIPPING: Starting pickup/postage sequence...")
+    
+    try:
+        # Check if we're on the shipping selection page
+        # Look for "Ship to pick-up point" option
+        try:
+            pickup_element = driver.find_element(
+                By.XPATH, 
+                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
+            )
+            print("📦 VM SHIPPING: Found 'Ship to pick-up point' option")
+            
+            # Check if pickup is currently selected by looking for aria-checked="true"
+            try:
+                pickup_selected_element = driver.find_element(
+                    By.XPATH, 
+                    '//div[@data-testid="delivery-option-pickup" and @aria-checked="true"]'
+                )
+                pickup_is_selected = True
+                print("📦 VM SHIPPING: Pick-up point is currently selected")
+            except:
+                pickup_is_selected = False
+                print("🏠 VM SHIPPING: Ship to home is currently selected")
+            
+            # If pickup is selected, check for "Choose a pick-up point" message
+            if pickup_is_selected:
+                try:
+                    choose_pickup_element = driver.find_element(
+                        By.XPATH,
+                        '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Choose a pick-up point"]'
+                    )
+                    
+                    print("⚠️ VM SHIPPING: 'Choose a pick-up point' message found - need to switch to Ship to home")
+                    
+                    # Click "Ship to home" to avoid the pickup point selection
+                    try:
+                        ship_home_element = driver.find_element(
+                            By.XPATH,
+                            '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
+                        )
+                        ship_home_element.click()
+                        print("🏠 VM SHIPPING: Successfully switched to 'Ship to home'")
+                        
+                        # Wait for the page to update (0.3 seconds like in original host machine code)
+                        time.sleep(3)
+                        
+                        # Re-find the pay button after shipping change
+                        print("🔍 VM SHIPPING: Re-finding pay button after shipping change...")
+                        new_pay_button = wait_for_pay_button_with_timeout(driver, timeout=5)
+                        
+                        if new_pay_button:
+                            print("✅ VM SHIPPING: Pay button re-found after shipping change")
+                            return new_pay_button
+                        else:
+                            print("⚠️ VM SHIPPING: Could not re-find pay button, using original")
+                            return pay_button
+                            
+                    except Exception as switch_error:
+                        print(f"❌ VM SHIPPING: Could not switch to Ship to home: {switch_error}")
+                        return pay_button
+                        
+                except:
+                    # No "Choose a pick-up point" message, pickup is ready
+                    print("✅ VM SHIPPING: Pick-up point is ready (no selection required)")
+                    return pay_button
+            else:
+                # Ship to home is already selected
+                print("✅ VM SHIPPING: Ship to home already selected - no changes needed")
+                return pay_button
+                
+        except:
+            # No shipping options found, might already be on payment page
+            print("ℹ️ VM SHIPPING: No shipping options found - might already be on payment page")
+            return pay_button
+            
+    except Exception as shipping_error:
+        print(f"❌ VM SHIPPING ERROR: {shipping_error}")
+        print("🔄 VM SHIPPING: Continuing with original pay button")
+        return pay_button
 
 def check_for_processing_payment_vm(driver):
     """
@@ -2094,107 +2198,3 @@ class AudioNumberDetector:
     def find_complete_sequence(self, text):
         """Try to find a complete 6-digit sequence"""
         text_clean = re.sub(r'[^\w\s]', ' ', text.lower())
-        numbers = self.extract_numbers_sequence(text)
-        
-        if len(numbers) == 6:
-            return ''.join(numbers)
-        
-        sequence_patterns = [r'(\w+)\s+(\w+)\s+(\w+)\s+(\w+)\s+(\w+)\s+(\w+)']
-        
-        word_to_num = {
-            'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
-            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
-        }
-        
-        for pattern in sequence_patterns:
-            matches = re.findall(pattern, text_clean)
-            for match in matches:
-                sequence = []
-                for word in match:
-                    if word in word_to_num:
-                        sequence.append(word_to_num[word])
-                    elif word.isdigit() and len(word) == 1:
-                        sequence.append(word)
-                
-                if len(sequence) == 6:
-                    return ''.join(sequence)
-        
-        return None
-
-    def input_captcha_solution(self, sequence):
-        """Input the 6-digit sequence into the captcha form using trusted events"""
-        if not self.driver or not sequence or len(sequence) != 6:
-            print("Cannot input solution: missing driver or invalid sequence")
-            return False
-        
-        print(f"Starting to input captcha solution: {sequence}")
-        
-        try:
-            # Navigate to the correct iframe (same as before)
-            self.driver.switch_to.default_content()
-            
-            iframe_selectors = [
-                "iframe[src*='captcha']",
-                "iframe[src*='datadome']",
-                "iframe[id*='datadome']",
-                "iframe[class*='datadome']",
-                "iframe[title*='captcha']",
-                "iframe[title*='DataDome']"
-            ]
-            
-            iframe_found = False
-            for selector in iframe_selectors:
-                try:
-                    iframe = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                    )
-                    print(f"Found main iframe with selector: {selector}")
-                    self.driver.switch_to.frame(iframe)
-                    iframe_found = True
-                    break
-                except TimeoutException:
-                    continue
-            
-            if not iframe_found:
-                print("Could not find captcha iframe for input")
-                return False
-            
-            # Find input fields
-            input_selectors = [
-                "input.audio-captcha-inputs",
-                "input[class*='audio-captcha-inputs']",
-                "input[data-index='1']",
-                "input[maxlength='1'][inputmode='numeric']",
-                "input[data-form-type='other'][maxlength='1']"
-            ]
-            
-            input_found = False
-            first_input = None
-            
-            for selector in input_selectors:
-                try:
-                    first_input = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                    )
-                    print(f"Found first input field with selector: {selector}")
-                    input_found = True
-                    break
-                except TimeoutException:
-                    continue
-            
-            # Check nested iframes if not found
-            if not input_found:
-                print("Input fields not found in current iframe, checking nested iframes...")
-                
-                try:
-                    nested_iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
-                    print(f"Found {len(nested_iframes)} nested iframes")
-                    
-                    for i, nested_iframe in enumerate(nested_iframes):
-                        try:
-                            print(f"Trying nested iframe {i}...")
-                            self.driver.switch_to.frame(nested_iframe)
-                            
-                            for selector in input_selectors:
-                                try:
-                                    first_input = WebDriverWait(self.driver, 3).until(
