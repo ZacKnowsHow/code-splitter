@@ -1,4 +1,37 @@
 # Continuation from line 6601
+        detected_objects = self.handle_oled_title_conversion_vinted(
+            detected_objects,
+            details.get("title", ""),
+            details.get("description", "")
+        )
+
+        # Calculate revenue with enhanced logic
+        total_revenue, expected_profit, profit_percentage, display_objects = self.calculate_vinted_revenue(
+            detected_objects, total_price, details.get("title", ""), details.get("description", "")
+        )
+
+        # Check profit suitability
+        profit_suitability = self.check_vinted_profit_suitability(total_price, profit_percentage)
+
+        # Game count suitability check (same as Facebook) - but don't return early if showing all
+        game_classes = [
+            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
+            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
+            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
+            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
+            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
+            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
+            'sword_p', 'tears_z', 'violet_p'
+        ]
+        game_count = sum(detected_objects.get(game, 0) for game in game_classes)
+        non_game_classes = [cls for cls in detected_objects.keys() if cls not in game_classes and detected_objects.get(cls, 0) > 0]
+
+        # Build comprehensive suitability reason
+        unsuitability_reasons = []
+
+        # Add basic suitability issues
+        if "Unsuitable" in suitability_result:
+            unsuitability_reasons.append(suitability_result.replace("Unsuitable: ", ""))
 
         # Add game count issue
         if 1 <= game_count <= 2 and not non_game_classes:
@@ -1230,7 +1263,7 @@
             print(f"❌ {driver_name}: Force click failed: {click_error}")
             return False
 
-    def _wait_for_pay_button_cycling(self, driver, driver_name, timeout=8):
+    def _wait_for_pay_button_cycling(self, driver, driver_name, timeout=15):
         """Wait for pay button with cycling system logging"""
         print(f"💳 {driver_name}: Waiting for pay button (max {timeout}s)...")
         
@@ -2166,36 +2199,3 @@
         print(f"🔍 MONITORING: Watching for 'Purchase unsuccessful' for up to {max_wait_time/60:.0f} minutes...")
         
         global purchase_unsuccessful_detected_urls
-        
-        try:
-            while True:
-                elapsed_time = time.time() - monitoring_start_time
-                
-                # Check if we've exceeded the maximum wait time
-                if elapsed_time >= max_wait_time:
-                    print(f"⏰ TIMEOUT: Maximum wait time of {max_wait_time/60:.0f} minutes reached")
-                    print(f"⏱️ STOPWATCH: Monitoring ended after {elapsed_time/60:.2f} minutes (TIMEOUT)")
-                    break
-                
-                # Check if driver is still alive
-                try:
-                    current_driver.current_url
-                except Exception as driver_dead:
-                    print(f"💀 MONITORING: Driver died during monitoring: {driver_dead}")
-                    print(f"⏱️ STOPWATCH: Monitoring ended after {elapsed_time/60:.2f} minutes (DRIVER DIED)")
-                    break
-                
-                # Try each selector to find "Purchase unsuccessful"
-                found_unsuccessful = False
-                for selector in unsuccessful_selectors:
-                    try:
-                        element = WebDriverWait(current_driver, 1).until(
-                            EC.presence_of_element_located((By.XPATH, selector))
-                        )
-                        
-                        # Found it!
-                        end_time = time.time()
-                        total_elapsed = end_time - monitoring_start_time
-                        
-                        print(f"🎯 FOUND! 'Purchase unsuccessful' detected!")
-                        print(f"📍 ELEMENT: Found using selector: {selector}")
