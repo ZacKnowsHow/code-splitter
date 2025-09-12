@@ -1,4 +1,163 @@
 # Continuation from line 4401
+            'reviews': pygame.font.Font(None, 28),
+            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
+        }
+        dragging = False
+        resizing = False
+        drag_rect = None
+        drag_offset = (0, 0)
+        resize_edge = None
+
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_l:
+                        LOCK_POSITION = not LOCK_POSITION
+                    elif event.key == pygame.K_RIGHT:
+                        if suitable_listings:
+                            current_listing_index = (current_listing_index + 1) % len(suitable_listings)
+                            self.update_listing_details(**suitable_listings[current_listing_index])
+                    elif event.key == pygame.K_LEFT:
+                        if suitable_listings:
+                            current_listing_index = (current_listing_index - 1) % len(suitable_listings)
+                            self.update_listing_details(**suitable_listings[current_listing_index])
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Left mouse button
+                        # Check if rectangle 4 was clicked
+                        if rectangles[3].collidepoint(event.pos):
+                            if suitable_listings and 0 <= current_listing_index < len(suitable_listings):
+                                current_url = suitable_listings[current_listing_index].get('url')
+                                if current_url:
+                                    try:
+                                        import webbrowser
+                                        webbrowser.open(current_url)
+                                    except Exception as e:
+                                        print(f"Failed to open URL: {e}")
+                        elif not LOCK_POSITION:
+                            for i, rect in enumerate(rectangles):
+                                if rect.collidepoint(event.pos):
+                                    if event.pos[0] > rect.right - 10 and event.pos[1] > rect.bottom - 10:
+                                        resizing = True
+                                        drag_rect = i
+                                        resize_edge = 'bottom-right'
+                                    else:
+                                        dragging = True
+                                        drag_rect = i
+                                        drag_offset = (rect.x - event.pos[0], rect.y - event.pos[1])
+                                    break
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        dragging = False
+                        resizing = False
+                        drag_rect = None
+            
+            # Handle dragging and resizing
+            if dragging and drag_rect is not None:
+                rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
+                rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
+            elif resizing and drag_rect is not None:
+                if resize_edge == 'bottom-right':
+                    width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
+                    height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
+                    rectangles[drag_rect].size = (width, height)
+            
+            screen.fill((204, 210, 255))
+            for i, rect in enumerate(rectangles):
+                pygame.draw.rect(screen, (0, 0, 0), rect, 2)
+                number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
+                number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
+                screen.blit(number_text, number_rect)
+
+                if i == 2:  # Rectangle 3 (index 2) - Title
+                    self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
+                elif i == 1:  # Rectangle 2 (index 1) - Price
+                    self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
+                elif i == 7:  # Rectangle 8 (index 7) - Description
+                    self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
+                elif i == 8:  # Rectangle 9 (index 8) - CHANGED: Now shows exact time instead of upload date
+                    time_label = "Appended:"
+                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
+                elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
+                    self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
+                elif i == 9:  # Rectangle 10 (index 9) - Profit
+                    self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
+                elif i == 0:  # Rectangle 1 (index 0) - Detected Items
+                    self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
+                elif i == 10:  # Rectangle 11 (index 10) - Images
+                    self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
+                elif i == 3:  # Rectangle 4 (index 3) - Click to open
+                    click_text = "CLICK TO OPEN LISTING IN CHROME"
+                    self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
+                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
+                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+                elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
+                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
+
+            screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
+
+            if suitable_listings:
+                listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
+                screen.blit(listing_counter, (10, 40))
+
+            pygame.display.flip()
+            clock.tick(30)
+
+        self.save_rectangle_config(rectangles)
+        pygame.quit()
+        
+    def base64_encode_image(self, img):
+        """Convert PIL Image to base64 string, resizing if necessary"""
+        # Resize image while maintaining aspect ratio
+        max_size = (200, 200)
+        img.thumbnail(max_size, Image.LANCZOS)
+        
+        # Convert to base64
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode()
+
+    def render_images(self, screen, images, rect, bounding_boxes):
+        if not images:
+            return
+
+        num_images = len(images)
+        if num_images == 1:
+            grid_size = 1
+        elif 2 <= num_images <= 4:
+            grid_size = 2
+        else:
+            grid_size = 3
+
+        cell_width = rect.width // grid_size
+        cell_height = rect.height // grid_size
+
+        for i, img in enumerate(images):
+            if i >= grid_size * grid_size:
+                break
+            row = i // grid_size
+            col = i % grid_size
+            img = img.resize((cell_width, cell_height))
+            img_surface = pygame.image.fromstring(img.tobytes(), img.size, img.mode)
+            screen.blit(img_surface, (rect.left + col * cell_width, rect.top + row * cell_height))
+
+        # Display suitability reason
+        if FAILURE_REASON_LISTED:
+            font = pygame.font.Font(None, 24)
+            suitability_text = font.render(current_suitability, True, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+            screen.blit(suitability_text, (rect.left + 10, rect.bottom - 30))
+
+    def initialize_pygame_window(self):
+        pygame.init()
+        screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
+        pygame.display.set_caption("Facebook Marketplace Scanner")
+        return screen, pygame.time.Clock()
+
+    def load_rectangle_config(self):
+        return json.load(open(CONFIG_FILE, 'r')) if os.path.exists(CONFIG_FILE) else None
+
     def save_rectangle_config(self, rectangles):
         json.dump([(rect.x, rect.y, rect.width, rect.height) for rect in rectangles], open(CONFIG_FILE, 'w'))
         
@@ -2040,162 +2199,3 @@
         # Add basic suitability issues
         if "Unsuitable" in suitability_result:
             unsuitability_reasons.append(suitability_result.replace("Unsuitable: ", ""))
-
-        # Add game count issue
-        if 1 <= game_count <= 2 and not non_game_classes:
-            unsuitability_reasons.append("1-2 games with no additional non-game items")
-
-        # Add profit suitability issue
-        if not profit_suitability:
-            unsuitability_reasons.append(f"Profit £{expected_profit:.2f} ({profit_percentage:.2f}%) not suitable for price range")
-
-        # Determine final suitability
-        if unsuitability_reasons:
-            suitability_reason = "Unsuitable:\n---- " + "\n---- ".join(unsuitability_reasons)
-            is_suitable = False
-        else:
-            suitability_reason = f"Suitable: Profit £{expected_profit:.2f} ({profit_percentage:.2f}%)"
-            is_suitable = True
-
-        if print_debug:    
-            print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
-
-        # 🔖 MODIFIED BOOKMARK FUNCTIONALITY WITH SUCCESS TRACKING
-        bookmark_success = False
-        should_bookmark = False
-        
-        if bookmark_listings and is_suitable:
-            should_bookmark = True
-        elif bookmark_listings and VINTED_SHOW_ALL_LISTINGS:
-            should_bookmark = True
-            
-        if should_bookmark:
-            # NEW: Use the 5-driver cycling system instead of old bookmark method
-            print(f"🔖 5-DRIVER SYSTEM: Adding to bookmark queue: {url}")
-            
-            # Extract username from details
-            username = details.get("username", None)
-            if not username or username == "Username not found":
-                username = None
-                print("🔖 USERNAME: Not available for this listing")
-            
-            # Add to the 5-driver bookmark queue
-            self.add_to_bookmark_queue(url, username)
-            
-            # For the rest of the logic, assume bookmark will succeed
-            # (the 5-driver system will handle the actual success/failure)
-            bookmark_success = True
-            print("✅ Added to 5-driver bookmark queue")
-            
-            # Start bookmark stopwatch (existing logic)
-            self.start_bookmark_stopwatch(url)
-
-        # NEW: Generate exact UK time when creating listing info 
-        from datetime import datetime
-        import pytz
-        
-        uk_tz = pytz.timezone('Europe/London')
-        append_time = datetime.now(uk_tz)
-        exact_append_time = append_time.strftime("%H:%M:%S.%f")[:-3]  # Format: HH:MM:SS.mmm
-        
-        # Create final listing info with exact append time
-        final_listing_info = {
-            'title': details.get("title", "No title"),
-            'description': details.get("description", "No description"),
-            'join_date': exact_append_time,  # CHANGED: Use exact UK time instead of upload date
-            'price': str(total_price),
-            'expected_revenue': total_revenue,
-            'profit': expected_profit,
-            'detected_items': detected_objects, # Raw detected objects for box 1
-            'processed_images': processed_images,
-            'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
-            'url': url,
-            'suitability': suitability_reason,
-            'seller_reviews': seller_reviews
-        }
-
-        # SEPARATE logic for pygame and website
-        should_add_to_website = False
-        should_add_to_pygame = False
-        should_send_notification = False
-
-        # Website logic (current behavior - only successful bookmarks when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False)
-        if bookmark_listings and not VINTED_SHOW_ALL_LISTINGS:
-            # When bookmark_listings is ON and VINTED_SHOW_ALL_LISTINGS is OFF:
-            # Only add/notify if bookmark was successful
-            if bookmark_success:
-                should_add_to_website = True
-                should_send_notification = True
-                print("✅ Adding to website because bookmark was successful")
-            else:
-                print("❌ Not adding to website because bookmark was not successful")
-        else:
-            # Original logic for other combinations
-            if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-                should_add_to_website = True
-                should_send_notification = True
-
-        # NEW: Pygame logic (always show suitable listings + bookmark failure info)
-        if VINTED_SHOW_ALL_LISTINGS:
-            should_add_to_pygame = True
-        elif is_suitable:  # Show all suitable listings regardless of bookmark success
-            should_add_to_pygame = True
-
-        # Modify suitability_reason for pygame if bookmark failed
-        pygame_suitability_reason = suitability_reason
-        if should_add_to_pygame and bookmark_listings and is_suitable and not bookmark_success:
-            pygame_suitability_reason = suitability_reason + "\n⚠️ BOOKMARK FAILED"
-        
-        if is_suitable and should_send_fail_bookmark_notification and not should_add_to_website:
-            notification_title = f"Listing Failed Bookmark: £{total_price:.2f}"
-            notification_message = (
-                f"Title: {details.get('title', 'No title')}\n"
-                f"Price: £{total_price:.2f}\n"
-                f"Expected Profit: £{expected_profit:.2f}\n"
-                f"Profit %: {profit_percentage:.2f}%\n"
-            )
-            
-            # Use the Pushover tokens exactly as Facebook does
-            if send_notification:
-                self.send_pushover_notification(
-                    notification_title,
-                    notification_message,
-                    'aks3to8guqjye193w7ajnydk9jaxh5',
-                    'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
-                )
-
-        # Add to website (existing logic)
-        if should_add_to_website:
-            # Send Pushover notification
-            if should_send_notification:
-                notification_title = f"New Vinted Listing: £{total_price:.2f}"
-                notification_message = (
-                    f"Title: {details.get('title', 'No title')}\n"
-                    f"Price: £{total_price:.2f}\n"
-                    f"Expected Profit: £{expected_profit:.2f}\n"
-                    f"Profit %: {profit_percentage:.2f}%\n"
-                )
-                
-                # Use the Pushover tokens exactly as Facebook does
-                if send_notification:
-                    self.send_pushover_notification(
-                        notification_title,
-                        notification_message,
-                        'aks3to8guqjye193w7ajnydk9jaxh5',
-                        'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
-                    )
-
-            # Add to recent_listings for website navigation
-            recent_listings['listings'].append(final_listing_info)
-            # Always set to the last (most recent) listing for website display
-            recent_listings['current_index'] = len(recent_listings['listings']) - 1
-
-        # Add to pygame (NEW separate logic)
-        if should_add_to_pygame:
-            # Create pygame-specific listing info with modified suitability
-            pygame_listing_info = final_listing_info.copy()
-            pygame_listing_info['suitability'] = pygame_suitability_reason
-            
-            suitable_listings.append(pygame_listing_info)
-            current_listing_index = len(suitable_listings) - 1
-            

@@ -1668,7 +1668,9 @@ class VintedScraper:
                 continue
 
     def _process_bookmark_with_cycling(self, listing_url, username):
-        """Process bookmark using the cycling driver system"""
+        """
+        FIXED: Process bookmark using the cycling driver system with proper timing
+        """
         with self.bookmark_system_lock:
             print(f"🔖 CYCLE: Processing bookmark with driver {self.current_bookmark_driver_index + 1}/5")
             
@@ -1682,27 +1684,36 @@ class VintedScraper:
             # Mark current driver as busy
             self.bookmark_driver_status[self.current_bookmark_driver_index] = 'busy'
             
-            # Start preparing the next driver IMMEDIATELY (async)
-            next_driver_index = (self.current_bookmark_driver_index + 1) % 5
-            self._prepare_next_driver_async(next_driver_index)
-            
             print(f"🔖 EXEC: Executing bookmark with driver {self.current_bookmark_driver_index + 1}")
             
         # Execute bookmark outside the lock to prevent blocking
         success = self._execute_enhanced_bookmark(current_driver, listing_url, username, self.current_bookmark_driver_index)
         
         with self.bookmark_system_lock:
-            # After bookmarking completes, advance to next driver
+            # FIXED: Only advance and clean up if monitoring is NOT active
             if success:
                 print(f"✅ CYCLE: Driver {self.current_bookmark_driver_index + 1} completed successfully")
             else:
                 print(f"❌ CYCLE: Driver {self.current_bookmark_driver_index + 1} failed")
             
-            # Clean up current driver and advance
-            self._cleanup_current_driver()
-            self._advance_to_next_driver()
-            
+            # FIXED: Check if monitoring is active for this driver before cleanup
+            if not self._is_monitoring_active_for_current_driver():
+                # No monitoring active - safe to clean up and advance
+                self._cleanup_current_driver()
+                self._advance_to_next_driver()
+                # Start preparing the next driver now
+                next_driver_index = (self.current_bookmark_driver_index + 1) % 5
+                self._prepare_next_driver_async(next_driver_index)
+            else:
+                print(f"🔍 CYCLE: Monitoring active - cleanup will be handled by monitoring thread")
+                
         return success
+
+    def _is_monitoring_active_for_current_driver(self):
+        """Check if monitoring is currently active for the current driver"""
+        # This can be implemented by checking a flag set when monitoring starts
+        return hasattr(self, 'current_driver_monitoring_active') and self.current_driver_monitoring_active
+
 
     def _get_ready_bookmark_driver(self):
         """Get the current ready bookmark driver"""
@@ -1727,7 +1738,9 @@ class VintedScraper:
         print(f"🔧 ASYNC: Started preparing driver {driver_index + 1} in background")
 
     def _prepare_driver(self, driver_index):
-        """Prepare a specific bookmark driver (login, clear cookies, etc.)"""
+        """
+        FIXED: Prepare a specific bookmark driver - CLEAR COOKIES FIRST, THEN navigate to Vinted
+        """
         config = self.bookmark_driver_configs[driver_index]
         driver_name = config['driver_name']
         
@@ -1737,7 +1750,7 @@ class VintedScraper:
             # Mark as preparing
             self.bookmark_driver_status[driver_index] = 'preparing'
             
-            # Create the driver with VM connection
+            # STEP 1: Create the driver
             driver = self._create_vm_bookmark_driver(config, driver_index)
             
             if driver is None:
@@ -1745,28 +1758,174 @@ class VintedScraper:
                 self.bookmark_driver_status[driver_index] = 'error'
                 return
             
-            # Clear cookies
-            print(f"🧹 PREPARE: Clearing cookies for {driver_name}")
-            driver.delete_all_cookies()
+            print(f"✅ CREATE: {driver_name} created successfully")
             
-            # Navigate to Vinted
-            print(f"🌐 PREPARE: Navigating to Vinted for {driver_name}")
-            driver.get("https://vinted.co.uk")
+            # STEP 2: CLEAR COOKIES FIRST - Navigate to a basic page to clear cookies
+            print(f"🧹 PREPARE: Opening chrome://settings/clearBrowserData for {driver_name}")
+            driver.get("chrome://settings/clearBrowserData")
             
-            # Handle cookie consent
-            self._handle_cookie_consent(driver, driver_name)
+            # Wait for the settings page to load
+            time.sleep(3)
             
-            # Perform login based on configuration
-            login_success = self._perform_vinted_login(driver, config, driver_name)
+            print(f"🔍 PREPARE: Looking for clear data button in Shadow DOM for {driver_name}")
             
-            if not login_success:
-                print(f"❌ PREPARE: Login failed for {driver_name}")
-                driver.quit()
+            # Enhanced Shadow DOM script for clearing data
+            shadow_dom_clear_script = """
+            function findAndClickClearButton() {
+                console.log('Starting shadow DOM search for clear button...');
+                
+                // Strategy 1: Direct path to clear button
+                try {
+                    let settingsUi = document.querySelector('settings-ui');
+                    if (settingsUi && settingsUi.shadowRoot) {
+                        console.log('Found settings-ui with shadowRoot');
+                        
+                        let settingsMain = settingsUi.shadowRoot.querySelector('settings-main');
+                        if (settingsMain && settingsMain.shadowRoot) {
+                            console.log('Found settings-main with shadowRoot');
+                            
+                            let clearBrowserData = settingsMain.shadowRoot.querySelector('settings-clear-browsing-data-dialog');
+                            if (clearBrowserData && clearBrowserData.shadowRoot) {
+                                console.log('Found clear-browsing-data-dialog with shadowRoot');
+                                
+                                let clearButton = clearBrowserData.shadowRoot.querySelector('#clearButton');
+                                if (clearButton && !clearButton.disabled) {
+                                    console.log('Found and clicking clear button!');
+                                    clearButton.click();
+                                    return true;
+                                } else {
+                                    console.log('Clear button found but disabled or null');
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.log('Strategy 1 failed:', e);
+                }
+                
+                // Strategy 2: Search all elements recursively
+                try {
+                    console.log('Trying recursive shadow DOM search...');
+                    function searchRecursively(element, depth = 0) {
+                        if (depth > 10) return false; // Prevent infinite recursion
+                        
+                        if (element.shadowRoot) {
+                            // Look for clear button
+                            let clearButton = element.shadowRoot.querySelector('#clearButton, button[id*="clear"], cr-button[id*="clear"]');
+                            if (clearButton && !clearButton.disabled) {
+                                console.log('Found clear button via recursive search at depth', depth);
+                                clearButton.click();
+                                return true;
+                            }
+                            
+                            // Search children
+                            let children = element.shadowRoot.querySelectorAll('*');
+                            for (let child of children) {
+                                if (searchRecursively(child, depth + 1)) {
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    }
+                    
+                    let allElements = document.querySelectorAll('*');
+                    for (let el of allElements) {
+                        if (searchRecursively(el)) {
+                            return true;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Strategy 2 failed:', e);
+                }
+                
+                // Strategy 3: Look for any button with "clear" or "delete" text
+                try {
+                    console.log('Trying text-based button search...');
+                    function findButtonByText(element) {
+                        if (element.shadowRoot) {
+                            let buttons = element.shadowRoot.querySelectorAll('button, cr-button, paper-button');
+                            for (let btn of buttons) {
+                                let text = (btn.textContent || '').toLowerCase();
+                                if ((text.includes('delete') || text.includes('clear')) && !btn.disabled) {
+                                    console.log('Found button with text:', btn.textContent);
+                                    btn.click();
+                                    return true;
+                                }
+                            }
+                            
+                            let children = element.shadowRoot.querySelectorAll('*');
+                            for (let child of children) {
+                                if (findButtonByText(child)) {
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    }
+                    
+                    let allElements = document.querySelectorAll('*');
+                    for (let el of allElements) {
+                        if (findButtonByText(el)) {
+                            return true;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Strategy 3 failed:', e);
+                }
+                
+                console.log('All strategies failed - clear button not found');
+                return false;
+            }
+            
+            return findAndClickClearButton();
+            """
+            
+            # Execute the shadow DOM script
+            clear_result = driver.execute_script(shadow_dom_clear_script)
+            
+            if clear_result:
+                print(f"✅ PREPARE: Successfully clicked clear data button for {driver_name}")
+                print(f"⏳ PREPARE: Waiting for data clearing to complete for {driver_name}")
+                time.sleep(4)  # Wait for clearing to complete
+            else:
+                print(f"⚠️ PREPARE: Could not find clear button, using fallback method for {driver_name}")
+                # Fallback: use delete_all_cookies
+                driver.delete_all_cookies()
+                print(f"✅ PREPARE: Used delete_all_cookies() as fallback for {driver_name}")
+            
+            # STEP 3: Close the driver after clearing cookies
+            print(f"🔒 PREPARE: Closing {driver_name} after cookie clearing")
+            driver.quit()
+            time.sleep(1)  # Brief pause after closing
+            
+            # STEP 4: Create a NEW driver for actual use
+            print(f"🔄 PREPARE: Creating fresh {driver_name} after cookie clearing")
+            fresh_driver = self._create_vm_bookmark_driver(config, driver_index)
+            
+            if fresh_driver is None:
+                print(f"❌ PREPARE: Failed to recreate fresh {driver_name}")
                 self.bookmark_driver_status[driver_index] = 'error'
                 return
             
-            # Handle any captcha that appears
-            captcha_result = handle_datadome_audio_captcha(driver)
+            # STEP 5: NOW navigate to Vinted with the fresh driver
+            print(f"🌐 PREPARE: Navigating fresh {driver_name} to Vinted")
+            fresh_driver.get("https://vinted.co.uk")
+            
+            # Handle cookie consent
+            self._handle_cookie_consent(fresh_driver, driver_name)
+            
+            # STEP 6: Perform login based on configuration
+            login_success = self._perform_vinted_login_simple(fresh_driver, config, driver_name)
+            
+            if not login_success:
+                print(f"❌ PREPARE: Login failed for {driver_name}")
+                fresh_driver.quit()
+                self.bookmark_driver_status[driver_index] = 'error'
+                return
+            
+            # STEP 7: Handle any captcha that appears
+            captcha_result = handle_datadome_audio_captcha(fresh_driver)
             
             if captcha_result == "no_captcha":
                 print(f"✅ PREPARE: {driver_name} ready - no captcha needed")
@@ -1775,9 +1934,9 @@ class VintedScraper:
             else:
                 print(f"⚠️ PREPARE: {driver_name} captcha handling failed, continuing anyway")
             
-            # Store the driver and mark as ready
+            # STEP 8: Store the driver and mark as ready
             with self.bookmark_system_lock:
-                self.bookmark_drivers[driver_index] = driver
+                self.bookmark_drivers[driver_index] = fresh_driver
                 self.bookmark_driver_status[driver_index] = 'ready'
                 
             print(f"✅ PREPARE: {driver_name} is now ready for bookmarking")
@@ -2040,162 +2199,3 @@ class VintedScraper:
             'items': pygame.font.Font(None, 30),
             'click': pygame.font.Font(None, 28),
             'suitability': pygame.font.Font(None, 28),
-            'reviews': pygame.font.Font(None, 28),
-            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
-        }
-        dragging = False
-        resizing = False
-        drag_rect = None
-        drag_offset = (0, 0)
-        resize_edge = None
-
-        running = True
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                    running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_l:
-                        LOCK_POSITION = not LOCK_POSITION
-                    elif event.key == pygame.K_RIGHT:
-                        if suitable_listings:
-                            current_listing_index = (current_listing_index + 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
-                    elif event.key == pygame.K_LEFT:
-                        if suitable_listings:
-                            current_listing_index = (current_listing_index - 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:  # Left mouse button
-                        # Check if rectangle 4 was clicked
-                        if rectangles[3].collidepoint(event.pos):
-                            if suitable_listings and 0 <= current_listing_index < len(suitable_listings):
-                                current_url = suitable_listings[current_listing_index].get('url')
-                                if current_url:
-                                    try:
-                                        import webbrowser
-                                        webbrowser.open(current_url)
-                                    except Exception as e:
-                                        print(f"Failed to open URL: {e}")
-                        elif not LOCK_POSITION:
-                            for i, rect in enumerate(rectangles):
-                                if rect.collidepoint(event.pos):
-                                    if event.pos[0] > rect.right - 10 and event.pos[1] > rect.bottom - 10:
-                                        resizing = True
-                                        drag_rect = i
-                                        resize_edge = 'bottom-right'
-                                    else:
-                                        dragging = True
-                                        drag_rect = i
-                                        drag_offset = (rect.x - event.pos[0], rect.y - event.pos[1])
-                                    break
-                elif event.type == pygame.MOUSEBUTTONUP:
-                    if event.button == 1:
-                        dragging = False
-                        resizing = False
-                        drag_rect = None
-            
-            # Handle dragging and resizing
-            if dragging and drag_rect is not None:
-                rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
-                rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
-            elif resizing and drag_rect is not None:
-                if resize_edge == 'bottom-right':
-                    width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
-                    height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
-                    rectangles[drag_rect].size = (width, height)
-            
-            screen.fill((204, 210, 255))
-            for i, rect in enumerate(rectangles):
-                pygame.draw.rect(screen, (0, 0, 0), rect, 2)
-                number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
-                number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
-                screen.blit(number_text, number_rect)
-
-                if i == 2:  # Rectangle 3 (index 2) - Title
-                    self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
-                elif i == 1:  # Rectangle 2 (index 1) - Price
-                    self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
-                elif i == 7:  # Rectangle 8 (index 7) - Description
-                    self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
-                elif i == 8:  # Rectangle 9 (index 8) - CHANGED: Now shows exact time instead of upload date
-                    time_label = "Appended:"
-                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
-                elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
-                    self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
-                elif i == 9:  # Rectangle 10 (index 9) - Profit
-                    self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
-                elif i == 0:  # Rectangle 1 (index 0) - Detected Items
-                    self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
-                elif i == 10:  # Rectangle 11 (index 10) - Images
-                    self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
-                elif i == 3:  # Rectangle 4 (index 3) - Click to open
-                    click_text = "CLICK TO OPEN LISTING IN CHROME"
-                    self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
-                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
-                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
-                elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
-                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
-
-            screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
-
-            if suitable_listings:
-                listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
-                screen.blit(listing_counter, (10, 40))
-
-            pygame.display.flip()
-            clock.tick(30)
-
-        self.save_rectangle_config(rectangles)
-        pygame.quit()
-        
-    def base64_encode_image(self, img):
-        """Convert PIL Image to base64 string, resizing if necessary"""
-        # Resize image while maintaining aspect ratio
-        max_size = (200, 200)
-        img.thumbnail(max_size, Image.LANCZOS)
-        
-        # Convert to base64
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode()
-
-    def render_images(self, screen, images, rect, bounding_boxes):
-        if not images:
-            return
-
-        num_images = len(images)
-        if num_images == 1:
-            grid_size = 1
-        elif 2 <= num_images <= 4:
-            grid_size = 2
-        else:
-            grid_size = 3
-
-        cell_width = rect.width // grid_size
-        cell_height = rect.height // grid_size
-
-        for i, img in enumerate(images):
-            if i >= grid_size * grid_size:
-                break
-            row = i // grid_size
-            col = i % grid_size
-            img = img.resize((cell_width, cell_height))
-            img_surface = pygame.image.fromstring(img.tobytes(), img.size, img.mode)
-            screen.blit(img_surface, (rect.left + col * cell_width, rect.top + row * cell_height))
-
-        # Display suitability reason
-        if FAILURE_REASON_LISTED:
-            font = pygame.font.Font(None, 24)
-            suitability_text = font.render(current_suitability, True, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
-            screen.blit(suitability_text, (rect.left + 10, rect.bottom - 30))
-
-    def initialize_pygame_window(self):
-        pygame.init()
-        screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
-        pygame.display.set_caption("Facebook Marketplace Scanner")
-        return screen, pygame.time.Clock()
-
-    def load_rectangle_config(self):
-        return json.load(open(CONFIG_FILE, 'r')) if os.path.exists(CONFIG_FILE) else None
-
