@@ -67,7 +67,7 @@ import wave
 
 purchase_unsuccessful_wait_time = 900
 
-VM_DRIVER_USE = True
+VM_DRIVER_USE = False
 google_login = True
 
 # tests whether the listing is suitable for buying based on URL rather than scanning
@@ -82,7 +82,7 @@ TEST_SUITABLE_URLS = [
 TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
-BOOKMARK_TEST_MODE = False
+BOOKMARK_TEST_MODE = True
 BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/7050671534-yoshimoto-nara-shirt?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 
