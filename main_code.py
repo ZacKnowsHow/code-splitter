@@ -3867,7 +3867,9 @@ class VintedScraper:
                 continue
 
     def _process_bookmark_with_cycling(self, listing_url, username):
-        """Process bookmark using the cycling driver system"""
+        """
+        FIXED: Process bookmark using the cycling driver system with proper timing
+        """
         with self.bookmark_system_lock:
             print(f"🔖 CYCLE: Processing bookmark with driver {self.current_bookmark_driver_index + 1}/5")
             
@@ -3881,27 +3883,36 @@ class VintedScraper:
             # Mark current driver as busy
             self.bookmark_driver_status[self.current_bookmark_driver_index] = 'busy'
             
-            # Start preparing the next driver IMMEDIATELY (async)
-            next_driver_index = (self.current_bookmark_driver_index + 1) % 5
-            self._prepare_next_driver_async(next_driver_index)
-            
             print(f"🔖 EXEC: Executing bookmark with driver {self.current_bookmark_driver_index + 1}")
             
         # Execute bookmark outside the lock to prevent blocking
         success = self._execute_enhanced_bookmark(current_driver, listing_url, username, self.current_bookmark_driver_index)
         
         with self.bookmark_system_lock:
-            # After bookmarking completes, advance to next driver
+            # FIXED: Only advance and clean up if monitoring is NOT active
             if success:
                 print(f"✅ CYCLE: Driver {self.current_bookmark_driver_index + 1} completed successfully")
             else:
                 print(f"❌ CYCLE: Driver {self.current_bookmark_driver_index + 1} failed")
             
-            # Clean up current driver and advance
-            self._cleanup_current_driver()
-            self._advance_to_next_driver()
-            
+            # FIXED: Check if monitoring is active for this driver before cleanup
+            if not self._is_monitoring_active_for_current_driver():
+                # No monitoring active - safe to clean up and advance
+                self._cleanup_current_driver()
+                self._advance_to_next_driver()
+                # Start preparing the next driver now
+                next_driver_index = (self.current_bookmark_driver_index + 1) % 5
+                self._prepare_next_driver_async(next_driver_index)
+            else:
+                print(f"🔍 CYCLE: Monitoring active - cleanup will be handled by monitoring thread")
+                
         return success
+
+    def _is_monitoring_active_for_current_driver(self):
+        """Check if monitoring is currently active for the current driver"""
+        # This can be implemented by checking a flag set when monitoring starts
+        return hasattr(self, 'current_driver_monitoring_active') and self.current_driver_monitoring_active
+
 
     def _get_ready_bookmark_driver(self):
         """Get the current ready bookmark driver"""
@@ -3926,7 +3937,9 @@ class VintedScraper:
         print(f"🔧 ASYNC: Started preparing driver {driver_index + 1} in background")
 
     def _prepare_driver(self, driver_index):
-        """Prepare a specific bookmark driver (login, clear cookies, etc.)"""
+        """
+        FIXED: Prepare a specific bookmark driver - CLEAR COOKIES FIRST, THEN navigate to Vinted
+        """
         config = self.bookmark_driver_configs[driver_index]
         driver_name = config['driver_name']
         
@@ -3936,7 +3949,7 @@ class VintedScraper:
             # Mark as preparing
             self.bookmark_driver_status[driver_index] = 'preparing'
             
-            # Create the driver with VM connection
+            # STEP 1: Create the driver
             driver = self._create_vm_bookmark_driver(config, driver_index)
             
             if driver is None:
@@ -3944,28 +3957,174 @@ class VintedScraper:
                 self.bookmark_driver_status[driver_index] = 'error'
                 return
             
-            # Clear cookies
-            print(f"🧹 PREPARE: Clearing cookies for {driver_name}")
-            driver.delete_all_cookies()
+            print(f"✅ CREATE: {driver_name} created successfully")
             
-            # Navigate to Vinted
-            print(f"🌐 PREPARE: Navigating to Vinted for {driver_name}")
-            driver.get("https://vinted.co.uk")
+            # STEP 2: CLEAR COOKIES FIRST - Navigate to a basic page to clear cookies
+            print(f"🧹 PREPARE: Opening chrome://settings/clearBrowserData for {driver_name}")
+            driver.get("chrome://settings/clearBrowserData")
             
-            # Handle cookie consent
-            self._handle_cookie_consent(driver, driver_name)
+            # Wait for the settings page to load
+            time.sleep(3)
             
-            # Perform login based on configuration
-            login_success = self._perform_vinted_login(driver, config, driver_name)
+            print(f"🔍 PREPARE: Looking for clear data button in Shadow DOM for {driver_name}")
             
-            if not login_success:
-                print(f"❌ PREPARE: Login failed for {driver_name}")
-                driver.quit()
+            # Enhanced Shadow DOM script for clearing data
+            shadow_dom_clear_script = """
+            function findAndClickClearButton() {
+                console.log('Starting shadow DOM search for clear button...');
+                
+                // Strategy 1: Direct path to clear button
+                try {
+                    let settingsUi = document.querySelector('settings-ui');
+                    if (settingsUi && settingsUi.shadowRoot) {
+                        console.log('Found settings-ui with shadowRoot');
+                        
+                        let settingsMain = settingsUi.shadowRoot.querySelector('settings-main');
+                        if (settingsMain && settingsMain.shadowRoot) {
+                            console.log('Found settings-main with shadowRoot');
+                            
+                            let clearBrowserData = settingsMain.shadowRoot.querySelector('settings-clear-browsing-data-dialog');
+                            if (clearBrowserData && clearBrowserData.shadowRoot) {
+                                console.log('Found clear-browsing-data-dialog with shadowRoot');
+                                
+                                let clearButton = clearBrowserData.shadowRoot.querySelector('#clearButton');
+                                if (clearButton && !clearButton.disabled) {
+                                    console.log('Found and clicking clear button!');
+                                    clearButton.click();
+                                    return true;
+                                } else {
+                                    console.log('Clear button found but disabled or null');
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.log('Strategy 1 failed:', e);
+                }
+                
+                // Strategy 2: Search all elements recursively
+                try {
+                    console.log('Trying recursive shadow DOM search...');
+                    function searchRecursively(element, depth = 0) {
+                        if (depth > 10) return false; // Prevent infinite recursion
+                        
+                        if (element.shadowRoot) {
+                            // Look for clear button
+                            let clearButton = element.shadowRoot.querySelector('#clearButton, button[id*="clear"], cr-button[id*="clear"]');
+                            if (clearButton && !clearButton.disabled) {
+                                console.log('Found clear button via recursive search at depth', depth);
+                                clearButton.click();
+                                return true;
+                            }
+                            
+                            // Search children
+                            let children = element.shadowRoot.querySelectorAll('*');
+                            for (let child of children) {
+                                if (searchRecursively(child, depth + 1)) {
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    }
+                    
+                    let allElements = document.querySelectorAll('*');
+                    for (let el of allElements) {
+                        if (searchRecursively(el)) {
+                            return true;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Strategy 2 failed:', e);
+                }
+                
+                // Strategy 3: Look for any button with "clear" or "delete" text
+                try {
+                    console.log('Trying text-based button search...');
+                    function findButtonByText(element) {
+                        if (element.shadowRoot) {
+                            let buttons = element.shadowRoot.querySelectorAll('button, cr-button, paper-button');
+                            for (let btn of buttons) {
+                                let text = (btn.textContent || '').toLowerCase();
+                                if ((text.includes('delete') || text.includes('clear')) && !btn.disabled) {
+                                    console.log('Found button with text:', btn.textContent);
+                                    btn.click();
+                                    return true;
+                                }
+                            }
+                            
+                            let children = element.shadowRoot.querySelectorAll('*');
+                            for (let child of children) {
+                                if (findButtonByText(child)) {
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    }
+                    
+                    let allElements = document.querySelectorAll('*');
+                    for (let el of allElements) {
+                        if (findButtonByText(el)) {
+                            return true;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Strategy 3 failed:', e);
+                }
+                
+                console.log('All strategies failed - clear button not found');
+                return false;
+            }
+            
+            return findAndClickClearButton();
+            """
+            
+            # Execute the shadow DOM script
+            clear_result = driver.execute_script(shadow_dom_clear_script)
+            
+            if clear_result:
+                print(f"✅ PREPARE: Successfully clicked clear data button for {driver_name}")
+                print(f"⏳ PREPARE: Waiting for data clearing to complete for {driver_name}")
+                time.sleep(4)  # Wait for clearing to complete
+            else:
+                print(f"⚠️ PREPARE: Could not find clear button, using fallback method for {driver_name}")
+                # Fallback: use delete_all_cookies
+                driver.delete_all_cookies()
+                print(f"✅ PREPARE: Used delete_all_cookies() as fallback for {driver_name}")
+            
+            # STEP 3: Close the driver after clearing cookies
+            print(f"🔒 PREPARE: Closing {driver_name} after cookie clearing")
+            driver.quit()
+            time.sleep(1)  # Brief pause after closing
+            
+            # STEP 4: Create a NEW driver for actual use
+            print(f"🔄 PREPARE: Creating fresh {driver_name} after cookie clearing")
+            fresh_driver = self._create_vm_bookmark_driver(config, driver_index)
+            
+            if fresh_driver is None:
+                print(f"❌ PREPARE: Failed to recreate fresh {driver_name}")
                 self.bookmark_driver_status[driver_index] = 'error'
                 return
             
-            # Handle any captcha that appears
-            captcha_result = handle_datadome_audio_captcha(driver)
+            # STEP 5: NOW navigate to Vinted with the fresh driver
+            print(f"🌐 PREPARE: Navigating fresh {driver_name} to Vinted")
+            fresh_driver.get("https://vinted.co.uk")
+            
+            # Handle cookie consent
+            self._handle_cookie_consent(fresh_driver, driver_name)
+            
+            # STEP 6: Perform login based on configuration
+            login_success = self._perform_vinted_login_simple(fresh_driver, config, driver_name)
+            
+            if not login_success:
+                print(f"❌ PREPARE: Login failed for {driver_name}")
+                fresh_driver.quit()
+                self.bookmark_driver_status[driver_index] = 'error'
+                return
+            
+            # STEP 7: Handle any captcha that appears
+            captcha_result = handle_datadome_audio_captcha(fresh_driver)
             
             if captcha_result == "no_captcha":
                 print(f"✅ PREPARE: {driver_name} ready - no captcha needed")
@@ -3974,9 +4133,9 @@ class VintedScraper:
             else:
                 print(f"⚠️ PREPARE: {driver_name} captcha handling failed, continuing anyway")
             
-            # Store the driver and mark as ready
+            # STEP 8: Store the driver and mark as ready
             with self.bookmark_system_lock:
-                self.bookmark_drivers[driver_index] = driver
+                self.bookmark_drivers[driver_index] = fresh_driver
                 self.bookmark_driver_status[driver_index] = 'ready'
                 
             print(f"✅ PREPARE: {driver_name} is now ready for bookmarking")
@@ -7498,9 +7657,13 @@ class VintedScraper:
                 return False
         return False
 
-    def _perform_vinted_login(self, driver, config, driver_name):
-        """Perform Vinted login based on configuration"""
+    def _perform_vinted_login_simple(self, driver, config, driver_name):
+        """
+        SIMPLIFIED: Login without additional cookie clearing (already done in _prepare_driver)
+        """
         try:
+            print(f"🔐 LOGIN: Starting login process for {driver_name}")
+            
             # Click Sign up | Log in button
             signup_button = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
@@ -7545,6 +7708,7 @@ class VintedScraper:
             
             # Wait for login to complete
             time.sleep(random.uniform(3, 5))
+            print(f"✅ LOGIN: Login process completed for {driver_name}")
             return True
             
         except Exception as login_error:
@@ -7777,51 +7941,35 @@ class VintedScraper:
             print(f"❌ {driver_name}: Critical sequence failed: {e}")
             return False
 
-    def _background_purchase_monitoring(self, driver, listing_url, username, driver_name):
-        """Run Purchase unsuccessful monitoring in background"""
-        print(f"🔍 {driver_name}: Background monitoring started")
+    def _background_purchase_monitoring_with_cleanup(self, driver, listing_url, username, driver_name):
+        """
+        FIXED: Run Purchase unsuccessful monitoring with proper cleanup when done
+        """
+        print(f"🔍 {driver_name}: Background monitoring started (up to 25 minutes)")
         
         try:
-            # Open second tab
-            driver.execute_script("window.open('');")
-            second_tab = driver.window_handles[-1]
-            driver.switch_to.window(second_tab)
+            # Call the existing monitoring function
+            self._monitor_purchase_unsuccessful_cycling(driver, listing_url, driver_name)
             
-            # Navigate to listing again
-            driver.get(listing_url)
-            
-            # Click buy button on second tab
-            try:
-                buy_button = driver.find_element(By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]')
-                driver.execute_script("arguments[0].click();", buy_button)
-                print(f"✅ {driver_name}: Second buy button clicked")
-            except Exception as buy_error:
-                print(f"❌ {driver_name}: Second buy button failed: {buy_error}")
-                return
-            
-            # Look for 'Processing payment' message
-            processing_found = self._check_processing_payment_cycling(driver, driver_name)
-            
-            if processing_found:
-                print(f"🎉 {driver_name}: Processing payment found - starting monitoring!")
-                
-                # Start monitoring for "Purchase unsuccessful" - this will run for up to 25 minutes
-                self._monitor_purchase_unsuccessful_cycling(driver, listing_url, driver_name)
-            else:
-                print(f"⚠️ {driver_name}: No processing payment found")
-                
         except Exception as monitoring_error:
             print(f"❌ {driver_name}: Monitoring error: {monitoring_error}")
         
         finally:
-            # Clean up monitoring tab
+            # CRITICAL: Clear monitoring flag and clean up when monitoring completes
+            print(f"🧹 {driver_name}: Monitoring completed - performing cleanup")
+            
+            # Clear monitoring flag
+            self.current_driver_monitoring_active = False
+            
+            # Clean up monitoring tab and driver
             try:
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-                print(f"🗑️ {driver_name}: Monitoring cleanup completed")
-            except:
-                pass
+                driver.close()  # Close monitoring tab
+                print(f"✅ {driver_name}: Monitoring tab closed")
+            except Exception as tab_error:
+                print(f"⚠️ {driver_name}: Error closing monitoring tab: {tab_error}")
+            
+            # The driver itself will be cleaned up by the cycling system
+            print(f"🔄 {driver_name}: Monitoring cleanup completed")
 
     def _check_processing_payment_cycling(self, driver, driver_name):
         """Check for processing payment message"""
@@ -7939,18 +8087,73 @@ class VintedScraper:
         print(f"🔄 ADVANCE: Cycled from {old_name} to {new_name}")
 
     def _execute_vm_second_sequence_cycling(self, driver, listing_url, username, driver_name):
-        """Execute second sequence with monitoring in background (non-blocking)"""
-        # Start monitoring in a separate thread so it doesn't block cycling
-        monitoring_thread = threading.Thread(
-            target=self._background_purchase_monitoring,
-            args=(driver, listing_url, username, driver_name),
-            name=f"Monitor-{driver_name}",
-            daemon=True
-        )
-        monitoring_thread.start()
+        """
+        FIXED: Execute second sequence and start monitoring - prepare next driver AFTER monitoring starts
+        """
+        print(f"🔖 {driver_name}: Starting second sequence...")
         
-        print(f"🔍 {driver_name}: Started background monitoring thread")
-        return True
+        try:
+            # Open second tab
+            driver.execute_script("window.open('');")
+            second_tab = driver.window_handles[-1]
+            driver.switch_to.window(second_tab)
+            
+            # Navigate to listing again
+            driver.get(listing_url)
+            WebDriverWait(driver, 5).until(
+                lambda d: d.execute_script("return document.readyState") == "complete"
+            )
+            print(f"✅ {driver_name}: Second tab loaded")
+            
+            # Click buy button on second tab
+            try:
+                buy_button = driver.find_element(By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]')
+                driver.execute_script("arguments[0].click();", buy_button)
+                print(f"✅ {driver_name}: Second buy button clicked")
+            except Exception as buy_error:
+                print(f"❌ {driver_name}: Second buy button failed: {buy_error}")
+                return False
+            
+            # Look for 'Processing payment' message
+            processing_found = self._check_processing_payment_cycling(driver, driver_name)
+            
+            if processing_found:
+                print(f"🎉 {driver_name}: Processing payment found - BOOKMARK COMPLETE!")
+                print(f"🔍 {driver_name}: Starting monitoring phase...")
+                
+                # CRITICAL: Set monitoring flag BEFORE starting monitoring
+                self.current_driver_monitoring_active = True
+                
+                # FIXED: NOW is the time to prepare the next driver (monitoring about to start)
+                print(f"🔧 TIMING: Monitoring about to start - preparing next driver now")
+                with self.bookmark_system_lock:
+                    # Clean up current driver slot and advance
+                    self._cleanup_current_driver()
+                    self._advance_to_next_driver()
+                    
+                    # Start preparing the next driver AFTER advancing
+                    next_driver_index = (self.current_bookmark_driver_index + 1) % 5
+                    self._prepare_next_driver_async(next_driver_index)
+                    print(f"🔧 TIMING: Next driver preparation started")
+                
+                # Start monitoring in a separate thread (this will take up to 25 minutes)
+                monitoring_thread = threading.Thread(
+                    target=self._background_purchase_monitoring_with_cleanup,
+                    args=(driver, listing_url, username, driver_name),
+                    name=f"Monitor-{driver_name}",
+                    daemon=True
+                )
+                monitoring_thread.start()
+                
+                print(f"✅ {driver_name}: Background monitoring started - bookmark process complete")
+                return True
+            else:
+                print(f"⚠️ {driver_name}: No processing payment found - bookmark may have failed")
+                return False
+                
+        except Exception as second_sequence_error:
+            print(f"❌ {driver_name}: Second sequence error: {second_sequence_error}")
+            return False
 
 
     def cleanup_all_bookmark_drivers(self):
@@ -7978,7 +8181,9 @@ class VintedScraper:
         print("✅ CLEANUP: All bookmark drivers cleaned up")
 
     def _execute_vm_bookmark_enhanced_cycling(self, driver, main_tab, listing_url, username, driver_name):
-        """Execute VM bookmark process adapted for cycling system"""
+        """
+        FIXED: Execute VM bookmark process with proper timing for next driver preparation
+        """
         print(f"🚀 {driver_name}: Starting bookmark for {listing_url[:50]}...")
         
         try:
@@ -8003,19 +8208,20 @@ class VintedScraper:
                 print(f"❌ {driver_name}: First sequence failed")
                 return False
             
-            print(f"✅ {driver_name}: First sequence completed - BOOKMARK FUNCTIONALITY FINISHED")
+            print(f"✅ {driver_name}: First sequence completed (0.25s + close)")
             
-            # CRITICAL: Start preparing next driver NOW (don't wait for monitoring to complete)
-            # The monitoring will run in the background while next driver prepares
-            
-            # Execute second sequence with Purchase unsuccessful monitoring
-            # This runs in background and doesn't block the cycling
+            # FIXED: Execute second sequence - this will handle next driver preparation timing
             second_success = self._execute_vm_second_sequence_cycling(driver, listing_url, username, driver_name)
             
-            return True  # Return success immediately after first sequence
-            
+            if second_success:
+                print(f"🎉 {driver_name}: Bookmark completed successfully")
+                return True
+            else:
+                print(f"❌ {driver_name}: Second sequence failed")
+                return False
+                
         except Exception as e:
-            print(f"❌ {driver_name}: Error - {e}")
+            print(f"❌ {driver_name}: Bookmark error - {e}")
             return False
 
     def _execute_bookmark_sequences_with_monitoring(self, current_driver, listing_url, username, step_log):
