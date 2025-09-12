@@ -1,4 +1,210 @@
 # Continuation from line 8801
+                        print(f"⏱️ STOPWATCH: Monitoring completed in {total_elapsed/60:.2f} minutes ({total_elapsed:.2f} seconds)")
+                        print(f"🕒 TIME: Found at {time.strftime('%H:%M:%S')}")
+                        
+                        # MODIFIED: Signal all waiting buying drivers to click pay NOW
+                        print(f"🚀 TRIGGERING: All waiting buying drivers to click pay NOW!")
+                        
+                        for url, entry in purchase_unsuccessful_detected_urls.items():
+                            if entry.get('waiting', True):
+                                print(f"🎯 TRIGGERING: Buying driver for {url[:50]}...")
+                                entry['waiting'] = False  # Signal the buying driver
+                        
+                        self._log_step(step_log, "purchase_unsuccessful_found", True, 
+                                    f"Found after {total_elapsed:.2f}s using: {selector[:50]}...")
+                        
+                        found_unsuccessful = True
+                        break
+                        
+                    except TimeoutException:
+                        continue
+                    except Exception as selector_error:
+                        print(f"⚠️ MONITORING: Error with selector {selector}: {selector_error}")
+                        continue
+                
+                if found_unsuccessful:
+                    break
+                    
+                # Wait a bit before checking again
+                time.sleep(0.5)  # Check every 500ms for faster response
+        
+        except Exception as monitoring_error:
+            end_time = time.time()
+            total_elapsed = end_time - monitoring_start_time
+            print(f"❌ MONITORING ERROR: {monitoring_error}")
+            print(f"⏱️ STOPWATCH: Monitoring ended after {total_elapsed/60:.2f} minutes (ERROR)")
+            self._log_step(step_log, "monitoring_error", False, str(monitoring_error))
+        
+        finally:
+            # Clean up monitoring
+            step_log['monitoring_active'] = False
+            self.monitoring_threads_active.clear()
+            
+            print(f"🗑️ MONITORING CLEANUP: Closing monitoring tab and advancing driver...")
+            try:
+                current_driver.close()
+                print(f"✅ MONITORING CLEANUP: Closed monitoring tab")
+            except Exception as tab_close_error:
+                print(f"⚠️ MONITORING CLEANUP: Error closing tab: {tab_close_error}")
+            
+            try:
+                self.close_current_bookmark_driver()
+                print(f"✅ MONITORING CLEANUP: Closed bookmark driver and advanced to next")
+            except Exception as driver_close_error:
+                print(f"⚠️ MONITORING CLEANUP: Error closing driver: {driver_close_error}")
+            
+            print(f"🔄 MONITORING COMPLETE: Driver cleanup finished, ready for next bookmark")
+            
+    def _execute_messages_sequence(self, current_driver, actual_url, username, step_log):
+        """Execute the messages sequence for username validation"""
+        self._log_step(step_log, "messages_sequence_start", True)
+        
+        try:
+            # Open messages tab
+            current_driver.execute_script("window.open('');")
+            messages_tab = current_driver.window_handles[-1]
+            current_driver.switch_to.window(messages_tab)
+            self._log_step(step_log, "messages_tab_created", True)
+            
+            # Navigate to URL for messages
+            current_driver.get(actual_url)
+            self._log_step(step_log, "messages_navigation", True)
+            
+            # Find and click messages button
+            messages_element, messages_selector = self._try_selectors(
+                current_driver,
+                'messages_button',
+                operation='click',
+                timeout=1,
+                click_method='all',
+                step_log=step_log
+            )
+            
+            if messages_element:
+                self._log_step(step_log, "messages_button_clicked", True, f"Used: {messages_selector[:30]}...")
+                
+                # Search for username
+                self._search_for_username(current_driver, username, actual_url, step_log)
+            else:
+                self._log_step(step_log, "messages_button_not_found", False, "Messages button not found with any selector")
+            
+            # Close messages tab
+            current_driver.close()
+            if len(current_driver.window_handles) > 0:
+                current_driver.switch_to.window(current_driver.window_handles[0])
+            self._log_step(step_log, "messages_tab_closed", True)
+            
+            return True
+            
+        except Exception as messages_error:
+            self._log_step(step_log, "messages_sequence_error", False, str(messages_error))
+            # Clean up messages tab
+            try:
+                current_driver.close()
+                if len(current_driver.window_handles) > 0:
+                    current_driver.switch_to.window(current_driver.window_handles[0])
+            except:
+                pass
+            return True
+
+    def _search_for_username(self, current_driver, username, actual_url, step_log):
+        """Search for username in messages to detect accidental purchases"""
+        if not username:
+            self._log_step(step_log, "no_username_for_search", False, "No username available")
+            time.sleep(3)
+            return
+        
+        self._log_step(step_log, "username_search_start", True, f"Searching for: {username}")
+        time.sleep(2)  # Wait for messages page to load
+        
+        try:
+            username_element = WebDriverWait(current_driver, 3).until(
+                EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
+            )
+            
+            self._log_step(step_log, "username_found_on_messages", True, f"Found: {username}")
+            
+            # Try to click username
+            username_clicked = self._click_username_element(current_driver, username_element, step_log)
+            
+            if username_clicked:
+                self._log_step(step_log, "accidental_purchase_detected", True, "ABORT - username found in messages")
+                print("USERNAME FOUND, POSSIBLE ACCIDENTAL PURCHASE, ABORT")
+                time.sleep(3)
+                self._log_final_bookmark_result(step_log)
+                sys.exit(0)
+            else:
+                self._log_step(step_log, "username_click_failed", False, "Could not click username")
+                
+        except TimeoutException:
+            self._log_step(step_log, "username_not_found_in_messages", True, f"Username {username} not in messages - likely bookmarked!")
+            print(f"📧 NOT FOUND: Username '{username}' not found on messages page")
+            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
+        except Exception as search_error:
+            self._log_step(step_log, "username_search_error", False, str(search_error))
+            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
+
+    def _click_username_element(self, current_driver, username_element, step_log):
+        """Try to click the username element with multiple methods"""
+        username_clicked = False
+        for click_method in ['standard', 'javascript', 'actionchains']:
+            try:
+                if click_method == 'standard':
+                    username_element.click()
+                elif click_method == 'javascript':
+                    current_driver.execute_script("arguments[0].click();", username_element)
+                elif click_method == 'actionchains':
+                    ActionChains(current_driver).move_to_element(username_element).click().perform()
+                
+                username_clicked = True
+                self._log_step(step_log, f"username_clicked_{click_method}", True)
+                break
+            except:
+                continue
+        return username_clicked
+
+    def _try_selectors(self, driver, selector_set_name, operation='find', timeout=5, click_method='standard', step_log=None):
+        """Try selectors with quick timeouts and fail fast"""
+        SELECTOR_SETS = {
+
+            'purchase_unsuccessful': [
+                "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+                "//*[text()='Purchase unsuccessful']"
+            ],
+
+            'buy_button': [
+                "button[data-testid='item-buy-button']",
+                "button.web_ui__Button__primary[data-testid='item-buy-button']",
+                "button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated",
+                "//button[@data-testid='item-buy-button']",
+                "//button[contains(@class, 'web_ui__Button__primary')]//span[text()='Buy now']"
+            ],
+            'pay_button': [
+                'button[data-testid="single-checkout-order-summary-purchase-button"]',
+                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
+                '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
+                'button.web_ui__Button__primary[data-testid*="purchase"]',
+                '//button[contains(@data-testid, "purchase-button")]'
+            ],
+            'processing_payment': [
+                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
+                "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
+                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format' and contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+                "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+                "//*[contains(text(), 'Processing payment')]"
+            ],
+            'messages_button': [
+                "a[data-testid='header-conversations-button']",
+                "a[href='/inbox'][data-testid='header-conversations-button']",
+                "a[href='/inbox'].web_ui__Button__button",
+                "a[aria-label*='message'][href='/inbox']",
+                "a[href='/inbox']"
+            ]
+        }
+        
         selectors = SELECTOR_SETS.get(selector_set_name, [])
         if not selectors:
             if step_log:

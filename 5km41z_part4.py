@@ -1,4 +1,163 @@
 # Continuation from line 6601
+
+        # Add game count issue
+        if 1 <= game_count <= 2 and not non_game_classes:
+            unsuitability_reasons.append("1-2 games with no additional non-game items")
+
+        # Add profit suitability issue
+        if not profit_suitability:
+            unsuitability_reasons.append(f"Profit £{expected_profit:.2f} ({profit_percentage:.2f}%) not suitable for price range")
+
+        # Determine final suitability
+        if unsuitability_reasons:
+            suitability_reason = "Unsuitable:\n---- " + "\n---- ".join(unsuitability_reasons)
+            is_suitable = False
+        else:
+            suitability_reason = f"Suitable: Profit £{expected_profit:.2f} ({profit_percentage:.2f}%)"
+            is_suitable = True
+
+        if print_debug:    
+            print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
+
+        # 🔖 MODIFIED BOOKMARK FUNCTIONALITY WITH SUCCESS TRACKING
+        bookmark_success = False
+        should_bookmark = False
+        
+        if bookmark_listings and is_suitable:
+            should_bookmark = True
+        elif bookmark_listings and VINTED_SHOW_ALL_LISTINGS:
+            should_bookmark = True
+            
+        if should_bookmark:
+            # NEW: Use the 5-driver cycling system instead of old bookmark method
+            print(f"🔖 5-DRIVER SYSTEM: Adding to bookmark queue: {url}")
+            
+            # Extract username from details
+            username = details.get("username", None)
+            if not username or username == "Username not found":
+                username = None
+                print("🔖 USERNAME: Not available for this listing")
+            
+            # Add to the 5-driver bookmark queue
+            self.add_to_bookmark_queue(url, username)
+            
+            # For the rest of the logic, assume bookmark will succeed
+            # (the 5-driver system will handle the actual success/failure)
+            bookmark_success = True
+            print("✅ Added to 5-driver bookmark queue")
+            
+            # Start bookmark stopwatch (existing logic)
+            self.start_bookmark_stopwatch(url)
+
+        # NEW: Generate exact UK time when creating listing info 
+        from datetime import datetime
+        import pytz
+        
+        uk_tz = pytz.timezone('Europe/London')
+        append_time = datetime.now(uk_tz)
+        exact_append_time = append_time.strftime("%H:%M:%S.%f")[:-3]  # Format: HH:MM:SS.mmm
+        
+        # Create final listing info with exact append time
+        final_listing_info = {
+            'title': details.get("title", "No title"),
+            'description': details.get("description", "No description"),
+            'join_date': exact_append_time,  # CHANGED: Use exact UK time instead of upload date
+            'price': str(total_price),
+            'expected_revenue': total_revenue,
+            'profit': expected_profit,
+            'detected_items': detected_objects, # Raw detected objects for box 1
+            'processed_images': processed_images,
+            'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
+            'url': url,
+            'suitability': suitability_reason,
+            'seller_reviews': seller_reviews
+        }
+
+        # SEPARATE logic for pygame and website
+        should_add_to_website = False
+        should_add_to_pygame = False
+        should_send_notification = False
+
+        # Website logic (current behavior - only successful bookmarks when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False)
+        if bookmark_listings and not VINTED_SHOW_ALL_LISTINGS:
+            # When bookmark_listings is ON and VINTED_SHOW_ALL_LISTINGS is OFF:
+            # Only add/notify if bookmark was successful
+            if bookmark_success:
+                should_add_to_website = True
+                should_send_notification = True
+                print("✅ Adding to website because bookmark was successful")
+            else:
+                print("❌ Not adding to website because bookmark was not successful")
+        else:
+            # Original logic for other combinations
+            if is_suitable or VINTED_SHOW_ALL_LISTINGS:
+                should_add_to_website = True
+                should_send_notification = True
+
+        # NEW: Pygame logic (always show suitable listings + bookmark failure info)
+        if VINTED_SHOW_ALL_LISTINGS:
+            should_add_to_pygame = True
+        elif is_suitable:  # Show all suitable listings regardless of bookmark success
+            should_add_to_pygame = True
+
+        # Modify suitability_reason for pygame if bookmark failed
+        pygame_suitability_reason = suitability_reason
+        if should_add_to_pygame and bookmark_listings and is_suitable and not bookmark_success:
+            pygame_suitability_reason = suitability_reason + "\n⚠️ BOOKMARK FAILED"
+        
+        if is_suitable and should_send_fail_bookmark_notification and not should_add_to_website:
+            notification_title = f"Listing Failed Bookmark: £{total_price:.2f}"
+            notification_message = (
+                f"Title: {details.get('title', 'No title')}\n"
+                f"Price: £{total_price:.2f}\n"
+                f"Expected Profit: £{expected_profit:.2f}\n"
+                f"Profit %: {profit_percentage:.2f}%\n"
+            )
+            
+            # Use the Pushover tokens exactly as Facebook does
+            if send_notification:
+                self.send_pushover_notification(
+                    notification_title,
+                    notification_message,
+                    'aks3to8guqjye193w7ajnydk9jaxh5',
+                    'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                )
+
+        # Add to website (existing logic)
+        if should_add_to_website:
+            # Send Pushover notification
+            if should_send_notification:
+                notification_title = f"New Vinted Listing: £{total_price:.2f}"
+                notification_message = (
+                    f"Title: {details.get('title', 'No title')}\n"
+                    f"Price: £{total_price:.2f}\n"
+                    f"Expected Profit: £{expected_profit:.2f}\n"
+                    f"Profit %: {profit_percentage:.2f}%\n"
+                )
+                
+                # Use the Pushover tokens exactly as Facebook does
+                if send_notification:
+                    self.send_pushover_notification(
+                        notification_title,
+                        notification_message,
+                        'aks3to8guqjye193w7ajnydk9jaxh5',
+                        'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                    )
+
+            # Add to recent_listings for website navigation
+            recent_listings['listings'].append(final_listing_info)
+            # Always set to the last (most recent) listing for website display
+            recent_listings['current_index'] = len(recent_listings['listings']) - 1
+
+        # Add to pygame (NEW separate logic)
+        if should_add_to_pygame:
+            # Create pygame-specific listing info with modified suitability
+            pygame_listing_info = final_listing_info.copy()
+            pygame_listing_info['suitability'] = pygame_suitability_reason
+            
+            suitable_listings.append(pygame_listing_info)
+            current_listing_index = len(suitable_listings) - 1
+            
             # UPDATED: Print exact append time when adding to pygame
             print(f"⏰ APPENDED TO PYGAME: {exact_append_time} UK time")
             self.update_listing_details(**pygame_listing_info)
@@ -899,9 +1058,13 @@
                 return False
         return False
 
-    def _perform_vinted_login(self, driver, config, driver_name):
-        """Perform Vinted login based on configuration"""
+    def _perform_vinted_login_simple(self, driver, config, driver_name):
+        """
+        SIMPLIFIED: Login without additional cookie clearing (already done in _prepare_driver)
+        """
         try:
+            print(f"🔐 LOGIN: Starting login process for {driver_name}")
+            
             # Click Sign up | Log in button
             signup_button = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
@@ -946,6 +1109,7 @@
             
             # Wait for login to complete
             time.sleep(random.uniform(3, 5))
+            print(f"✅ LOGIN: Login process completed for {driver_name}")
             return True
             
         except Exception as login_error:
@@ -1178,51 +1342,35 @@
             print(f"❌ {driver_name}: Critical sequence failed: {e}")
             return False
 
-    def _background_purchase_monitoring(self, driver, listing_url, username, driver_name):
-        """Run Purchase unsuccessful monitoring in background"""
-        print(f"🔍 {driver_name}: Background monitoring started")
+    def _background_purchase_monitoring_with_cleanup(self, driver, listing_url, username, driver_name):
+        """
+        FIXED: Run Purchase unsuccessful monitoring with proper cleanup when done
+        """
+        print(f"🔍 {driver_name}: Background monitoring started (up to 25 minutes)")
         
         try:
-            # Open second tab
-            driver.execute_script("window.open('');")
-            second_tab = driver.window_handles[-1]
-            driver.switch_to.window(second_tab)
+            # Call the existing monitoring function
+            self._monitor_purchase_unsuccessful_cycling(driver, listing_url, driver_name)
             
-            # Navigate to listing again
-            driver.get(listing_url)
-            
-            # Click buy button on second tab
-            try:
-                buy_button = driver.find_element(By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]')
-                driver.execute_script("arguments[0].click();", buy_button)
-                print(f"✅ {driver_name}: Second buy button clicked")
-            except Exception as buy_error:
-                print(f"❌ {driver_name}: Second buy button failed: {buy_error}")
-                return
-            
-            # Look for 'Processing payment' message
-            processing_found = self._check_processing_payment_cycling(driver, driver_name)
-            
-            if processing_found:
-                print(f"🎉 {driver_name}: Processing payment found - starting monitoring!")
-                
-                # Start monitoring for "Purchase unsuccessful" - this will run for up to 25 minutes
-                self._monitor_purchase_unsuccessful_cycling(driver, listing_url, driver_name)
-            else:
-                print(f"⚠️ {driver_name}: No processing payment found")
-                
         except Exception as monitoring_error:
             print(f"❌ {driver_name}: Monitoring error: {monitoring_error}")
         
         finally:
-            # Clean up monitoring tab
+            # CRITICAL: Clear monitoring flag and clean up when monitoring completes
+            print(f"🧹 {driver_name}: Monitoring completed - performing cleanup")
+            
+            # Clear monitoring flag
+            self.current_driver_monitoring_active = False
+            
+            # Clean up monitoring tab and driver
             try:
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-                print(f"🗑️ {driver_name}: Monitoring cleanup completed")
-            except:
-                pass
+                driver.close()  # Close monitoring tab
+                print(f"✅ {driver_name}: Monitoring tab closed")
+            except Exception as tab_error:
+                print(f"⚠️ {driver_name}: Error closing monitoring tab: {tab_error}")
+            
+            # The driver itself will be cleaned up by the cycling system
+            print(f"🔄 {driver_name}: Monitoring cleanup completed")
 
     def _check_processing_payment_cycling(self, driver, driver_name):
         """Check for processing payment message"""
@@ -1340,18 +1488,73 @@
         print(f"🔄 ADVANCE: Cycled from {old_name} to {new_name}")
 
     def _execute_vm_second_sequence_cycling(self, driver, listing_url, username, driver_name):
-        """Execute second sequence with monitoring in background (non-blocking)"""
-        # Start monitoring in a separate thread so it doesn't block cycling
-        monitoring_thread = threading.Thread(
-            target=self._background_purchase_monitoring,
-            args=(driver, listing_url, username, driver_name),
-            name=f"Monitor-{driver_name}",
-            daemon=True
-        )
-        monitoring_thread.start()
+        """
+        FIXED: Execute second sequence and start monitoring - prepare next driver AFTER monitoring starts
+        """
+        print(f"🔖 {driver_name}: Starting second sequence...")
         
-        print(f"🔍 {driver_name}: Started background monitoring thread")
-        return True
+        try:
+            # Open second tab
+            driver.execute_script("window.open('');")
+            second_tab = driver.window_handles[-1]
+            driver.switch_to.window(second_tab)
+            
+            # Navigate to listing again
+            driver.get(listing_url)
+            WebDriverWait(driver, 5).until(
+                lambda d: d.execute_script("return document.readyState") == "complete"
+            )
+            print(f"✅ {driver_name}: Second tab loaded")
+            
+            # Click buy button on second tab
+            try:
+                buy_button = driver.find_element(By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]')
+                driver.execute_script("arguments[0].click();", buy_button)
+                print(f"✅ {driver_name}: Second buy button clicked")
+            except Exception as buy_error:
+                print(f"❌ {driver_name}: Second buy button failed: {buy_error}")
+                return False
+            
+            # Look for 'Processing payment' message
+            processing_found = self._check_processing_payment_cycling(driver, driver_name)
+            
+            if processing_found:
+                print(f"🎉 {driver_name}: Processing payment found - BOOKMARK COMPLETE!")
+                print(f"🔍 {driver_name}: Starting monitoring phase...")
+                
+                # CRITICAL: Set monitoring flag BEFORE starting monitoring
+                self.current_driver_monitoring_active = True
+                
+                # FIXED: NOW is the time to prepare the next driver (monitoring about to start)
+                print(f"🔧 TIMING: Monitoring about to start - preparing next driver now")
+                with self.bookmark_system_lock:
+                    # Clean up current driver slot and advance
+                    self._cleanup_current_driver()
+                    self._advance_to_next_driver()
+                    
+                    # Start preparing the next driver AFTER advancing
+                    next_driver_index = (self.current_bookmark_driver_index + 1) % 5
+                    self._prepare_next_driver_async(next_driver_index)
+                    print(f"🔧 TIMING: Next driver preparation started")
+                
+                # Start monitoring in a separate thread (this will take up to 25 minutes)
+                monitoring_thread = threading.Thread(
+                    target=self._background_purchase_monitoring_with_cleanup,
+                    args=(driver, listing_url, username, driver_name),
+                    name=f"Monitor-{driver_name}",
+                    daemon=True
+                )
+                monitoring_thread.start()
+                
+                print(f"✅ {driver_name}: Background monitoring started - bookmark process complete")
+                return True
+            else:
+                print(f"⚠️ {driver_name}: No processing payment found - bookmark may have failed")
+                return False
+                
+        except Exception as second_sequence_error:
+            print(f"❌ {driver_name}: Second sequence error: {second_sequence_error}")
+            return False
 
 
     def cleanup_all_bookmark_drivers(self):
@@ -1379,7 +1582,9 @@
         print("✅ CLEANUP: All bookmark drivers cleaned up")
 
     def _execute_vm_bookmark_enhanced_cycling(self, driver, main_tab, listing_url, username, driver_name):
-        """Execute VM bookmark process adapted for cycling system"""
+        """
+        FIXED: Execute VM bookmark process with proper timing for next driver preparation
+        """
         print(f"🚀 {driver_name}: Starting bookmark for {listing_url[:50]}...")
         
         try:
@@ -1404,19 +1609,20 @@
                 print(f"❌ {driver_name}: First sequence failed")
                 return False
             
-            print(f"✅ {driver_name}: First sequence completed - BOOKMARK FUNCTIONALITY FINISHED")
+            print(f"✅ {driver_name}: First sequence completed (0.25s + close)")
             
-            # CRITICAL: Start preparing next driver NOW (don't wait for monitoring to complete)
-            # The monitoring will run in the background while next driver prepares
-            
-            # Execute second sequence with Purchase unsuccessful monitoring
-            # This runs in background and doesn't block the cycling
+            # FIXED: Execute second sequence - this will handle next driver preparation timing
             second_success = self._execute_vm_second_sequence_cycling(driver, listing_url, username, driver_name)
             
-            return True  # Return success immediately after first sequence
-            
+            if second_success:
+                print(f"🎉 {driver_name}: Bookmark completed successfully")
+                return True
+            else:
+                print(f"❌ {driver_name}: Second sequence failed")
+                return False
+                
         except Exception as e:
-            print(f"❌ {driver_name}: Error - {e}")
+            print(f"❌ {driver_name}: Bookmark error - {e}")
             return False
 
     def _execute_bookmark_sequences_with_monitoring(self, current_driver, listing_url, username, step_log):
@@ -1993,209 +2199,3 @@
                         
                         print(f"🎯 FOUND! 'Purchase unsuccessful' detected!")
                         print(f"📍 ELEMENT: Found using selector: {selector}")
-                        print(f"⏱️ STOPWATCH: Monitoring completed in {total_elapsed/60:.2f} minutes ({total_elapsed:.2f} seconds)")
-                        print(f"🕒 TIME: Found at {time.strftime('%H:%M:%S')}")
-                        
-                        # MODIFIED: Signal all waiting buying drivers to click pay NOW
-                        print(f"🚀 TRIGGERING: All waiting buying drivers to click pay NOW!")
-                        
-                        for url, entry in purchase_unsuccessful_detected_urls.items():
-                            if entry.get('waiting', True):
-                                print(f"🎯 TRIGGERING: Buying driver for {url[:50]}...")
-                                entry['waiting'] = False  # Signal the buying driver
-                        
-                        self._log_step(step_log, "purchase_unsuccessful_found", True, 
-                                    f"Found after {total_elapsed:.2f}s using: {selector[:50]}...")
-                        
-                        found_unsuccessful = True
-                        break
-                        
-                    except TimeoutException:
-                        continue
-                    except Exception as selector_error:
-                        print(f"⚠️ MONITORING: Error with selector {selector}: {selector_error}")
-                        continue
-                
-                if found_unsuccessful:
-                    break
-                    
-                # Wait a bit before checking again
-                time.sleep(0.5)  # Check every 500ms for faster response
-        
-        except Exception as monitoring_error:
-            end_time = time.time()
-            total_elapsed = end_time - monitoring_start_time
-            print(f"❌ MONITORING ERROR: {monitoring_error}")
-            print(f"⏱️ STOPWATCH: Monitoring ended after {total_elapsed/60:.2f} minutes (ERROR)")
-            self._log_step(step_log, "monitoring_error", False, str(monitoring_error))
-        
-        finally:
-            # Clean up monitoring
-            step_log['monitoring_active'] = False
-            self.monitoring_threads_active.clear()
-            
-            print(f"🗑️ MONITORING CLEANUP: Closing monitoring tab and advancing driver...")
-            try:
-                current_driver.close()
-                print(f"✅ MONITORING CLEANUP: Closed monitoring tab")
-            except Exception as tab_close_error:
-                print(f"⚠️ MONITORING CLEANUP: Error closing tab: {tab_close_error}")
-            
-            try:
-                self.close_current_bookmark_driver()
-                print(f"✅ MONITORING CLEANUP: Closed bookmark driver and advanced to next")
-            except Exception as driver_close_error:
-                print(f"⚠️ MONITORING CLEANUP: Error closing driver: {driver_close_error}")
-            
-            print(f"🔄 MONITORING COMPLETE: Driver cleanup finished, ready for next bookmark")
-            
-    def _execute_messages_sequence(self, current_driver, actual_url, username, step_log):
-        """Execute the messages sequence for username validation"""
-        self._log_step(step_log, "messages_sequence_start", True)
-        
-        try:
-            # Open messages tab
-            current_driver.execute_script("window.open('');")
-            messages_tab = current_driver.window_handles[-1]
-            current_driver.switch_to.window(messages_tab)
-            self._log_step(step_log, "messages_tab_created", True)
-            
-            # Navigate to URL for messages
-            current_driver.get(actual_url)
-            self._log_step(step_log, "messages_navigation", True)
-            
-            # Find and click messages button
-            messages_element, messages_selector = self._try_selectors(
-                current_driver,
-                'messages_button',
-                operation='click',
-                timeout=1,
-                click_method='all',
-                step_log=step_log
-            )
-            
-            if messages_element:
-                self._log_step(step_log, "messages_button_clicked", True, f"Used: {messages_selector[:30]}...")
-                
-                # Search for username
-                self._search_for_username(current_driver, username, actual_url, step_log)
-            else:
-                self._log_step(step_log, "messages_button_not_found", False, "Messages button not found with any selector")
-            
-            # Close messages tab
-            current_driver.close()
-            if len(current_driver.window_handles) > 0:
-                current_driver.switch_to.window(current_driver.window_handles[0])
-            self._log_step(step_log, "messages_tab_closed", True)
-            
-            return True
-            
-        except Exception as messages_error:
-            self._log_step(step_log, "messages_sequence_error", False, str(messages_error))
-            # Clean up messages tab
-            try:
-                current_driver.close()
-                if len(current_driver.window_handles) > 0:
-                    current_driver.switch_to.window(current_driver.window_handles[0])
-            except:
-                pass
-            return True
-
-    def _search_for_username(self, current_driver, username, actual_url, step_log):
-        """Search for username in messages to detect accidental purchases"""
-        if not username:
-            self._log_step(step_log, "no_username_for_search", False, "No username available")
-            time.sleep(3)
-            return
-        
-        self._log_step(step_log, "username_search_start", True, f"Searching for: {username}")
-        time.sleep(2)  # Wait for messages page to load
-        
-        try:
-            username_element = WebDriverWait(current_driver, 3).until(
-                EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
-            )
-            
-            self._log_step(step_log, "username_found_on_messages", True, f"Found: {username}")
-            
-            # Try to click username
-            username_clicked = self._click_username_element(current_driver, username_element, step_log)
-            
-            if username_clicked:
-                self._log_step(step_log, "accidental_purchase_detected", True, "ABORT - username found in messages")
-                print("USERNAME FOUND, POSSIBLE ACCIDENTAL PURCHASE, ABORT")
-                time.sleep(3)
-                self._log_final_bookmark_result(step_log)
-                sys.exit(0)
-            else:
-                self._log_step(step_log, "username_click_failed", False, "Could not click username")
-                
-        except TimeoutException:
-            self._log_step(step_log, "username_not_found_in_messages", True, f"Username {username} not in messages - likely bookmarked!")
-            print(f"📧 NOT FOUND: Username '{username}' not found on messages page")
-            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
-        except Exception as search_error:
-            self._log_step(step_log, "username_search_error", False, str(search_error))
-            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
-
-    def _click_username_element(self, current_driver, username_element, step_log):
-        """Try to click the username element with multiple methods"""
-        username_clicked = False
-        for click_method in ['standard', 'javascript', 'actionchains']:
-            try:
-                if click_method == 'standard':
-                    username_element.click()
-                elif click_method == 'javascript':
-                    current_driver.execute_script("arguments[0].click();", username_element)
-                elif click_method == 'actionchains':
-                    ActionChains(current_driver).move_to_element(username_element).click().perform()
-                
-                username_clicked = True
-                self._log_step(step_log, f"username_clicked_{click_method}", True)
-                break
-            except:
-                continue
-        return username_clicked
-
-    def _try_selectors(self, driver, selector_set_name, operation='find', timeout=5, click_method='standard', step_log=None):
-        """Try selectors with quick timeouts and fail fast"""
-        SELECTOR_SETS = {
-
-            'purchase_unsuccessful': [
-                "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
-                "//*[text()='Purchase unsuccessful']"
-            ],
-
-            'buy_button': [
-                "button[data-testid='item-buy-button']",
-                "button.web_ui__Button__primary[data-testid='item-buy-button']",
-                "button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated",
-                "//button[@data-testid='item-buy-button']",
-                "//button[contains(@class, 'web_ui__Button__primary')]//span[text()='Buy now']"
-            ],
-            'pay_button': [
-                'button[data-testid="single-checkout-order-summary-purchase-button"]',
-                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
-                '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
-                'button.web_ui__Button__primary[data-testid*="purchase"]',
-                '//button[contains(@data-testid, "purchase-button")]'
-            ],
-            'processing_payment': [
-                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
-                "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
-                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format' and contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
-                "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
-                "//*[contains(text(), 'Processing payment')]"
-            ],
-            'messages_button': [
-                "a[data-testid='header-conversations-button']",
-                "a[href='/inbox'][data-testid='header-conversations-button']",
-                "a[href='/inbox'].web_ui__Button__button",
-                "a[aria-label*='message'][href='/inbox']",
-                "a[href='/inbox']"
-            ]
-        }
-        
