@@ -29,7 +29,7 @@ import threading
 import subprocess
 import hashlib
 import concurrent.futures
-from queue import Queue
+from queue import Queue, Empty
 import queue
 import pygame
 import pyautogui
@@ -82,7 +82,7 @@ TEST_SUITABLE_URLS = [
 TEST_NUMBER_OF_LISTINGS = False
 
 #tests the bookmark functionality
-BOOKMARK_TEST_MODE = True
+BOOKMARK_TEST_MODE = False
 BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/7050671534-yoshimoto-nara-shirt?referrer=catalog"
 BOOKMARK_TEST_USERNAME = "leah_lane" 
 

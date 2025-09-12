@@ -1,4 +1,46 @@
 # Continuation from line 4401
+    def save_rectangle_config(self, rectangles):
+        json.dump([(rect.x, rect.y, rect.width, rect.height) for rect in rectangles], open(CONFIG_FILE, 'w'))
+        
+    def render_text_in_rect(self, screen, font, text, rect, color):
+        words = text.split()
+        lines = []
+        current_line = []
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            test_width, _ = font.size(test_line)
+            if test_width <= rect.width - 10:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                    current_line = [word]
+                else:
+                    lines.append(word)
+        if current_line:
+            lines.append(' '.join(current_line))
+
+        total_height = sum(font.size(line)[1] for line in lines)
+        if total_height > rect.height:
+            scale_factor = rect.height / total_height
+            new_font_size = max(1, int(font.get_height() * scale_factor))
+            try:
+                font = pygame.font.Font(None, new_font_size)  # Use default font
+            except pygame.error:
+                print(f"Error creating font with size {new_font_size}")
+                return  # Skip rendering if font creation fail
+
+        y = rect.top + 5
+        for line in lines:
+            try:
+                text_surface = font.render(line, True, color)
+                text_rect = text_surface.get_rect(centerx=rect.centerx, top=y)
+                screen.blit(text_surface, text_rect)
+                y += font.get_linesize()
+            except pygame.error as e:
+                print(f"Error rendering text: {e}")
+                continue  # Skip this line if rendering fails
+
     def extract_price(self, text):
         import re
         """
@@ -2027,26 +2069,26 @@
         elif bookmark_listings and VINTED_SHOW_ALL_LISTINGS:
             should_bookmark = True
             
-            if should_bookmark:
-                # CHANGED: Use threaded bookmark execution
-                print(f"🔖 THREADED BOOKMARK: {url}")
-                
-                # Extract username from details
-                username = details.get("username", None)
-                if not username or username == "Username not found":
-                    username = None
-                    print("🔖 USERNAME: Not available for this listing")
-                
-                # Start bookmark in separate thread - no need to wait for completion
-                bookmark_success = self.vm_bookmark_simple(url, username)
-                
-                # For the rest of the logic, assume bookmark will succeed
-                # (the thread will handle the actual success/failure)
-                if bookmark_success:
-                    print("✅ Bookmark thread started successfully")
-                    
-                    # Start bookmark stopwatch (existing logic)
-                    self.start_bookmark_stopwatch(url)
+        if should_bookmark:
+            # NEW: Use the 5-driver cycling system instead of old bookmark method
+            print(f"🔖 5-DRIVER SYSTEM: Adding to bookmark queue: {url}")
+            
+            # Extract username from details
+            username = details.get("username", None)
+            if not username or username == "Username not found":
+                username = None
+                print("🔖 USERNAME: Not available for this listing")
+            
+            # Add to the 5-driver bookmark queue
+            self.add_to_bookmark_queue(url, username)
+            
+            # For the rest of the logic, assume bookmark will succeed
+            # (the 5-driver system will handle the actual success/failure)
+            bookmark_success = True
+            print("✅ Added to 5-driver bookmark queue")
+            
+            # Start bookmark stopwatch (existing logic)
+            self.start_bookmark_stopwatch(url)
 
         # NEW: Generate exact UK time when creating listing info 
         from datetime import datetime
@@ -2157,45 +2199,3 @@
             suitable_listings.append(pygame_listing_info)
             current_listing_index = len(suitable_listings) - 1
             
-            # UPDATED: Print exact append time when adding to pygame
-            print(f"⏰ APPENDED TO PYGAME: {exact_append_time} UK time")
-            self.update_listing_details(**pygame_listing_info)
-
-            if is_suitable and not bookmark_success and bookmark_listings:
-                print(f"✅ Added suitable listing to pygame with bookmark failure notice: £{total_price:.2f}")
-            elif is_suitable:
-                print(f"✅ Added suitable listing to pygame: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
-            else:
-                print(f"➕ Added unsuitable listing to pygame (SHOW_ALL mode): £{total_price:.2f}")
-
-        if not should_add_to_pygame:
-            print(f"❌ Listing not added to pygame: {suitability_reason}")
-
-
-    def check_vinted_profit_suitability(self, listing_price, profit_percentage):
-        if 10 <= listing_price < 16:
-            return 100 <= profit_percentage <= 600 #50
-        elif 16 <= listing_price < 25:
-            return 65 <= profit_percentage <= 400 #50
-        elif 25 <= listing_price < 50:
-            return 37.5 <= profit_percentage <= 550 #35
-        elif 50 <= listing_price < 100:
-            return 35 <= profit_percentage <= 500 #32.5
-        elif listing_price >= 100:
-            return 30 <= profit_percentage <= 450 # 30
-        else:
-            return False
-            
-    def calculate_vinted_revenue(self, detected_objects, listing_price, title, description=""):
-        """
-        Enhanced revenue calculation with all Facebook logic
-        """
-        debug_function_call("calculate_vinted_revenue")
-        import re  # FIXED: Import re at function level
-        
-        # List of game-related classes
-        game_classes = [
-            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
-            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
-            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
-            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
