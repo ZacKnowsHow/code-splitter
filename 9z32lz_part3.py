@@ -2038,7 +2038,7 @@
                     print("🔖 USERNAME: Not available for this listing")
                 
                 # Start bookmark in separate thread - no need to wait for completion
-                bookmark_success = self.bookmark_driver_threaded(url, username)
+                bookmark_success = self.vm_bookmark_simple(url, username)
                 
                 # For the rest of the logic, assume bookmark will succeed
                 # (the thread will handle the actual success/failure)

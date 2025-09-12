@@ -53,11 +53,11 @@
             try:
                 print("🔖 STEP 1: Starting bookmark process...")
                 
-                # First, run the bookmark function
-                # Extract username from the URL if possible or use a test username
-                test_username = "test_user"  # You might want to make this configurable
+                # SIMPLE CHANGE: Use VM bookmark system
+                test_username = "test_user"
                 
-                bookmark_success = self.bookmark_driver(TEST_BOOKMARK_BUYING_URL, test_username)
+                # Call the VM bookmark function directly
+                bookmark_success = self.vm_bookmark_simple(TEST_BOOKMARK_BUYING_URL, test_username)
                 
                 if bookmark_success:
                     if wait_for_bookmark_stopwatch_to_buy:
@@ -101,7 +101,6 @@
                 # Clean up all drivers
                 self.cleanup_all_buying_drivers()
                 self.cleanup_persistent_buying_driver()
-                self.cleanup_persistent_bookmark_driver()
             
             # Exit immediately after test
             print("🔖💳 TEST_BOOKMARK_BUYING_FUNCTIONALITY COMPLETE - EXITING")
@@ -131,44 +130,25 @@
             current_seller_reviews = "No reviews yet"
             
             try:
-                # Start the bookmark process
-                success = self.bookmark_driver(BOOKMARK_TEST_URL, BOOKMARK_TEST_USERNAME)
+                # SIMPLE CHANGE: Use VM bookmark system instead of old system
+                success = self.vm_bookmark_simple(BOOKMARK_TEST_URL, BOOKMARK_TEST_USERNAME)
                 
                 if success:
                     print("✅ BOOKMARK TEST SUCCESSFUL")
-                    
-                    # STAY ALIVE and wait for monitoring to complete
-                    print("⏳ STAYING ALIVE: Waiting for monitoring thread to complete...")
-                    
-                    # Wait for the monitoring thread to finish
-                    while self.monitoring_threads_active.is_set():
-                        time.sleep(1)
-                        print("🔍 MONITORING: Still active, waiting...")
-                    
-                    print("✅ MONITORING: Complete - all threads finished")
-                    
+                    print("⏳ VM bookmark process completed")
                 else:
                     print("❌ BOOKMARK TEST FAILED")
                 
             except KeyboardInterrupt:
                 print("\n🛑 BOOKMARK TEST: Stopped by user")
-                # Force cleanup if user interrupts
-                self.cleanup_all_cycling_bookmark_drivers()
-            
             except Exception as e:
                 print(f"❌ BOOKMARK TEST ERROR: {e}")
                 import traceback
                 traceback.print_exc()
-            
             finally:
-                # Final cleanup
-                print("🧹 FINAL CLEANUP: Closing any remaining drivers...")
-                self.cleanup_all_cycling_bookmark_drivers()
-                self.cleanup_all_buying_drivers()
-                self.cleanup_persistent_buying_driver()
-                self.cleanup_persistent_bookmark_driver()
+                print("🧹 FINAL CLEANUP: VM bookmark system cleaned up automatically")
             
-            # Only exit after monitoring is truly complete
+            # Only exit after bookmark is complete
             print("🧪 BOOKMARK TEST MODE COMPLETE - EXITING")
             sys.exit(0)
 
@@ -237,10 +217,6 @@
         #pygame_thread = threading.Thread(target=self.run_pygame_window)
         #pygame_thread.start()
         
-        # NEW: Start thread monitoring system
-
-
-        
         # NEW: Main scraping driver thread - THIS IS THE KEY CHANGE
         def main_scraping_driver():
             """Main scraping driver function that runs in its own thread"""
@@ -279,7 +255,6 @@
                 self.cleanup_persistent_buying_driver()
                 self.cleanup_all_buying_drivers()
                 self.cleanup_purchase_unsuccessful_monitoring()
-                self.cleanup_all_cycling_bookmark_drivers()  # Clean up bookmark drivers too
                 
                 time.sleep(2)
 
@@ -321,11 +296,25 @@
             # Force cleanup if anything is still running
             self.cleanup_all_buying_drivers()
             self.cleanup_persistent_buying_driver()
-            self.cleanup_all_cycling_bookmark_drivers()
             self.cleanup_purchase_unsuccessful_monitoring()
             
             print("🏁 MAIN: Program exit")
             sys.exit(0)
+
+    # ADD this simple method to VintedScraper class:
+    def vm_bookmark_simple(self, listing_url, username):
+        """
+        SIMPLE: Just call the VM bookmark function directly
+        """
+        print(f"🔖 VM BOOKMARK: {listing_url}")
+        
+        try:
+            # Call the VM main function directly
+            main_vm_driver()  # This already does everything we need
+            return True
+        except Exception as e:
+            print(f"❌ VM BOOKMARK ERROR: {e}")
+            return False
 
 if __name__ == "__main__":
     if VM_DRIVER_USE:
