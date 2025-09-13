@@ -3813,7 +3813,28 @@ class VintedScraper:
         self.shutdown_event = threading.Event()
 
 
+    def _advance_to_next_driver(self):
+        """
+        NEW METHOD: Advance to the next driver in the cycling system
+        """
+        print(f"🔄 ADVANCE: Moving from driver {self.current_bookmark_driver_index + 1} to next")
+        
+        # Move to next driver index (cycling from 0-4)
+        self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
+        
+        print(f"➡️ ADVANCE: Now at driver {self.current_bookmark_driver_index + 1}/5")
+        
+        # Update the current driver reference
+        if self.current_bookmark_driver_index in self.bookmark_drivers:
+            self.current_bookmark_driver = self.bookmark_drivers[self.current_bookmark_driver_index]
+            print(f"✅ ADVANCE: Current driver updated to driver {self.current_bookmark_driver_index + 1}")
+        else:
+            self.current_bookmark_driver = None
+            print(f"⚠️ ADVANCE: No driver available at index {self.current_bookmark_driver_index + 1}")
+
+
     def _initialize_bookmark_system(self):
+        import threading
         """
         FIXED: Initialize the 5-driver cycling bookmark system with better debugging
         """
@@ -4581,7 +4602,30 @@ class VintedScraper:
 
         self.save_rectangle_config(rectangles)
         pygame.quit()
+            
+    def _check_for_session_blocked(self, driver, driver_name, duration_seconds=10):
+        """
+        NEW METHOD: Check for session blocked message for specified duration
+        Returns True if session blocked found, False otherwise
+        """
+        print(f"🔍 CHECKING: Session blocked for {driver_name} ({duration_seconds}s)")
         
+        checks = duration_seconds // 2  # Check every 2 seconds
+        for i in range(checks):
+            try:
+                # Check for the exact element you specified
+                session_element = driver.find_element(By.CSS_SELECTOR, 'p[data-dd-captcha-human-title=""].captcha__human__title.no-margin')
+                if session_element and "Your session has been blocked" in session_element.text:
+                    print(f"🚫 SESSION BLOCKED: Found for {driver_name}")
+                    return True
+            except:
+                pass  # Element not found, continue checking
+            
+            time.sleep(2)
+        
+        print(f"✅ NO BLOCK: Session OK for {driver_name}")
+        return False
+
     def base64_encode_image(self, img):
         """Convert PIL Image to base64 string, resizing if necessary"""
         # Resize image while maintaining aspect ratio
@@ -7681,6 +7725,20 @@ class VintedScraper:
             cycles_since_restart += 1  # NEW: Increment counter after each cycle
             is_first_refresh = False
 
+    # Add this somewhere in your main code to check thread status
+    def debug_bookmark_threads(self):
+        print("🔍 DEBUG: Checking bookmark threads...")
+        all_threads = threading.enumerate()
+        for thread in all_threads:
+            if "Bookmark" in thread.name:
+                print(f"  Thread: {thread.name} - Alive: {thread.is_alive()} - ID: {thread.ident}")
+        
+        bookmark_threads = [t for t in all_threads if t.name == "Bookmark-Queue-Processor"]
+        if not bookmark_threads:
+            print("❌ DEBUG: No bookmark processor thread found!")
+        else:
+            print(f"✅ DEBUG: Bookmark processor thread exists and is {'alive' if bookmark_threads[0].is_alive() else 'dead'}")
+
     def start_cloudflare_tunnel(self, port=5000):
         """
         Starts a Cloudflare Tunnel using the cloudflared binary.
@@ -7761,6 +7819,10 @@ class VintedScraper:
                 google_button.click()
                 print(f"✅ LOGIN: Google login initiated for {driver_name}")
                 
+                if self._check_for_session_blocked(driver, driver_name, 10):
+                    print(f"🔄 RESTART: Session blocked detected, restarting {driver_name}")
+                    return False  # This will trigger your existing retry logic
+                
             else:
                 print(f"🔐 LOGIN: Using email login for {driver_name}")
                 
@@ -7784,11 +7846,17 @@ class VintedScraper:
                 )
                 continue_button.click()
                 print(f"✅ LOGIN: Email login initiated for {driver_name}")
-            
+
+                if self._check_for_session_blocked(driver, driver_name, 10):
+                    print(f"🔄 RESTART: Session blocked detected, restarting {driver_name}")
+                    return False
+                
             # Wait for login to complete
             time.sleep(random.uniform(3, 5))
             print(f"✅ LOGIN: Login process completed for {driver_name}")
             return True
+            
+
             
         except Exception as login_error:
             print(f"❌ LOGIN ERROR: {driver_name} login failed: {login_error}")
@@ -8147,6 +8215,7 @@ class VintedScraper:
                 print(f"⚠️ CLEANUP: Error cleaning up driver {current_index + 1}: {cleanup_error}")
 
     def add_to_bookmark_queue(self, listing_url, username=None):
+
         print(f"🔍 DEBUG: bookmark_queue exists: {hasattr(self, 'bookmark_queue')}")
         print(f"🔍 DEBUG: scraping_paused exists: {hasattr(self, 'scraping_paused')}")
         print(f"🔍 DEBUG: scraping_paused is set: {self.scraping_paused.is_set() if hasattr(self, 'scraping_paused') else 'N/A'}")
@@ -8159,16 +8228,32 @@ class VintedScraper:
         
         self.bookmark_queue.put((listing_url, username))
         print(f"📊 QUEUE: {self.bookmark_queue.qsize()} items in bookmark queue")
-
-        def _advance_to_next_driver(self):
-            """Advance to the next driver in the cycle"""
-            old_index = self.current_bookmark_driver_index
-            self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
+        """
+        FIXED: Add a listing to the bookmark queue with better debugging
+        """
+        print(f"➕ QUEUE: Adding {listing_url[:50]}... to bookmark queue")
+        
+        # CRITICAL CHECK: Make sure queue exists
+        if not hasattr(self, 'bookmark_queue'):
+            print("❌ QUEUE: bookmark_queue not found! This is a critical error!")
+            return
+        
+        # Add to queue
+        try:
+            self.bookmark_queue.put((listing_url, username))
+            queue_size = self.bookmark_queue.qsize()
+            print(f"📊 QUEUE: {queue_size} items in bookmark queue")
             
-            old_name = self.bookmark_driver_configs[old_index]['driver_name']
-            new_name = self.bookmark_driver_configs[self.current_bookmark_driver_index]['driver_name']
-            
-            print(f"🔄 ADVANCE: Cycled from {old_name} to {new_name}")
+            # CRITICAL DEBUG: Check if queue processor is alive
+            bookmark_threads = [t for t in threading.enumerate() if t.name == "Bookmark-Queue-Processor"]
+            if bookmark_threads:
+                thread = bookmark_threads[0]
+                print(f"🔖 QUEUE: Processor thread is {'ALIVE' if thread.is_alive() else 'DEAD'}")
+            else:
+                print("❌ QUEUE: No bookmark processor thread found!")
+                
+        except Exception as queue_error:
+            print(f"❌ QUEUE ERROR: {queue_error}")
 
     def _execute_vm_second_sequence_cycling(self, driver, listing_url, username, driver_name):
         """
