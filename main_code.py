@@ -3749,6 +3749,9 @@ class VintedScraper:
             'current_index': 0
         }
         
+        self.session_monitoring_threads = {}  # Track monitoring threads for each driver
+        self.session_monitoring_active = {}   # Track if monitoring is active for each driver
+    
         # Initialize all current listing variables
         current_listing_title = "No title"
         current_listing_description = "No description"
@@ -3873,6 +3876,175 @@ class VintedScraper:
         
         print("✅ INIT: 5-driver bookmark system initialized")
 
+    def _start_session_monitoring(self, driver, driver_index, driver_name):
+        """
+        Start session blocking monitoring for a specific bookmark driver
+        """
+        print(f"🛡️ SESSION MONITOR: Starting monitoring for {driver_name}")
+        
+        # Mark monitoring as active
+        self.session_monitoring_active[driver_index] = True
+        
+        # Create and start monitoring thread
+        monitor_thread = threading.Thread(
+            target=self._session_blocking_monitor_thread,
+            args=(driver, driver_index, driver_name),
+            name=f"SessionMonitor-{driver_name}",
+            daemon=True
+        )
+        
+        # Store thread reference
+        self.session_monitoring_threads[driver_index] = monitor_thread
+        
+        # Start the monitoring
+        monitor_thread.start()
+        
+        print(f"✅ SESSION MONITOR: {driver_name} monitoring thread started")
+
+    def _find_next_available_driver_slot(self):
+        """
+        Find the next available driver slot for replacement
+        """
+        for i in range(5):
+            status = self.bookmark_driver_status.get(i, 'not_created')
+            if status in ['not_created', 'error', 'session_blocked']:
+                return i
+        return None
+    
+    def _session_blocking_monitor_thread(self, driver, driver_index, driver_name):
+        """
+        Main monitoring thread that checks for session blocking
+        Runs continuously while the driver is active
+        """
+        print(f"🛡️ {driver_name}: Session monitoring thread started")
+        
+        # Session blocking detection selectors based on your document
+        blocking_selectors = [
+            # Main blocking message
+            "p.captcha__human__title",
+            
+            # Specific text indicators
+            "//p[contains(text(), 'Your session has been blocked')]",
+            "//p[contains(text(), 'unusual activity with your session')]",
+            "//p[contains(text(), 'temporarily blocked your access')]",
+            
+            # DataDome captcha indicators
+            "iframe[src*='captcha']",
+            "iframe[src*='datadome']",
+            "iframe[id*='captcha']",
+            
+            # Button elements that indicate blocking
+            "button[id='show-human-auth']",
+            "#show-human-requestId",
+            
+            # Form elements specific to the blocking page
+            "form[id='human-contact-form']",
+            "textarea[id='human-comment']",
+            
+            # Warning/error class indicators
+            ".captcha__robot__warning",
+            ".captcha__human__title"
+        ]
+        
+        try:
+            while self.session_monitoring_active.get(driver_index, False):
+                try:
+                    # Quick check if driver is still alive
+                    current_url = driver.current_url
+                    
+                    # Check each selector for blocking indicators
+                    session_blocked = False
+                    
+                    for selector in blocking_selectors:
+                        try:
+                            if selector.startswith('//'):
+                                # XPath selector
+                                element = driver.find_element(By.XPATH, selector)
+                            else:
+                                # CSS selector
+                                element = driver.find_element(By.CSS_SELECTOR, selector)
+                            
+                            if element:
+                                # Found a blocking indicator
+                                print(f"🚨 SESSION BLOCKED")
+                                print(f"🛡️ {driver_name}: Detected blocking element: {selector}")
+                                session_blocked = True
+                                break
+                                
+                        except NoSuchElementException:
+                            # Element not found - continue checking
+                            continue
+                        except Exception as selector_error:
+                            # Selector failed - continue with next one
+                            continue
+                    
+                    if session_blocked:
+                        # Session is blocked - trigger cleanup and driver cycling
+                        print(f"🛡️ {driver_name}: SESSION BLOCKED - Initiating driver cleanup")
+                        self._handle_session_blocking(driver, driver_index, driver_name)
+                        break
+                    
+                    # Wait before next check (check every 2 seconds)
+                    time.sleep(2)
+                    
+                except Exception as driver_error:
+                    # Driver is dead or unresponsive
+                    print(f"💀 {driver_name}: Driver died during session monitoring: {driver_error}")
+                    break
+            
+            print(f"🛡️ {driver_name}: Session monitoring stopped")
+            
+        except Exception as monitor_error:
+            print(f"❌ {driver_name}: Session monitoring error: {monitor_error}")
+            
+        finally:
+            # Clean up monitoring references
+            self.session_monitoring_active[driver_index] = False
+            if driver_index in self.session_monitoring_threads:
+                del self.session_monitoring_threads[driver_index]
+
+    def _handle_session_blocking(self, driver, driver_index, driver_name):
+        """
+        Handle when session blocking is detected
+        Close the driver and advance to the next one
+        """
+        print(f"🚨 BLOCKING HANDLER: {driver_name} session blocked - starting cleanup")
+        
+        try:
+            # Stop monitoring for this driver
+            self.session_monitoring_active[driver_index] = False
+            
+            # Close the blocked driver
+            print(f"🗑️ BLOCKING HANDLER: Closing blocked {driver_name}")
+            driver.quit()
+            
+            # Remove from active drivers
+            if driver_index in self.bookmark_drivers:
+                del self.bookmark_drivers[driver_index]
+            
+            # Mark as blocked/error state
+            self.bookmark_driver_status[driver_index] = 'session_blocked'
+            
+            print(f"✅ BLOCKING HANDLER: {driver_name} cleaned up due to session blocking")
+            
+            # If this was the current driver, advance to next
+            if driver_index == self.current_bookmark_driver_index:
+                print(f"🔄 BLOCKING HANDLER: Advancing from blocked current driver")
+                
+                with self.bookmark_system_lock:
+                    self._advance_to_next_driver()
+                    
+                    # Start preparing a replacement driver
+                    replacement_index = self._find_next_available_driver_slot()
+                    if replacement_index is not None:
+                        self._prepare_next_driver_async(replacement_index)
+                        print(f"🔧 BLOCKING HANDLER: Started preparing replacement driver {replacement_index + 1}")
+            
+            print(f"🔄 BLOCKING HANDLER: Session blocking handled for {driver_name}")
+            
+        except Exception as cleanup_error:
+            print(f"❌ BLOCKING HANDLER: Error during cleanup: {cleanup_error}")
+            
     def _bookmark_queue_processor(self):
         """Main queue processor that handles bookmark requests"""
         print("🔖 PROCESSOR: Bookmark queue processor started")
@@ -4220,8 +4392,42 @@ class VintedScraper:
             print(f"❌ PREPARE ERROR: {driver_name} preparation failed: {prepare_error}")
             self.bookmark_driver_status[driver_index] = 'error'
 
+    def cleanup_all_session_monitoring(self):
+        """
+        Clean up all session monitoring threads when program exits
+        """
+        print("🧹 SESSION CLEANUP: Stopping all session monitoring threads...")
+        
+        # Stop all active monitoring
+        for driver_index in list(self.session_monitoring_active.keys()):
+            self.session_monitoring_active[driver_index] = False
+        
+        # Wait for threads to finish (with timeout)
+        active_threads = []
+        for driver_index, thread in self.session_monitoring_threads.items():
+            if thread and thread.is_alive():
+                active_threads.append((driver_index + 1, thread))
+        
+        if active_threads:
+            print(f"🧹 SESSION CLEANUP: Waiting for {len(active_threads)} monitoring threads...")
+            
+            for driver_num, thread in active_threads:
+                thread.join(timeout=5)  # 5 second timeout per thread
+                if thread.is_alive():
+                    print(f"⚠️ SESSION CLEANUP: Monitor-{driver_num} still running after timeout")
+                else:
+                    print(f"✅ SESSION CLEANUP: Monitor-{driver_num} stopped cleanly")
+        
+        # Clear all references
+        self.session_monitoring_threads.clear()
+        self.session_monitoring_active.clear()
+        
+        print("✅ SESSION CLEANUP: All session monitoring cleaned up")
+
     def _create_vm_bookmark_driver(self, config, driver_index):
-        """Create a bookmark driver connected to the VM"""
+        """
+        MODIFIED: Create a bookmark driver and start session monitoring
+        """
         vm_ip_address = "192.168.56.101"  # Your VM IP
         
         try:
@@ -4233,7 +4439,7 @@ class VintedScraper:
             chrome_options.add_experimental_option('useAutomationExtension', False)
             chrome_options.add_argument('--force-device-scale-factor=1')
             chrome_options.add_argument('--high-dpi-support=1')
-            chrome_options.add_argument(f'--remote-debugging-port={9230 + driver_index}')  # Unique port for each driver
+            chrome_options.add_argument(f'--remote-debugging-port={9230 + driver_index}')
             chrome_options.add_argument('--remote-allow-origins=*')
             chrome_options.add_argument('--disable-features=VizDisplayCompositor')
             chrome_options.add_argument('--disable-dev-shm-usage')
@@ -4260,11 +4466,17 @@ class VintedScraper:
             driver.execute_script(stealth_script)
             
             print(f"✅ CREATE: Driver {driver_index + 1} connected to VM successfully")
+            
+            # NEW: Start session monitoring for this driver
+            driver_name = config['driver_name']
+            self._start_session_monitoring(driver, driver_index, driver_name)
+            
             return driver
             
         except Exception as e:
             print(f"❌ CREATE: Failed to create VM driver {driver_index + 1}: {e}")
             return None
+
 
     def _handle_cookie_consent(self, driver, driver_name):
         """Handle cookie consent for the driver"""
@@ -4302,7 +4514,38 @@ class VintedScraper:
                     print(f"✅ CLEANUP: BookmarkDriver-{driver_num} completed")
         
         print("✅ CLEANUP: Bookmark thread cleanup completed")
+    
+
+    def cleanup_all_bookmark_drivers(self):
+        """
+        MODIFIED: Clean up all bookmark drivers and session monitoring when program exits
+        """
+        print("🧹 CLEANUP: Stopping all bookmark drivers and session monitoring...")
+        
+        # First stop all session monitoring
+        self.cleanup_all_session_monitoring()
+        
+        # Then clean up drivers as before
+        with self.bookmark_system_lock:
+            for driver_index in range(5):
+                if driver_index in self.bookmark_drivers:
+                    try:
+                        driver_name = self.bookmark_driver_configs[driver_index]['driver_name']
+                        print(f"🗑️ CLEANUP: Closing {driver_name}")
+                        
+                        self.bookmark_drivers[driver_index].quit()
+                        del self.bookmark_drivers[driver_index]
+                        
+                        print(f"✅ CLEANUP: {driver_name} closed")
+                    except Exception as e:
+                        print(f"⚠️ CLEANUP: Error closing driver {driver_index + 1}: {e}")
             
+            # Clear statuses
+            for i in range(5):
+                self.bookmark_driver_status[i] = 'not_created'
+        
+        print("✅ CLEANUP: All bookmark drivers and session monitoring cleaned up")
+
 
     def get_available_driver(self):
         """
@@ -7472,9 +7715,20 @@ class VintedScraper:
         # Main scanning loop with refresh functionality AND driver restart
         while True:
             # NEW: Check if scraping should be paused for bookmarking
+# NEW: Check if scraping should be paused for bookmarking AND wait for bookmark drivers
             print("🔍 SCRAPE: Checking if scraping is allowed...")
             self.scraping_paused.wait()  # This blocks if scraping is paused
-            print("▶️ SCRAPE: Scraping allowed, continuing...")
+
+            # ADDITIONAL: Wait for at least one bookmark driver to be ready
+            print("🔖 SCRAPE: Waiting for bookmark drivers to be ready...")
+            while True:
+                ready_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
+                if ready_count > 0:
+                    break
+                print(f"⏳ SCRAPE: {ready_count}/5 bookmark drivers ready, waiting...")
+                time.sleep(1)
+
+            print(f"✅ SCRAPE: {ready_count}/5 bookmark drivers ready - scraping allowed, continuing...")
             
             print(f"\n{'='*60}")
             print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
@@ -9983,4 +10237,4 @@ if __name__ == "__main__":
         print("VM_DRIVER_USE = False - Running main Vinted scraper")
         scraper = VintedScraper()
         globals()['vinted_scraper_instance'] = scraper
-        scraper.run()#
+        scraper.run()
