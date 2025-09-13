@@ -29,6 +29,7 @@ import threading
 import subprocess
 import hashlib
 import concurrent.futures
+import math
 from queue import Queue, Empty
 import queue
 import pygame
@@ -893,18 +894,60 @@ def human_like_delay():
     time.sleep(random.uniform(0.5, 2.0))
 
 def move_to_element_naturally(driver, element):
-    """Move mouse to element with slight randomness"""
+    """Move mouse to element with curved path using multiple move_by_offset calls"""
     action = ActionChains(driver)
     
-    # Add small random offset to make it more natural
-    offset_x = random.randint(-3, 3)
-    offset_y = random.randint(-3, 3)
+    # Get element position and size
+    element_rect = element.rect
+    target_x = element_rect['x'] + element_rect['width'] // 2
+    target_y = element_rect['y'] + element_rect['height'] // 2
     
-    # Move to element with slight offset, then to exact element
-    action.move_to_element_with_offset(element, offset_x, offset_y)
-    time.sleep(random.uniform(0.1, 0.3))
-    action.move_to_element(element)
-    time.sleep(random.uniform(0.2, 0.5))
+    # Add natural targeting variation (humans don't hit exact center)
+    target_x += random.randint(-3, 3)
+    target_y += random.randint(-3, 3)
+    
+    # Get current mouse position (we'll approximate it)
+    # Since we can't get exact position in Selenium, we'll work with relative movements
+    
+    # Create bezier curve using multiple move_by_offset calls
+    # This creates a smooth curved path instead of straight lines
+    num_steps = random.randint(8, 12)  # Enough steps for curve, but fast execution
+    
+    # Generate curve points using simple bezier math
+    for i in range(num_steps):
+        t = i / (num_steps - 1)  # Progress from 0 to 1
+        
+        # Bezier curve calculation with random control points
+        curve_height = random.randint(10, 30)  # How "curved" the path is
+        curve_direction = random.choice([-1, 1])  # Curve up or down
+        
+        # Calculate relative movement for this step
+        if i == 0:
+            # First move - establish curve direction
+            rel_x = random.randint(-20, 20)
+            rel_y = curve_direction * curve_height * math.sin(math.pi * t)
+        elif i == num_steps - 1:
+            # Final move - go to exact target (move_to_element handles this)
+            action.move_to_element_with_offset(element, 
+                                               target_x - (element_rect['x'] + element_rect['width'] // 2),
+                                               target_y - (element_rect['y'] + element_rect['height'] // 2))
+            break
+        else:
+            # Intermediate moves - create smooth curve
+            progress_factor = math.sin(math.pi * t)  # Creates smooth acceleration/deceleration
+            rel_x = random.randint(-5, 5) + int(progress_factor * 10)
+            rel_y = curve_direction * curve_height * math.sin(math.pi * t) + random.randint(-3, 3)
+        
+        # Add the relative movement
+        action.move_by_offset(rel_x, rel_y)
+        
+        # Small pause between movements (but keep total under 1s)
+        if i < num_steps - 1:  # Don't pause after last move
+            time.sleep(random.uniform(0.02, 0.05))  # Very brief pauses
+    
+    # Add final micro-adjustment with natural variation
+    time.sleep(random.uniform(0.1, 0.2))
+    
     return action
 
 def main_vm_driver():
@@ -1271,7 +1314,7 @@ def click_buy_button_force_method(driver, buy_button):
 
             try:
 
-                WebDriverWait(driver, 10).until(
+                WebDriverWait(driver, 20).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'button[data-testid="single-checkout-order-summary-purchase-button"]'))
                 )
                 print('Pay button found, continuing')
@@ -1290,7 +1333,7 @@ def click_buy_button_force_method(driver, buy_button):
         return False
 
 
-def wait_for_pay_button_with_timeout(driver, timeout=8):
+def wait_for_pay_button_with_timeout(driver, timeout=20):
     """
     Wait up to 8 seconds for pay button, continue immediately when found
     """
@@ -2155,46 +2198,3 @@ class AudioNumberDetector:
             
             print(f"Found system audio device: {default_speakers['name']}")
             return default_speakers
-            
-        except Exception as e:
-            print(f"Error finding speakers: {e}")
-            return None
-    
-    def extract_numbers_sequence(self, text):
-        """Extract numbers from text in the correct sequence"""
-        word_to_num = {
-            'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
-            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
-            'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13',
-            'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17',
-            'eighteen': '18', 'nineteen': '19', 'twenty': '20', 'thirty': '30',
-            'forty': '40', 'fifty': '50', 'sixty': '60', 'seventy': '70',
-            'eighty': '80', 'ninety': '90', 'hundred': '100'
-        }
-        
-        words = text.lower().replace(',', '').replace('.', '').split()
-        numbers = []
-        
-        for word in words:
-            if word in word_to_num:
-                numbers.append(word_to_num[word])
-            elif word.isdigit():
-                numbers.append(word)
-            elif re.match(r'^\d+$', word):
-                for digit in word:
-                    numbers.append(digit)
-        
-        digit_matches = re.findall(r'\b\d\b', text)
-        all_numbers = numbers + digit_matches
-        
-        # Remove the duplicate filtering - keep all numbers in sequence
-        valid_numbers = []
-        for num in all_numbers:
-            if num.isdigit() and len(num) == 1:
-                valid_numbers.append(num)
-        
-        return valid_numbers
-    
-    def find_complete_sequence(self, text):
-        """Try to find a complete 6-digit sequence"""
-        text_clean = re.sub(r'[^\w\s]', ' ', text.lower())
