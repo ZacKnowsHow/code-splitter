@@ -3813,68 +3813,17 @@ class VintedScraper:
         self.shutdown_event = threading.Event()
 
 
-    def _advance_to_next_driver(self):
-        """
-        NEW METHOD: Advance to the next driver in the cycling system
-        """
-        print(f"🔄 ADVANCE: Moving from driver {self.current_bookmark_driver_index + 1} to next")
-        
-        # Move to next driver index (cycling from 0-4)
-        self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
-        
-        print(f"➡️ ADVANCE: Now at driver {self.current_bookmark_driver_index + 1}/5")
-        
-        # Update the current driver reference
-        if self.current_bookmark_driver_index in self.bookmark_drivers:
-            self.current_bookmark_driver = self.bookmark_drivers[self.current_bookmark_driver_index]
-            print(f"✅ ADVANCE: Current driver updated to driver {self.current_bookmark_driver_index + 1}")
-        else:
-            self.current_bookmark_driver = None
-            print(f"⚠️ ADVANCE: No driver available at index {self.current_bookmark_driver_index + 1}")
-
-
     def _initialize_bookmark_system(self):
-        import threading
-        """
-        FIXED: Initialize the 5-driver cycling bookmark system with better debugging
-        """
+        """Initialize the 5-driver cycling bookmark system"""
         print("🔖 INIT: Starting 5-driver cycling bookmark system")
         
-        # CRITICAL CHECK: Make sure the queue is properly initialized
-        if not hasattr(self, 'bookmark_queue'):
-            print("❌ INIT: bookmark_queue not found! Creating it now...")
-            from queue import Queue
-            self.bookmark_queue = Queue()
-        
-        print(f"🔖 INIT: Queue initialized with size: {self.bookmark_queue.qsize()}")
-        
-        # CRITICAL CHECK: Make sure scraping_paused is initialized
-        if not hasattr(self, 'scraping_paused'):
-            print("❌ INIT: scraping_paused not found! Creating it now...")
-            import threading
-            self.scraping_paused = threading.Event()
-        
-        # Set initial state to allow scraping
-        self.scraping_paused.set()
-        print(f"🔖 INIT: Scraping initially allowed: {self.scraping_paused.is_set()}")
-        
         # Start the bookmark queue processor in a separate thread
-        print("🔖 INIT: Creating bookmark queue processor thread...")
         bookmark_processor_thread = threading.Thread(
             target=self._bookmark_queue_processor,
             name="Bookmark-Queue-Processor",
             daemon=True
         )
-        
-        print("🔖 INIT: Starting bookmark queue processor thread...")
         bookmark_processor_thread.start()
-        
-        # CRITICAL CHECK: Verify the thread actually started
-        time.sleep(0.5)  # Give it a moment to start
-        if bookmark_processor_thread.is_alive():
-            print(f"✅ INIT: Bookmark queue processor thread is running (ID: {bookmark_processor_thread.ident})")
-        else:
-            print("❌ INIT: Bookmark queue processor thread failed to start!")
         
         # Prepare the first driver immediately
         self._prepare_next_driver_async(0)
@@ -3882,52 +3831,42 @@ class VintedScraper:
         print("✅ INIT: 5-driver bookmark system initialized")
 
     def _bookmark_queue_processor(self):
-        """
-        FIXED: Main queue processor - the issue is this thread is not running properly
-        """
+        """Main queue processor that handles bookmark requests"""
         print("🔖 PROCESSOR: Bookmark queue processor started")
-        print(f"🔖 PROCESSOR: Thread name: {threading.current_thread().name}")
-        print(f"🔖 PROCESSOR: Thread ID: {threading.current_thread().ident}")
         
         while True:
             try:
-                print(f"🔖 PROCESSOR: Checking queue... (size: {self.bookmark_queue.qsize()})")
-                
                 # Wait for a bookmark request
                 try:
                     listing_url, username = self.bookmark_queue.get(timeout=1)
                     print(f"🔖 PROCESSOR: Got bookmark request for {listing_url[:50]}...")
                 except Empty:
-                    print("🔖 PROCESSOR: Queue empty, continuing loop...")
                     continue
                 
-                print(f"🔖 PROCESSOR: Processing bookmark request...")
-                
-                # Check for ready drivers
+                # FIXED: Check if we have any ready drivers BEFORE pausing scraping
                 ready_driver_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
-                print(f"🔖 PROCESSOR: Ready drivers: {ready_driver_count}/5")
                 
                 if ready_driver_count == 0:
-                    print("⏸️ PROCESSOR: No ready drivers - PAUSING SCRAPING")
+                    print("⏸️ NO DRIVERS: No ready bookmark drivers available - PAUSING SCRAPING")
                     self.scraping_paused.clear()  # Pause scraping
                     
-                    # Wait for driver to become ready
+                    # Wait until we have at least 1 ready driver
                     while True:
                         time.sleep(1)
                         ready_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
                         if ready_count > 0:
-                            print(f"✅ PROCESSOR: {ready_count} drivers ready - RESUMING SCRAPING")
+                            print(f"✅ DRIVER READY: {ready_count} drivers ready - RESUMING SCRAPING")
                             self.scraping_paused.set()  # Resume scraping
                             break
-                        print(f"⏳ PROCESSOR: Still waiting for ready drivers ({ready_count}/5 ready)")
+                        print(f"⏳ WAITING: Still no ready drivers ({ready_count}/5 ready)")
                 else:
-                    print(f"✅ PROCESSOR: {ready_driver_count} drivers available")
-                    # Pause scraping briefly during bookmark processing
+                    print(f"✅ DRIVERS AVAILABLE: {ready_driver_count} ready drivers - no need to pause")
+                    # STILL pause briefly to prevent overwhelming
+                    print("⏸️ PAUSE: Brief pause for bookmark processing")
                     self.scraping_paused.clear()
                 
                 try:
                     # Process the bookmark request
-                    print(f"🔖 PROCESSOR: Starting bookmark processing...")
                     success = self._process_bookmark_with_cycling(listing_url, username)
                     if success:
                         print(f"✅ PROCESSOR: Bookmark successful for {listing_url[:50]}...")
@@ -3935,15 +3874,13 @@ class VintedScraper:
                         print(f"❌ PROCESSOR: Bookmark failed for {listing_url[:50]}...")
                 
                 finally:
-                    # ALWAYS resume scraping after bookmark processing
-                    print("▶️ PROCESSOR: Resuming main scraping after bookmark")
+                    # RESUME SCRAPING after bookmark processing
+                    print("▶️ RESUME: Resuming main scraping after bookmark")
                     self.scraping_paused.set()
                     self.bookmark_queue.task_done()
                     
             except Exception as processor_error:
                 print(f"❌ PROCESSOR ERROR: {processor_error}")
-                import traceback
-                traceback.print_exc()
                 # Make sure to resume scraping even if there's an error
                 self.scraping_paused.set()
                 continue
@@ -4602,30 +4539,7 @@ class VintedScraper:
 
         self.save_rectangle_config(rectangles)
         pygame.quit()
-            
-    def _check_for_session_blocked(self, driver, driver_name, duration_seconds=10):
-        """
-        NEW METHOD: Check for session blocked message for specified duration
-        Returns True if session blocked found, False otherwise
-        """
-        print(f"🔍 CHECKING: Session blocked for {driver_name} ({duration_seconds}s)")
         
-        checks = duration_seconds // 2  # Check every 2 seconds
-        for i in range(checks):
-            try:
-                # Check for the exact element you specified
-                session_element = driver.find_element(By.CSS_SELECTOR, 'p[data-dd-captcha-human-title=""].captcha__human__title.no-margin')
-                if session_element and "Your session has been blocked" in session_element.text:
-                    print(f"🚫 SESSION BLOCKED: Found for {driver_name}")
-                    return True
-            except:
-                pass  # Element not found, continue checking
-            
-            time.sleep(2)
-        
-        print(f"✅ NO BLOCK: Session OK for {driver_name}")
-        return False
-
     def base64_encode_image(self, img):
         """Convert PIL Image to base64 string, resizing if necessary"""
         # Resize image while maintaining aspect ratio
@@ -7516,12 +7430,8 @@ class VintedScraper:
         while True:
             # NEW: Check if scraping should be paused for bookmarking
             print("🔍 SCRAPE: Checking if scraping is allowed...")
-            if not self.scraping_paused.is_set():
-                print("⏸️ SCRAPE: Paused by bookmark system, waiting...")
-                self.scraping_paused.wait()  # This blocks until set() is called
-                print("▶️ SCRAPE: Resumed by bookmark system")
-            else:
-                print("▶️ SCRAPE: Scraping allowed, continuing...")
+            self.scraping_paused.wait()  # This blocks if scraping is paused
+            print("▶️ SCRAPE: Scraping allowed, continuing...")
             
             print(f"\n{'='*60}")
             print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
@@ -7600,7 +7510,7 @@ class VintedScraper:
                 print(f"📄 Processing page {page} with {len(urls)} listings")
 
                 for idx, url in enumerate(urls, start=1):
-                    # CRITICAL FIX: Check pause status before processing each listing
+                    # NEW: Check if scraping is paused before processing each listing
                     if not self.scraping_paused.is_set():
                         print("⏸️ SCRAPE: Paused mid-processing, waiting...")
                         self.scraping_paused.wait()
@@ -7725,20 +7635,6 @@ class VintedScraper:
             cycles_since_restart += 1  # NEW: Increment counter after each cycle
             is_first_refresh = False
 
-    # Add this somewhere in your main code to check thread status
-    def debug_bookmark_threads(self):
-        print("🔍 DEBUG: Checking bookmark threads...")
-        all_threads = threading.enumerate()
-        for thread in all_threads:
-            if "Bookmark" in thread.name:
-                print(f"  Thread: {thread.name} - Alive: {thread.is_alive()} - ID: {thread.ident}")
-        
-        bookmark_threads = [t for t in all_threads if t.name == "Bookmark-Queue-Processor"]
-        if not bookmark_threads:
-            print("❌ DEBUG: No bookmark processor thread found!")
-        else:
-            print(f"✅ DEBUG: Bookmark processor thread exists and is {'alive' if bookmark_threads[0].is_alive() else 'dead'}")
-
     def start_cloudflare_tunnel(self, port=5000):
         """
         Starts a Cloudflare Tunnel using the cloudflared binary.
@@ -7819,10 +7715,6 @@ class VintedScraper:
                 google_button.click()
                 print(f"✅ LOGIN: Google login initiated for {driver_name}")
                 
-                if self._check_for_session_blocked(driver, driver_name, 10):
-                    print(f"🔄 RESTART: Session blocked detected, restarting {driver_name}")
-                    return False  # This will trigger your existing retry logic
-                
             else:
                 print(f"🔐 LOGIN: Using email login for {driver_name}")
                 
@@ -7846,17 +7738,11 @@ class VintedScraper:
                 )
                 continue_button.click()
                 print(f"✅ LOGIN: Email login initiated for {driver_name}")
-
-                if self._check_for_session_blocked(driver, driver_name, 10):
-                    print(f"🔄 RESTART: Session blocked detected, restarting {driver_name}")
-                    return False
-                
+            
             # Wait for login to complete
             time.sleep(random.uniform(3, 5))
             print(f"✅ LOGIN: Login process completed for {driver_name}")
             return True
-            
-
             
         except Exception as login_error:
             print(f"❌ LOGIN ERROR: {driver_name} login failed: {login_error}")
@@ -8215,45 +8101,23 @@ class VintedScraper:
                 print(f"⚠️ CLEANUP: Error cleaning up driver {current_index + 1}: {cleanup_error}")
 
     def add_to_bookmark_queue(self, listing_url, username=None):
-
-        print(f"🔍 DEBUG: bookmark_queue exists: {hasattr(self, 'bookmark_queue')}")
-        print(f"🔍 DEBUG: scraping_paused exists: {hasattr(self, 'scraping_paused')}")
-        print(f"🔍 DEBUG: scraping_paused is set: {self.scraping_paused.is_set() if hasattr(self, 'scraping_paused') else 'N/A'}")
-        
-        # Check thread status
-        bookmark_threads = [t for t in threading.enumerate() if t.name == "Bookmark-Queue-Processor"]
-        print(f"🔍 DEBUG: Processor threads: {len(bookmark_threads)}")
-        if bookmark_threads:
-            print(f"🔍 DEBUG: Processor alive: {bookmark_threads[0].is_alive()}")
-        
-        self.bookmark_queue.put((listing_url, username))
-        print(f"📊 QUEUE: {self.bookmark_queue.qsize()} items in bookmark queue")
-        """
-        FIXED: Add a listing to the bookmark queue with better debugging
-        """
+        """Add a listing to the bookmark queue (replaces your existing bookmark calls)"""
         print(f"➕ QUEUE: Adding {listing_url[:50]}... to bookmark queue")
         
-        # CRITICAL CHECK: Make sure queue exists
-        if not hasattr(self, 'bookmark_queue'):
-            print("❌ QUEUE: bookmark_queue not found! This is a critical error!")
-            return
+        # Add to queue - the processor will handle it
+        self.bookmark_queue.put((listing_url, username))
         
-        # Add to queue
-        try:
-            self.bookmark_queue.put((listing_url, username))
-            queue_size = self.bookmark_queue.qsize()
-            print(f"📊 QUEUE: {queue_size} items in bookmark queue")
-            
-            # CRITICAL DEBUG: Check if queue processor is alive
-            bookmark_threads = [t for t in threading.enumerate() if t.name == "Bookmark-Queue-Processor"]
-            if bookmark_threads:
-                thread = bookmark_threads[0]
-                print(f"🔖 QUEUE: Processor thread is {'ALIVE' if thread.is_alive() else 'DEAD'}")
-            else:
-                print("❌ QUEUE: No bookmark processor thread found!")
-                
-        except Exception as queue_error:
-            print(f"❌ QUEUE ERROR: {queue_error}")
+        print(f"📊 QUEUE: {self.bookmark_queue.qsize()} items in bookmark queue")
+
+    def _advance_to_next_driver(self):
+        """Advance to the next driver in the cycle"""
+        old_index = self.current_bookmark_driver_index
+        self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
+        
+        old_name = self.bookmark_driver_configs[old_index]['driver_name']
+        new_name = self.bookmark_driver_configs[self.current_bookmark_driver_index]['driver_name']
+        
+        print(f"🔄 ADVANCE: Cycled from {old_name} to {new_name}")
 
     def _execute_vm_second_sequence_cycling(self, driver, listing_url, username, driver_name):
         """
@@ -8899,20 +8763,6 @@ class VintedScraper:
         global purchase_unsuccessful_detected_urls
         print(f"🧹 CLEANUP: Stopping purchase unsuccessful monitoring for {len(purchase_unsuccessful_detected_urls)} URLs")
         purchase_unsuccessful_detected_urls.clear()
-
-# Add this somewhere in your main code to check thread status
-    def debug_bookmark_threads(self):
-        print("🔍 DEBUG: Checking bookmark threads...")
-        all_threads = threading.enumerate()
-        for thread in all_threads:
-            if "Bookmark" in thread.name:
-                print(f"  Thread: {thread.name} - Alive: {thread.is_alive()} - ID: {thread.ident}")
-        
-        bookmark_threads = [t for t in all_threads if t.name == "Bookmark-Queue-Processor"]
-        if not bookmark_threads:
-            print("❌ DEBUG: No bookmark processor thread found!")
-        else:
-            print(f"✅ DEBUG: Bookmark processor thread exists and is {'alive' if bookmark_threads[0].is_alive() else 'dead'}")
 
     def _monitor_purchase_unsuccessful(self, current_driver, step_log):
         """
