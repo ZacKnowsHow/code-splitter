@@ -1,119 +1,4 @@
 # Continuation from line 6601
-                    if reviews_text:
-                        if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
-                            data[key] = "No reviews yet"
-                        elif reviews_text.isdigit():
-                            # Just a number like "123"
-                            data[key] = reviews_text  # Keep as string for consistency
-                            if print_debug:
-                                print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
-                        else:
-                            # Try to extract number from text like "123 reviews" or "(123)"
-                            match = re.search(r'(\d+)', reviews_text)
-                            if match:
-                                data[key] = match.group(1)  # Just the number as string
-                                if print_debug:
-                                    print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
-                            else:
-                                data[key] = "No reviews yet"
-                    else:
-                        data[key] = "No reviews yet"
-                        if print_debug:
-                            print("DEBUG: No seller reviews found with any selector")
-                        
-                elif key == "username":
-                    # NEW: Handle username extraction with careful error handling
-                    try:
-                        username_element = driver.find_element(By.CSS_SELECTOR, sel)
-                        username_text = username_element.text.strip()
-                        if username_text:
-                            data[key] = username_text
-                            if print_debug:
-                                print(f"DEBUG: Found username: '{username_text}'")
-                        else:
-                            data[key] = "Username not found"
-                            if print_debug:
-                                print("DEBUG: Username element found but no text")
-                    except NoSuchElementException:
-                        # Try alternative selectors for username
-                        alternative_username_selectors = [
-                            "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__amplified.web_ui__Text__bold[data-testid='profile-username']",
-                            "span[data-testid='profile-username']",
-                            "*[data-testid='profile-username']",
-                            "span.web_ui__Text__amplified.web_ui__Text__bold",  # Broader fallback
-                        ]
-                        
-                        username_found = False
-                        for alt_sel in alternative_username_selectors:
-                            try:
-                                alt_username_element = driver.find_element(By.CSS_SELECTOR, alt_sel)
-                                alt_username_text = alt_username_element.text.strip()
-                                if alt_username_text:
-                                    data[key] = alt_username_text
-                                    print(f"DEBUG: Found username with alternative selector '{alt_sel}': '{alt_username_text}'")
-                                    username_found = True
-                                    break
-                            except NoSuchElementException:
-                                continue
-                        
-                        if not username_found:
-                            data[key] = "Username not found"
-                            if print_debug:
-                                print("DEBUG: Username not found with any selector")
-                            
-                else:
-                    # Handle all other fields normally
-                    data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
-                    
-            except NoSuchElementException:
-                if key == "seller_reviews":
-                    data[key] = "No reviews yet"
-                    if print_debug:
-                        print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
-                elif key == "username":
-                    data[key] = "Username not found"
-                    if print_debug:
-                        print("DEBUG: NoSuchElementException - set username to 'Username not found'")
-                else:
-                    data[key] = None
-
-        # Keep title formatting for pygame display
-        if data["title"]:
-            data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
-
-        # NEW: Calculate and store the total price for threshold filtering
-        second_price = self.extract_price(data.get("second_price", "0"))
-        postage = self.extract_price(data.get("postage", "0"))
-        total_price = second_price + postage
-        
-        # Store the calculated price for use in object detection
-        self.current_listing_price_float = total_price
-        
-        # DEBUG: Print final scraped data for seller_reviews and username
-        if print_debug:
-            print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
-            print(f"DEBUG: Final scraped username: '{data.get('username')}'")
-            print(f"DEBUG: Total price calculated: £{total_price:.2f} (stored for threshold filtering)")
-            
-        return data
-
-    def clear_download_folder(self):
-        if os.path.exists(DOWNLOAD_ROOT):
-            shutil.rmtree(DOWNLOAD_ROOT)
-        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
-
-    # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
-
-    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
-        """
-        Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
-        FIXED: Now passes username to bookmark_driver
-        MODIFIED: Separate logic for pygame and website display - pygame shows all suitable listings with bookmark failure notices
-        UPDATED: Now includes time tracking when items are added to pygame
-        """
-        global suitable_listings, current_listing_index, recent_listings
-
-        # Extract username from details
         username = details.get("username", None)
 
         if not username or username == "Username not found":
@@ -1308,23 +1193,17 @@
             return False
 
     def _execute_enhanced_bookmark(self, driver, listing_url, username, driver_index):
-        """
-        SIMPLIFIED: Execute the bookmark process using an ALREADY LOGGED IN driver
-        Since login is now handled in _prepare_driver, this is much simpler
-        """
+        """Execute the bookmark process using the cycling driver"""
         driver_name = self.bookmark_driver_configs[driver_index]['driver_name']
         
-        print(f"🔖 EXEC: Starting bookmark execution with LOGGED IN {driver_name}")
+        print(f"🔖 EXEC: Starting bookmark execution with {driver_name}")
         
         try:
             # Store the main tab
             main_tab = driver.current_window_handle
             
-            print(f"✅ READY: {driver_name} is already logged in and ready")
-            print(f"🚀 EXEC: Proceeding directly to bookmark sequences")
-            
-            # Execute the VM bookmarking sequences (driver already logged in)
-            success = self._execute_vm_bookmark_logged_in(driver, main_tab, listing_url, username, driver_name)
+            # Execute the VM bookmarking logic (adapted for cycling system)
+            success = self._execute_vm_bookmark_enhanced_cycling(driver, main_tab, listing_url, username, driver_name)
             
             return success
             
@@ -1778,51 +1657,6 @@
         
         print("✅ CLEANUP: All bookmark drivers cleaned up")
 
-    def _execute_vm_bookmark_logged_in(self, driver, main_tab, listing_url, username, driver_name):
-        """
-        SIMPLIFIED: Execute VM bookmark process with driver that's ALREADY logged in
-        No need for login steps - just execute the bookmark sequences
-        """
-        print(f"🚀 {driver_name}: Starting bookmark for {listing_url[:50]}... (ALREADY LOGGED IN)")
-        
-        try:
-            # Open new tab for bookmarking
-            driver.execute_script("window.open('');")
-            bookmark_tab = driver.window_handles[-1]
-            driver.switch_to.window(bookmark_tab)
-            
-            # Navigate to listing
-            driver.get(listing_url)
-            WebDriverWait(driver, 5).until(
-                lambda d: d.execute_script("return document.readyState") == "complete"
-            )
-            
-            print(f"✅ {driver_name}: Navigated to listing (logged in driver)")
-            time.sleep(0.5)
-            
-            # Execute first sequence (the critical 0.25s sequence)
-            first_success = self._enhanced_execute_vm_first_buy_sequence_cycling(driver, driver_name)
-            
-            if not first_success:
-                print(f"❌ {driver_name}: First sequence failed")
-                return False
-            
-            print(f"✅ {driver_name}: First sequence completed (0.25s + close)")
-            
-            # Execute second sequence - this handles monitoring and next driver preparation
-            second_success = self._execute_vm_second_sequence_cycling(driver, listing_url, username, driver_name)
-            
-            if second_success:
-                print(f"🎉 {driver_name}: Bookmark completed successfully (PRE-LOGGED IN)")
-                return True
-            else:
-                print(f"❌ {driver_name}: Second sequence failed")
-                return False
-                    
-        except Exception as e:
-            print(f"❌ {driver_name}: Bookmark error - {e}")
-            return False
-
     def _execute_vm_bookmark_enhanced_cycling(self, driver, main_tab, listing_url, username, driver_name):
         """
         FIXED: Execute VM bookmark process with proper timing for next driver preparation
@@ -2199,3 +2033,169 @@
             
             if not pay_clicked:
                 self._log_step(step_log, "pay_button_click_all_failed", False, "All 4 aggressive methods failed")
+                return False
+            
+            # ⚠️ CRITICAL: Exact 0.25 second wait - DO NOT MODIFY! ⚠️
+            print("🔖 CRITICAL: Waiting exactly 0.25 seconds...")
+            time.sleep(0.25)
+            
+            # ⚠️ CRITICAL: Immediate tab close - DO NOT MODIFY! ⚠️ 
+            print("🔖 CRITICAL: Closing tab immediately...")
+            current_driver.close()
+
+            stopwatch_end = time.time()
+            elapsed = stopwatch_end - step_log['start_time']
+            print(f"⏱️ STOPWATCH: First sequence completed in {elapsed:.3f} seconds")
+                            
+            step_log['critical_sequence_completed'] = True
+            self._log_step(step_log, "critical_sequence_completed", True, "0.25s wait + tab close")
+            
+            # Switch back to main tab
+            if len(current_driver.window_handles) > 0:
+                current_driver.switch_to.window(current_driver.window_handles[0])
+                self._log_step(step_log, "return_to_main_tab", True)
+            
+            self._log_step(step_log, "first_sequence_complete", True)
+            return True
+            
+        except Exception as critical_error:
+            self._log_step(step_log, "critical_sequence_error", False, str(critical_error))
+            return False
+
+    def _execute_second_sequence_with_monitoring(self, current_driver, actual_url, username, step_log):
+        """Execute second sequence with Purchase unsuccessful monitoring"""
+        self._log_step(step_log, "second_sequence_start", True)
+        
+        try:
+            # Open new tab for second sequence
+            current_driver.execute_script("window.open('');")
+            second_tab = current_driver.window_handles[-1]
+            current_driver.switch_to.window(second_tab)
+            self._log_step(step_log, "second_tab_created", True)
+            
+            # Navigate again
+            current_driver.get(actual_url)
+            self._log_step(step_log, "second_navigation", True)
+            
+            # Look for buy button again
+            second_buy_element, second_buy_selector = self._try_selectors(
+                current_driver,
+                'buy_button',
+                operation='click',
+                timeout=15,
+                click_method='all',
+                step_log=step_log
+            )
+            
+            if second_buy_element:
+                self._log_step(step_log, "second_buy_button_clicked", True, f"Used: {second_buy_selector[:30]}...")
+                
+                # Check for processing payment success
+                success = self._check_processing_payment_with_monitoring(current_driver, step_log)
+                
+                # MODIFIED: Don't close second tab here if monitoring is active
+                if not (success and step_log.get('monitoring_active', False)):
+                    # Close second tab only if not monitoring
+                    current_driver.close()
+                    if len(current_driver.window_handles) > 0:
+                        current_driver.switch_to.window(current_driver.window_handles[0])
+                    self._log_step(step_log, "second_tab_closed", True)
+                
+                if success:
+                    return True
+            else:
+                self._log_step(step_log, "second_buy_button_not_found", False, "Proceeding with messages")
+            
+            # Execute messages sequence (only if not monitoring)
+            if not step_log.get('monitoring_active', False):
+                return self._execute_messages_sequence(current_driver, actual_url, username, step_log)
+            else:
+                return True  # Return true if monitoring started
+                
+        except Exception as second_sequence_error:
+            self._log_step(step_log, "second_sequence_error", False, str(second_sequence_error))
+            return True  # Return True as this isn't a critical failure
+
+    def _check_processing_payment_with_monitoring(self, current_driver, step_log):
+        """Check for processing payment message and start monitoring if found"""
+        processing_element, processing_selector = self._try_selectors(
+            current_driver,
+            'processing_payment',
+            operation='find',
+            timeout=3,
+            step_log=step_log
+        )
+        
+        if processing_element:
+            element_text = processing_element.text.strip()
+            self._log_step(step_log, "processing_payment_found", True, f"Text: {element_text}")
+            print('SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+            
+            # START MONITORING FOR "Purchase unsuccessful" - NEW FUNCTIONALITY
+            print('🔍 MONITORING: Starting "Purchase unsuccessful" detection...')
+            step_log['success'] = True
+            step_log['monitoring_active'] = True
+            
+            # Start monitoring in separate thread so other processing can continue
+            monitoring_thread = threading.Thread(
+                target=self._monitor_purchase_unsuccessful,
+                args=(current_driver, step_log)
+            )
+            monitoring_thread.daemon = True  # Don't block program exit
+            monitoring_thread.start()
+            
+            return True
+        else:
+            self._log_step(step_log, "processing_payment_not_found", False, "Processing payment message not found")
+            print('listing likely bookmarked by another')
+            return False
+
+
+    def bookmark_driver(self, listing_url, username=None):
+        """
+        MAIN bookmark driver function - FIXED to properly handle monitoring cleanup
+        """
+        
+        # Initialize step logging
+        step_log = self._initialize_step_logging()
+        
+        # Validate inputs and setup
+        if not self._validate_bookmark_inputs(listing_url, username, step_log):
+            self._log_final_bookmark_result(step_log)
+            return False
+        
+        try:
+            # Get the cycling driver
+            current_driver = self.get_next_bookmark_driver()
+            if current_driver is None:
+                self._log_step(step_log, "driver_creation_failed", False, "Could not create cycling driver")
+                self._log_final_bookmark_result(step_log)
+                return False
+            
+            self._log_step(step_log, "cycling_driver_created", True, f"Driver {step_log['driver_number']} ready")
+            
+            try:
+                # Execute the main bookmark sequences
+                success = self._execute_bookmark_sequences_with_monitoring(current_driver, listing_url, username, step_log)
+                
+                if success:
+                    step_log['success'] = True
+                    self._log_step(step_log, "bookmark_function_success", True)
+                
+                self._log_final_bookmark_result(step_log)
+                return success
+                
+            except Exception as main_error:
+                self._log_step(step_log, "main_function_error", False, str(main_error))
+                self._log_final_bookmark_result(step_log)
+                return False
+                
+        finally:
+            # FIXED: Only close driver if monitoring is NOT active
+            if step_log.get('monitoring_active', False):
+                print(f"🔍 MONITORING: Active - driver cleanup will be handled by monitoring thread")
+                # The monitoring thread will handle driver cleanup when it completes
+            else:
+                print(f"🗑️ CYCLING: No monitoring active - closing driver normally")
+                self.close_current_bookmark_driver()
+                print(f"🔄 CYCLING: Driver {step_log['driver_number']} processed, next will be {self.current_bookmark_driver_index + 1}/5")
