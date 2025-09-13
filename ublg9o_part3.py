@@ -1,67 +1,4 @@
 # Continuation from line 4401
-            return False
-        except:
-            print(f"💀 DEAD: Driver {driver_num} is unresponsive")
-            return True
-
-    def release_driver(self, driver_num):
-        """
-        FIXED: Release a driver back to the free pool with special handling for driver 1
-        """
-        with self.driver_lock:
-            print(f"🔓 RELEASING: Buying driver {driver_num}")
-            
-            if driver_num == 1:
-                # Driver 1 is the persistent driver - keep it alive, just mark as free
-                self.driver_status[driver_num] = 'not_created'  # Allow it to be reused
-                print(f"🔄 KEPT ALIVE: Persistent buying driver (driver 1) marked as available")
-            else:
-                # For drivers 2-5, close them after use
-                if self.buying_drivers[driver_num] is not None:
-                    try:
-                        print(f"🗑️ CLOSING: Buying driver {driver_num}")
-                        self.buying_drivers[driver_num].quit()
-                        
-                        # Wait a moment for cleanup
-                        time.sleep(0.5)
-                        
-                        self.buying_drivers[driver_num] = None
-                        self.driver_status[driver_num] = 'not_created'
-                        print(f"✅ CLOSED: Buying driver {driver_num}")
-                    except Exception as e:
-                        print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
-                        self.buying_drivers[driver_num] = None
-                        self.driver_status[driver_num] = 'not_created'
-
-    def start_bookmark_stopwatch(self, listing_url):
-        """
-        Start a stopwatch for a successfully bookmarked listing
-        MODIFIED: Now tracks bookmark start time for wait_for_bookmark_stopwatch_to_buy functionality
-        """
-        print(f"⏱️ STOPWATCH: Starting timer for {listing_url}")
-        
-        # NEW: Track the start time for this listing
-        if not hasattr(self, 'bookmark_start_times'):
-            self.bookmark_start_times = {}
-        
-        # Record when the bookmark timer started
-        self.bookmark_start_times[listing_url] = time.time()
-        print(f"⏱️ RECORDED: Bookmark start time for {listing_url}")
-        
-        def stopwatch_timer():
-            time.sleep(bookmark_stopwatch_length)
-            print(f'LISTING {listing_url} HAS BEEN BOOKMARKED FOR {bookmark_stopwatch_length} SECONDS!')
-            
-            # Clean up the timer reference
-            if listing_url in self.bookmark_timers:
-                del self.bookmark_timers[listing_url]
-                
-            # Clean up the start time reference
-            if hasattr(self, 'bookmark_start_times') and listing_url in self.bookmark_start_times:
-                del self.bookmark_start_times[listing_url]
-        
-        # Start the timer thread
-        timer_thread = threading.Thread(target=stopwatch_timer)
         timer_thread.daemon = True
         timer_thread.start()
         
@@ -203,30 +140,7 @@
 
         self.save_rectangle_config(rectangles)
         pygame.quit()
-            
-    def _check_for_session_blocked(self, driver, driver_name, duration_seconds=10):
-        """
-        NEW METHOD: Check for session blocked message for specified duration
-        Returns True if session blocked found, False otherwise
-        """
-        print(f"🔍 CHECKING: Session blocked for {driver_name} ({duration_seconds}s)")
         
-        checks = duration_seconds // 2  # Check every 2 seconds
-        for i in range(checks):
-            try:
-                # Check for the exact element you specified
-                session_element = driver.find_element(By.CSS_SELECTOR, 'p[data-dd-captcha-human-title=""].captcha__human__title.no-margin')
-                if session_element and "Your session has been blocked" in session_element.text:
-                    print(f"🚫 SESSION BLOCKED: Found for {driver_name}")
-                    return True
-            except:
-                pass  # Element not found, continue checking
-            
-            time.sleep(2)
-        
-        print(f"✅ NO BLOCK: Session OK for {driver_name}")
-        return False
-
     def base64_encode_image(self, img):
         """Convert PIL Image to base64 string, resizing if necessary"""
         # Resize image while maintaining aspect ratio
@@ -2199,3 +2113,89 @@
                     if print_debug:
                         print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
                 elif key == "username":
+                    data[key] = "Username not found"
+                    if print_debug:
+                        print("DEBUG: NoSuchElementException - set username to 'Username not found'")
+                else:
+                    data[key] = None
+
+        # Keep title formatting for pygame display
+        if data["title"]:
+            data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
+
+        # NEW: Calculate and store the total price for threshold filtering
+        second_price = self.extract_price(data.get("second_price", "0"))
+        postage = self.extract_price(data.get("postage", "0"))
+        total_price = second_price + postage
+        
+        # Store the calculated price for use in object detection
+        self.current_listing_price_float = total_price
+        
+        # DEBUG: Print final scraped data for seller_reviews and username
+        if print_debug:
+            print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
+            print(f"DEBUG: Final scraped username: '{data.get('username')}'")
+            print(f"DEBUG: Total price calculated: £{total_price:.2f} (stored for threshold filtering)")
+            
+        return data
+
+    def clear_download_folder(self):
+        if os.path.exists(DOWNLOAD_ROOT):
+            shutil.rmtree(DOWNLOAD_ROOT)
+        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
+
+    # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
+
+    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
+        """
+        Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
+        FIXED: Now passes username to bookmark_driver
+        MODIFIED: Separate logic for pygame and website display - pygame shows all suitable listings with bookmark failure notices
+        UPDATED: Now includes time tracking when items are added to pygame
+        """
+        global suitable_listings, current_listing_index, recent_listings
+
+        # Extract username from details
+        username = details.get("username", None)
+
+        if not username or username == "Username not found":
+            username = None
+            print("🔖 USERNAME: Not available for this listing")
+
+        # Extract and validate price from the main price field
+        price_text = details.get("price", "0")
+        listing_price = self.extract_vinted_price(price_text)
+        postage = self.extract_price(details.get("postage", "0"))
+        total_price = listing_price + postage
+
+        # Get seller reviews
+        seller_reviews = details.get("seller_reviews", "No reviews yet")
+        if print_debug:    
+            print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
+
+        # Create basic listing info for suitability checking
+        listing_info = {
+            "title": details.get("title", "").lower(),
+            "description": details.get("description", "").lower(),
+            "price": total_price,
+            "seller_reviews": seller_reviews,
+            "url": url
+        }
+
+        # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
+        suitability_result = self.check_vinted_listing_suitability(listing_info)
+        if print_debug:    
+            print(f"DEBUG: Suitability result: '{suitability_result}'")
+
+        # Apply console keyword detection to detected objects
+        detected_console = self.detect_console_keywords_vinted(
+            details.get("title", ""),
+            details.get("description", "")
+        )
+        if detected_console:
+            # Set the detected console to 1 and ensure other mutually exclusive items are 0
+            mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
+            for item in mutually_exclusive_items:
+                detected_objects[item] = 1 if item == detected_console else 0
+
+        # Apply OLED title conversion
