@@ -1,4 +1,69 @@
 # Continuation from line 8801
+            # FIXED: Only close driver if monitoring is NOT active
+            if step_log.get('monitoring_active', False):
+                print(f"🔍 MONITORING: Active - driver cleanup will be handled by monitoring thread")
+                # The monitoring thread will handle driver cleanup when it completes
+            else:
+                print(f"🗑️ CYCLING: No monitoring active - closing driver normally")
+                self.close_current_bookmark_driver()
+                print(f"🔄 CYCLING: Driver {step_log['driver_number']} processed, next will be {self.current_bookmark_driver_index + 1}/5")
+
+    def cleanup_purchase_unsuccessful_monitoring(self):
+        """
+        Clean up any active purchase unsuccessful monitoring when program exits
+        """
+        global purchase_unsuccessful_detected_urls
+        print(f"🧹 CLEANUP: Stopping purchase unsuccessful monitoring for {len(purchase_unsuccessful_detected_urls)} URLs")
+        purchase_unsuccessful_detected_urls.clear()
+
+# Add this somewhere in your main code to check thread status
+    def debug_bookmark_threads(self):
+        print("🔍 DEBUG: Checking bookmark threads...")
+        all_threads = threading.enumerate()
+        for thread in all_threads:
+            if "Bookmark" in thread.name:
+                print(f"  Thread: {thread.name} - Alive: {thread.is_alive()} - ID: {thread.ident}")
+        
+        bookmark_threads = [t for t in all_threads if t.name == "Bookmark-Queue-Processor"]
+        if not bookmark_threads:
+            print("❌ DEBUG: No bookmark processor thread found!")
+        else:
+            print(f"✅ DEBUG: Bookmark processor thread exists and is {'alive' if bookmark_threads[0].is_alive() else 'dead'}")
+
+    def _monitor_purchase_unsuccessful(self, current_driver, step_log):
+        """
+        MODIFIED: Monitor for "Purchase unsuccessful" message and trigger buying drivers
+        """
+        import time
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.by import By
+        from selenium.common.exceptions import TimeoutException
+        
+        # Set the monitoring flag
+        self.monitoring_threads_active.set()
+        
+        # Get the current URL being monitored
+        current_url = current_driver.current_url
+        
+        # Start the stopwatch
+        monitoring_start_time = time.time()
+        print(f"⏱️ STOPWATCH: Started monitoring at {time.strftime('%H:%M:%S')}")
+        
+        # Maximum wait time: 25 minutes (1500 seconds)
+        max_wait_time = 25 * 60  # 1500 seconds
+        
+        # Define selectors for "Purchase unsuccessful" message
+        unsuccessful_selectors = [
+            "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+            "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+            "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+            "//*[text()='Purchase unsuccessful']"
+        ]
+        
+        print(f"🔍 MONITORING: Watching for 'Purchase unsuccessful' for up to {max_wait_time/60:.0f} minutes...")
+        
+        global purchase_unsuccessful_detected_urls
         
         try:
             while True:

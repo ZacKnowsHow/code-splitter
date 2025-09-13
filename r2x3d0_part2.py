@@ -1615,16 +1615,46 @@ class VintedScraper:
 
 
     def _initialize_bookmark_system(self):
-        """Initialize the 5-driver cycling bookmark system"""
+        """
+        FIXED: Initialize the 5-driver cycling bookmark system with better debugging
+        """
         print("🔖 INIT: Starting 5-driver cycling bookmark system")
         
+        # CRITICAL CHECK: Make sure the queue is properly initialized
+        if not hasattr(self, 'bookmark_queue'):
+            print("❌ INIT: bookmark_queue not found! Creating it now...")
+            from queue import Queue
+            self.bookmark_queue = Queue()
+        
+        print(f"🔖 INIT: Queue initialized with size: {self.bookmark_queue.qsize()}")
+        
+        # CRITICAL CHECK: Make sure scraping_paused is initialized
+        if not hasattr(self, 'scraping_paused'):
+            print("❌ INIT: scraping_paused not found! Creating it now...")
+            import threading
+            self.scraping_paused = threading.Event()
+        
+        # Set initial state to allow scraping
+        self.scraping_paused.set()
+        print(f"🔖 INIT: Scraping initially allowed: {self.scraping_paused.is_set()}")
+        
         # Start the bookmark queue processor in a separate thread
+        print("🔖 INIT: Creating bookmark queue processor thread...")
         bookmark_processor_thread = threading.Thread(
             target=self._bookmark_queue_processor,
             name="Bookmark-Queue-Processor",
             daemon=True
         )
+        
+        print("🔖 INIT: Starting bookmark queue processor thread...")
         bookmark_processor_thread.start()
+        
+        # CRITICAL CHECK: Verify the thread actually started
+        time.sleep(0.5)  # Give it a moment to start
+        if bookmark_processor_thread.is_alive():
+            print(f"✅ INIT: Bookmark queue processor thread is running (ID: {bookmark_processor_thread.ident})")
+        else:
+            print("❌ INIT: Bookmark queue processor thread failed to start!")
         
         # Prepare the first driver immediately
         self._prepare_next_driver_async(0)
@@ -1632,42 +1662,52 @@ class VintedScraper:
         print("✅ INIT: 5-driver bookmark system initialized")
 
     def _bookmark_queue_processor(self):
-        """Main queue processor that handles bookmark requests"""
+        """
+        FIXED: Main queue processor - the issue is this thread is not running properly
+        """
         print("🔖 PROCESSOR: Bookmark queue processor started")
+        print(f"🔖 PROCESSOR: Thread name: {threading.current_thread().name}")
+        print(f"🔖 PROCESSOR: Thread ID: {threading.current_thread().ident}")
         
         while True:
             try:
+                print(f"🔖 PROCESSOR: Checking queue... (size: {self.bookmark_queue.qsize()})")
+                
                 # Wait for a bookmark request
                 try:
                     listing_url, username = self.bookmark_queue.get(timeout=1)
                     print(f"🔖 PROCESSOR: Got bookmark request for {listing_url[:50]}...")
                 except Empty:
+                    print("🔖 PROCESSOR: Queue empty, continuing loop...")
                     continue
                 
-                # FIXED: Check if we have any ready drivers BEFORE pausing scraping
+                print(f"🔖 PROCESSOR: Processing bookmark request...")
+                
+                # Check for ready drivers
                 ready_driver_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
+                print(f"🔖 PROCESSOR: Ready drivers: {ready_driver_count}/5")
                 
                 if ready_driver_count == 0:
-                    print("⏸️ NO DRIVERS: No ready bookmark drivers available - PAUSING SCRAPING")
+                    print("⏸️ PROCESSOR: No ready drivers - PAUSING SCRAPING")
                     self.scraping_paused.clear()  # Pause scraping
                     
-                    # Wait until we have at least 1 ready driver
+                    # Wait for driver to become ready
                     while True:
                         time.sleep(1)
                         ready_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
                         if ready_count > 0:
-                            print(f"✅ DRIVER READY: {ready_count} drivers ready - RESUMING SCRAPING")
+                            print(f"✅ PROCESSOR: {ready_count} drivers ready - RESUMING SCRAPING")
                             self.scraping_paused.set()  # Resume scraping
                             break
-                        print(f"⏳ WAITING: Still no ready drivers ({ready_count}/5 ready)")
+                        print(f"⏳ PROCESSOR: Still waiting for ready drivers ({ready_count}/5 ready)")
                 else:
-                    print(f"✅ DRIVERS AVAILABLE: {ready_driver_count} ready drivers - no need to pause")
-                    # STILL pause briefly to prevent overwhelming
-                    print("⏸️ PAUSE: Brief pause for bookmark processing")
+                    print(f"✅ PROCESSOR: {ready_driver_count} drivers available")
+                    # Pause scraping briefly during bookmark processing
                     self.scraping_paused.clear()
                 
                 try:
                     # Process the bookmark request
+                    print(f"🔖 PROCESSOR: Starting bookmark processing...")
                     success = self._process_bookmark_with_cycling(listing_url, username)
                     if success:
                         print(f"✅ PROCESSOR: Bookmark successful for {listing_url[:50]}...")
@@ -1675,13 +1715,15 @@ class VintedScraper:
                         print(f"❌ PROCESSOR: Bookmark failed for {listing_url[:50]}...")
                 
                 finally:
-                    # RESUME SCRAPING after bookmark processing
-                    print("▶️ RESUME: Resuming main scraping after bookmark")
+                    # ALWAYS resume scraping after bookmark processing
+                    print("▶️ PROCESSOR: Resuming main scraping after bookmark")
                     self.scraping_paused.set()
                     self.bookmark_queue.task_done()
                     
             except Exception as processor_error:
                 print(f"❌ PROCESSOR ERROR: {processor_error}")
+                import traceback
+                traceback.print_exc()
                 # Make sure to resume scraping even if there's an error
                 self.scraping_paused.set()
                 continue
@@ -2157,45 +2199,3 @@ class VintedScraper:
                 if self.buying_drivers[driver_num] is not None:
                     try:
                         print(f"🗑️ CLOSING: Buying driver {driver_num}")
-                        self.buying_drivers[driver_num].quit()
-                        
-                        # Wait a moment for cleanup
-                        time.sleep(0.5)
-                        
-                        self.buying_drivers[driver_num] = None
-                        self.driver_status[driver_num] = 'not_created'
-                        print(f"✅ CLOSED: Buying driver {driver_num}")
-                    except Exception as e:
-                        print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
-                        self.buying_drivers[driver_num] = None
-                        self.driver_status[driver_num] = 'not_created'
-
-    def start_bookmark_stopwatch(self, listing_url):
-        """
-        Start a stopwatch for a successfully bookmarked listing
-        MODIFIED: Now tracks bookmark start time for wait_for_bookmark_stopwatch_to_buy functionality
-        """
-        print(f"⏱️ STOPWATCH: Starting timer for {listing_url}")
-        
-        # NEW: Track the start time for this listing
-        if not hasattr(self, 'bookmark_start_times'):
-            self.bookmark_start_times = {}
-        
-        # Record when the bookmark timer started
-        self.bookmark_start_times[listing_url] = time.time()
-        print(f"⏱️ RECORDED: Bookmark start time for {listing_url}")
-        
-        def stopwatch_timer():
-            time.sleep(bookmark_stopwatch_length)
-            print(f'LISTING {listing_url} HAS BEEN BOOKMARKED FOR {bookmark_stopwatch_length} SECONDS!')
-            
-            # Clean up the timer reference
-            if listing_url in self.bookmark_timers:
-                del self.bookmark_timers[listing_url]
-                
-            # Clean up the start time reference
-            if hasattr(self, 'bookmark_start_times') and listing_url in self.bookmark_start_times:
-                del self.bookmark_start_times[listing_url]
-        
-        # Start the timer thread
-        timer_thread = threading.Thread(target=stopwatch_timer)
