@@ -1,4 +1,47 @@
 # Continuation from line 6601
+        username = details.get("username", None)
+
+        if not username or username == "Username not found":
+            username = None
+            print("🔖 USERNAME: Not available for this listing")
+
+        # Extract and validate price from the main price field
+        price_text = details.get("price", "0")
+        listing_price = self.extract_vinted_price(price_text)
+        postage = self.extract_price(details.get("postage", "0"))
+        total_price = listing_price + postage
+
+        # Get seller reviews
+        seller_reviews = details.get("seller_reviews", "No reviews yet")
+        if print_debug:    
+            print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
+
+        # Create basic listing info for suitability checking
+        listing_info = {
+            "title": details.get("title", "").lower(),
+            "description": details.get("description", "").lower(),
+            "price": total_price,
+            "seller_reviews": seller_reviews,
+            "url": url
+        }
+
+        # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
+        suitability_result = self.check_vinted_listing_suitability(listing_info)
+        if print_debug:    
+            print(f"DEBUG: Suitability result: '{suitability_result}'")
+
+        # Apply console keyword detection to detected objects
+        detected_console = self.detect_console_keywords_vinted(
+            details.get("title", ""),
+            details.get("description", "")
+        )
+        if detected_console:
+            # Set the detected console to 1 and ensure other mutually exclusive items are 0
+            mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
+            for item in mutually_exclusive_items:
+                detected_objects[item] = 1 if item == detected_console else 0
+
+        # Apply OLED title conversion
         detected_objects = self.handle_oled_title_conversion_vinted(
             detected_objects,
             details.get("title", ""),
@@ -2156,46 +2199,3 @@
                 print(f"🗑️ CYCLING: No monitoring active - closing driver normally")
                 self.close_current_bookmark_driver()
                 print(f"🔄 CYCLING: Driver {step_log['driver_number']} processed, next will be {self.current_bookmark_driver_index + 1}/5")
-
-    def cleanup_purchase_unsuccessful_monitoring(self):
-        """
-        Clean up any active purchase unsuccessful monitoring when program exits
-        """
-        global purchase_unsuccessful_detected_urls
-        print(f"🧹 CLEANUP: Stopping purchase unsuccessful monitoring for {len(purchase_unsuccessful_detected_urls)} URLs")
-        purchase_unsuccessful_detected_urls.clear()
-
-    def _monitor_purchase_unsuccessful(self, current_driver, step_log):
-        """
-        MODIFIED: Monitor for "Purchase unsuccessful" message and trigger buying drivers
-        """
-        import time
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        from selenium.webdriver.common.by import By
-        from selenium.common.exceptions import TimeoutException
-        
-        # Set the monitoring flag
-        self.monitoring_threads_active.set()
-        
-        # Get the current URL being monitored
-        current_url = current_driver.current_url
-        
-        # Start the stopwatch
-        monitoring_start_time = time.time()
-        print(f"⏱️ STOPWATCH: Started monitoring at {time.strftime('%H:%M:%S')}")
-        
-        # Maximum wait time: 25 minutes (1500 seconds)
-        max_wait_time = 25 * 60  # 1500 seconds
-        
-        # Define selectors for "Purchase unsuccessful" message
-        unsuccessful_selectors = [
-            "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-            "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-            "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
-            "//*[text()='Purchase unsuccessful']"
-        ]
-        
-        print(f"🔍 MONITORING: Watching for 'Purchase unsuccessful' for up to {max_wait_time/60:.0f} minutes...")
-        
-        global purchase_unsuccessful_detected_urls

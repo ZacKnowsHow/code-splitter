@@ -1,4 +1,47 @@
 # Continuation from line 2201
+            
+        except Exception as e:
+            print(f"Error finding speakers: {e}")
+            return None
+    
+    def extract_numbers_sequence(self, text):
+        """Extract numbers from text in the correct sequence"""
+        word_to_num = {
+            'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
+            'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13',
+            'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17',
+            'eighteen': '18', 'nineteen': '19', 'twenty': '20', 'thirty': '30',
+            'forty': '40', 'fifty': '50', 'sixty': '60', 'seventy': '70',
+            'eighty': '80', 'ninety': '90', 'hundred': '100'
+        }
+        
+        words = text.lower().replace(',', '').replace('.', '').split()
+        numbers = []
+        
+        for word in words:
+            if word in word_to_num:
+                numbers.append(word_to_num[word])
+            elif word.isdigit():
+                numbers.append(word)
+            elif re.match(r'^\d+$', word):
+                for digit in word:
+                    numbers.append(digit)
+        
+        digit_matches = re.findall(r'\b\d\b', text)
+        all_numbers = numbers + digit_matches
+        
+        # Remove the duplicate filtering - keep all numbers in sequence
+        valid_numbers = []
+        for num in all_numbers:
+            if num.isdigit() and len(num) == 1:
+                valid_numbers.append(num)
+        
+        return valid_numbers
+    
+    def find_complete_sequence(self, text):
+        """Try to find a complete 6-digit sequence"""
+        text_clean = re.sub(r'[^\w\s]', ' ', text.lower())
         numbers = self.extract_numbers_sequence(text)
         
         if len(numbers) == 6:
@@ -2156,46 +2199,3 @@ class VintedScraper:
                 # For drivers 2-5, close them after use
                 if self.buying_drivers[driver_num] is not None:
                     try:
-                        print(f"🗑️ CLOSING: Buying driver {driver_num}")
-                        self.buying_drivers[driver_num].quit()
-                        
-                        # Wait a moment for cleanup
-                        time.sleep(0.5)
-                        
-                        self.buying_drivers[driver_num] = None
-                        self.driver_status[driver_num] = 'not_created'
-                        print(f"✅ CLOSED: Buying driver {driver_num}")
-                    except Exception as e:
-                        print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
-                        self.buying_drivers[driver_num] = None
-                        self.driver_status[driver_num] = 'not_created'
-
-    def start_bookmark_stopwatch(self, listing_url):
-        """
-        Start a stopwatch for a successfully bookmarked listing
-        MODIFIED: Now tracks bookmark start time for wait_for_bookmark_stopwatch_to_buy functionality
-        """
-        print(f"⏱️ STOPWATCH: Starting timer for {listing_url}")
-        
-        # NEW: Track the start time for this listing
-        if not hasattr(self, 'bookmark_start_times'):
-            self.bookmark_start_times = {}
-        
-        # Record when the bookmark timer started
-        self.bookmark_start_times[listing_url] = time.time()
-        print(f"⏱️ RECORDED: Bookmark start time for {listing_url}")
-        
-        def stopwatch_timer():
-            time.sleep(bookmark_stopwatch_length)
-            print(f'LISTING {listing_url} HAS BEEN BOOKMARKED FOR {bookmark_stopwatch_length} SECONDS!')
-            
-            # Clean up the timer reference
-            if listing_url in self.bookmark_timers:
-                del self.bookmark_timers[listing_url]
-                
-            # Clean up the start time reference
-            if hasattr(self, 'bookmark_start_times') and listing_url in self.bookmark_start_times:
-                del self.bookmark_start_times[listing_url]
-        
-        # Start the timer thread
-        timer_thread = threading.Thread(target=stopwatch_timer)

@@ -1,4 +1,47 @@
 # Continuation from line 4401
+                        print(f"🗑️ CLOSING: Buying driver {driver_num}")
+                        self.buying_drivers[driver_num].quit()
+                        
+                        # Wait a moment for cleanup
+                        time.sleep(0.5)
+                        
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'not_created'
+                        print(f"✅ CLOSED: Buying driver {driver_num}")
+                    except Exception as e:
+                        print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'not_created'
+
+    def start_bookmark_stopwatch(self, listing_url):
+        """
+        Start a stopwatch for a successfully bookmarked listing
+        MODIFIED: Now tracks bookmark start time for wait_for_bookmark_stopwatch_to_buy functionality
+        """
+        print(f"⏱️ STOPWATCH: Starting timer for {listing_url}")
+        
+        # NEW: Track the start time for this listing
+        if not hasattr(self, 'bookmark_start_times'):
+            self.bookmark_start_times = {}
+        
+        # Record when the bookmark timer started
+        self.bookmark_start_times[listing_url] = time.time()
+        print(f"⏱️ RECORDED: Bookmark start time for {listing_url}")
+        
+        def stopwatch_timer():
+            time.sleep(bookmark_stopwatch_length)
+            print(f'LISTING {listing_url} HAS BEEN BOOKMARKED FOR {bookmark_stopwatch_length} SECONDS!')
+            
+            # Clean up the timer reference
+            if listing_url in self.bookmark_timers:
+                del self.bookmark_timers[listing_url]
+                
+            # Clean up the start time reference
+            if hasattr(self, 'bookmark_start_times') and listing_url in self.bookmark_start_times:
+                del self.bookmark_start_times[listing_url]
+        
+        # Start the timer thread
+        timer_thread = threading.Thread(target=stopwatch_timer)
         timer_thread.daemon = True
         timer_thread.start()
         
@@ -2156,46 +2199,3 @@
         global suitable_listings, current_listing_index, recent_listings
 
         # Extract username from details
-        username = details.get("username", None)
-
-        if not username or username == "Username not found":
-            username = None
-            print("🔖 USERNAME: Not available for this listing")
-
-        # Extract and validate price from the main price field
-        price_text = details.get("price", "0")
-        listing_price = self.extract_vinted_price(price_text)
-        postage = self.extract_price(details.get("postage", "0"))
-        total_price = listing_price + postage
-
-        # Get seller reviews
-        seller_reviews = details.get("seller_reviews", "No reviews yet")
-        if print_debug:    
-            print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
-
-        # Create basic listing info for suitability checking
-        listing_info = {
-            "title": details.get("title", "").lower(),
-            "description": details.get("description", "").lower(),
-            "price": total_price,
-            "seller_reviews": seller_reviews,
-            "url": url
-        }
-
-        # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
-        suitability_result = self.check_vinted_listing_suitability(listing_info)
-        if print_debug:    
-            print(f"DEBUG: Suitability result: '{suitability_result}'")
-
-        # Apply console keyword detection to detected objects
-        detected_console = self.detect_console_keywords_vinted(
-            details.get("title", ""),
-            details.get("description", "")
-        )
-        if detected_console:
-            # Set the detected console to 1 and ensure other mutually exclusive items are 0
-            mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
-            for item in mutually_exclusive_items:
-                detected_objects[item] = 1 if item == detected_console else 0
-
-        # Apply OLED title conversion
