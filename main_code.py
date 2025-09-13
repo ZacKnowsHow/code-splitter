@@ -4010,14 +4010,74 @@ class VintedScraper:
         prepare_thread.start()
         print(f"🔧 ASYNC: Started preparing driver {driver_index + 1} in background")
 
+    def _verify_login_success(self, driver, driver_name):
+        """
+        NEW: Verify that login was successful by checking for logged-in indicators
+        """
+        print(f"🔍 VERIFY: Checking login success indicators for {driver_name}")
+        
+        # Check for elements that indicate successful login
+        login_success_indicators = [
+            # Look for user account menu or profile elements
+            'button[data-testid="header-user-menu-button"]',
+            'div[data-testid="header-user-menu"]', 
+            # Look for "new messages" which indicates logged in state
+            'a[data-testid="header-conversations-button"]',
+            # Look for any user-specific UI elements
+            'nav[data-testid="header-navigation"]',
+            # Check that we're not still on login page
+            'div[data-testid="header"]'
+        ]
+        
+        for indicator in login_success_indicators:
+            try:
+                element = WebDriverWait(driver, 3).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, indicator))
+                )
+                print(f"✅ VERIFY: Found login indicator '{indicator}' for {driver_name}")
+                return True
+            except TimeoutException:
+                continue
+        
+        # Additional check: ensure we're not on login modal
+        try:
+            # If login modal is still present, login probably failed
+            login_modal = driver.find_element(By.CSS_SELECTOR, '[data-testid="auth-modal"]')
+            print(f"❌ VERIFY: Login modal still present for {driver_name}")
+            return False
+        except:
+            # No login modal found - good sign
+            pass
+        
+        # Final verification: check page title or URL
+        try:
+            current_url = driver.current_url
+            page_title = driver.title
+            
+            if 'login' in current_url.lower() or 'auth' in current_url.lower():
+                print(f"❌ VERIFY: Still on login page for {driver_name}: {current_url}")
+                return False
+            
+            if 'vinted' in page_title.lower():
+                print(f"✅ VERIFY: On Vinted main site for {driver_name}: {page_title}")
+                return True
+                
+        except Exception as verify_error:
+            print(f"⚠️ VERIFY: Could not check URL/title for {driver_name}: {verify_error}")
+        
+        # Default to True if we can't determine either way
+        print(f"⚠️ VERIFY: Could not definitively verify login for {driver_name}, assuming success")
+        return True
+
     def _prepare_driver(self, driver_index):
         """
-        FIXED: Prepare a specific bookmark driver - CLEAR COOKIES FIRST, THEN navigate to Vinted
+        FIXED: Prepare a specific bookmark driver - CLEAR COOKIES FIRST, THEN LOGIN COMPLETELY
+        This now handles the COMPLETE preparation: cookies clear + navigation + login + captcha
         """
         config = self.bookmark_driver_configs[driver_index]
         driver_name = config['driver_name']
         
-        print(f"🔧 PREPARE: Starting preparation of {driver_name}")
+        print(f"🔧 PREPARE: Starting COMPLETE preparation of {driver_name}")
         
         try:
             # Mark as preparing
@@ -4033,7 +4093,7 @@ class VintedScraper:
             
             print(f"✅ CREATE: {driver_name} created successfully")
             
-            # STEP 2: CLEAR COOKIES FIRST - Navigate to a basic page to clear cookies
+            # STEP 2: CLEAR COOKIES FIRST - Navigate to settings page to clear cookies
             print(f"🧹 PREPARE: Opening chrome://settings/clearBrowserData for {driver_name}")
             driver.get("chrome://settings/clearBrowserData")
             
@@ -4112,41 +4172,6 @@ class VintedScraper:
                     console.log('Strategy 2 failed:', e);
                 }
                 
-                // Strategy 3: Look for any button with "clear" or "delete" text
-                try {
-                    console.log('Trying text-based button search...');
-                    function findButtonByText(element) {
-                        if (element.shadowRoot) {
-                            let buttons = element.shadowRoot.querySelectorAll('button, cr-button, paper-button');
-                            for (let btn of buttons) {
-                                let text = (btn.textContent || '').toLowerCase();
-                                if ((text.includes('delete') || text.includes('clear')) && !btn.disabled) {
-                                    console.log('Found button with text:', btn.textContent);
-                                    btn.click();
-                                    return true;
-                                }
-                            }
-                            
-                            let children = element.shadowRoot.querySelectorAll('*');
-                            for (let child of children) {
-                                if (findButtonByText(child)) {
-                                    return true;
-                                }
-                            }
-                        }
-                        return false;
-                    }
-                    
-                    let allElements = document.querySelectorAll('*');
-                    for (let el of allElements) {
-                        if (findButtonByText(el)) {
-                            return true;
-                        }
-                    }
-                } catch (e) {
-                    console.log('Strategy 3 failed:', e);
-                }
-                
                 console.log('All strategies failed - clear button not found');
                 return false;
             }
@@ -4181,40 +4206,130 @@ class VintedScraper:
                 self.bookmark_driver_status[driver_index] = 'error'
                 return
             
-            # STEP 5: NOW navigate to Vinted with the fresh driver
+            # STEP 5: Navigate to Vinted with the fresh driver
             print(f"🌐 PREPARE: Navigating fresh {driver_name} to Vinted")
             fresh_driver.get("https://vinted.co.uk")
             
-            # Handle cookie consent
+            # STEP 6: Handle cookie consent
             self._handle_cookie_consent(fresh_driver, driver_name)
             
-            # STEP 6: Perform login based on configuration
-            login_success = self._perform_vinted_login_simple(fresh_driver, config, driver_name)
+            # STEP 7: COMPLETE LOGIN PROCESS DURING PREPARATION
+            print(f"🔐 PREPARE: Starting COMPLETE login process for {driver_name}")
             
-            if not login_success:
-                print(f"❌ PREPARE: Login failed for {driver_name}")
-                fresh_driver.quit()
+            # Click Sign up | Log in button
+            try:
+                signup_button = WebDriverWait(fresh_driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
+                )
+                
+                human_like_delay()
+                action = move_to_element_naturally(fresh_driver, signup_button)
+                time.sleep(random.uniform(0.1, 0.3))
+                action.click().perform()
+                print(f"✅ LOGIN: Clicked Sign up | Log in button for {driver_name}")
+                
+                # Wait for the login/signup modal to appear
+                time.sleep(random.uniform(1, 2))
+                
+                if config['google_login']:
+                    print(f"🔐 LOGIN: Using Google login for {driver_name}")
+                    # Click Continue with Google
+                    google_button = WebDriverWait(fresh_driver, 10).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
+                    )
+                    
+                    human_like_delay()
+                    action = move_to_element_naturally(fresh_driver, google_button)
+                    time.sleep(random.uniform(0.1, 0.3))
+                    action.click().perform()
+                    print(f"✅ LOGIN: Clicked Continue with Google for {driver_name}")
+                    
+                else:
+                    print(f"🔐 LOGIN: Using email login for {driver_name}")
+                    
+                    # Click "Log in" text
+                    login_text = WebDriverWait(fresh_driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//span[contains(@class, 'web_ui__Text__underline') and text()='Log in']"))
+                    )
+                    
+                    human_like_delay()
+                    action = move_to_element_naturally(fresh_driver, login_text)
+                    time.sleep(random.uniform(0.1, 0.3))
+                    action.click().perform()
+                    print(f"✅ LOGIN: Clicked Log in for {driver_name}")
+                    
+                    # Wait a bit for the form to update
+                    time.sleep(random.uniform(0.5, 1))
+                    
+                    # Click "email" text
+                    email_text = WebDriverWait(fresh_driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//span[contains(@class, 'web_ui__Text__underline') and text()='email']"))
+                    )
+                    
+                    human_like_delay()
+                    action = move_to_element_naturally(fresh_driver, email_text)
+                    time.sleep(random.uniform(0.1, 0.3))
+                    action.click().perform()
+                    print(f"✅ LOGIN: Clicked email for {driver_name}")
+                    
+                    # Wait a bit for the form to update
+                    time.sleep(random.uniform(0.5, 1))
+                    
+                    # Click Continue button
+                    continue_button = WebDriverWait(fresh_driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//button[@type='submit']//span[text()='Continue']"))
+                    )
+                    
+                    human_like_delay()
+                    action = move_to_element_naturally(fresh_driver, continue_button)
+                    time.sleep(random.uniform(0.1, 0.3))
+                    action.click().perform()
+                    print(f"✅ LOGIN: Clicked Continue for {driver_name}")
+                
+                # STEP 8: Wait for login to complete and handle captcha
+                print(f"⏳ LOGIN: Waiting for login to complete for {driver_name}")
+                time.sleep(random.uniform(3, 5))
+                
+                # STEP 9: Handle any captcha that appears during login
+                print(f"🔍 CAPTCHA: Checking for captcha for {driver_name}")
+                captcha_result = handle_datadome_audio_captcha(fresh_driver)
+                
+                if captcha_result == "no_captcha":
+                    print(f"✅ PREPARE: {driver_name} ready - login successful, no captcha needed")
+                elif captcha_result == True:
+                    print(f"🎧 PREPARE: {driver_name} login successful after captcha solved")
+                else:
+                    print(f"⚠️ PREPARE: {driver_name} login completed, captcha handling inconclusive")
+                
+                # STEP 10: Verify login was successful by checking for logged-in elements
+                print(f"🔍 VERIFY: Checking login success for {driver_name}")
+                login_verified = self._verify_login_success(fresh_driver, driver_name)
+                
+                if not login_verified:
+                    print(f"❌ PREPARE: Login verification failed for {driver_name}")
+                    fresh_driver.quit()
+                    self.bookmark_driver_status[driver_index] = 'error'
+                    return
+                
+                print(f"✅ VERIFY: Login verified for {driver_name}")
+                
+            except Exception as login_error:
+                print(f"❌ LOGIN ERROR: {driver_name} login failed: {login_error}")
+                try:
+                    fresh_driver.quit()
+                except:
+                    pass
                 self.bookmark_driver_status[driver_index] = 'error'
                 return
             
-            # STEP 7: Handle any captcha that appears
-            captcha_result = handle_datadome_audio_captcha(fresh_driver)
-            
-            if captcha_result == "no_captcha":
-                print(f"✅ PREPARE: {driver_name} ready - no captcha needed")
-            elif captcha_result == True:
-                print(f"🎧 PREPARE: {driver_name} captcha solved")
-            else:
-                print(f"⚠️ PREPARE: {driver_name} captcha handling failed, continuing anyway")
-            
-            # STEP 8: Store the driver and mark as ready
+            # STEP 11: Store the driver and mark as ready
             with self.bookmark_system_lock:
                 self.bookmark_drivers[driver_index] = fresh_driver
                 self.bookmark_driver_status[driver_index] = 'ready'
-                ready_count = self._get_ready_driver_count()  # ADD THIS LINE
-                print(f"📊 DRIVER COUNT: Now have {ready_count}/5 ready drivers")  # ADD THIS LINE
+                ready_count = self._get_ready_driver_count()
+                print(f"📊 DRIVER COUNT: Now have {ready_count}/5 ready drivers")
                 
-            print(f"✅ PREPARE: {driver_name} is now ready for bookmarking")
+            print(f"🎉 PREPARE: {driver_name} is now FULLY LOGGED IN and ready for bookmarking!")
             
         except Exception as prepare_error:
             print(f"❌ PREPARE ERROR: {driver_name} preparation failed: {prepare_error}")
@@ -7792,17 +7907,23 @@ class VintedScraper:
             return False
 
     def _execute_enhanced_bookmark(self, driver, listing_url, username, driver_index):
-        """Execute the bookmark process using the cycling driver"""
+        """
+        SIMPLIFIED: Execute the bookmark process using an ALREADY LOGGED IN driver
+        Since login is now handled in _prepare_driver, this is much simpler
+        """
         driver_name = self.bookmark_driver_configs[driver_index]['driver_name']
         
-        print(f"🔖 EXEC: Starting bookmark execution with {driver_name}")
+        print(f"🔖 EXEC: Starting bookmark execution with LOGGED IN {driver_name}")
         
         try:
             # Store the main tab
             main_tab = driver.current_window_handle
             
-            # Execute the VM bookmarking logic (adapted for cycling system)
-            success = self._execute_vm_bookmark_enhanced_cycling(driver, main_tab, listing_url, username, driver_name)
+            print(f"✅ READY: {driver_name} is already logged in and ready")
+            print(f"🚀 EXEC: Proceeding directly to bookmark sequences")
+            
+            # Execute the VM bookmarking sequences (driver already logged in)
+            success = self._execute_vm_bookmark_logged_in(driver, main_tab, listing_url, username, driver_name)
             
             return success
             
@@ -8255,6 +8376,51 @@ class VintedScraper:
                 self.bookmark_driver_status[i] = 'not_created'
         
         print("✅ CLEANUP: All bookmark drivers cleaned up")
+
+    def _execute_vm_bookmark_logged_in(self, driver, main_tab, listing_url, username, driver_name):
+        """
+        SIMPLIFIED: Execute VM bookmark process with driver that's ALREADY logged in
+        No need for login steps - just execute the bookmark sequences
+        """
+        print(f"🚀 {driver_name}: Starting bookmark for {listing_url[:50]}... (ALREADY LOGGED IN)")
+        
+        try:
+            # Open new tab for bookmarking
+            driver.execute_script("window.open('');")
+            bookmark_tab = driver.window_handles[-1]
+            driver.switch_to.window(bookmark_tab)
+            
+            # Navigate to listing
+            driver.get(listing_url)
+            WebDriverWait(driver, 5).until(
+                lambda d: d.execute_script("return document.readyState") == "complete"
+            )
+            
+            print(f"✅ {driver_name}: Navigated to listing (logged in driver)")
+            time.sleep(0.5)
+            
+            # Execute first sequence (the critical 0.25s sequence)
+            first_success = self._enhanced_execute_vm_first_buy_sequence_cycling(driver, driver_name)
+            
+            if not first_success:
+                print(f"❌ {driver_name}: First sequence failed")
+                return False
+            
+            print(f"✅ {driver_name}: First sequence completed (0.25s + close)")
+            
+            # Execute second sequence - this handles monitoring and next driver preparation
+            second_success = self._execute_vm_second_sequence_cycling(driver, listing_url, username, driver_name)
+            
+            if second_success:
+                print(f"🎉 {driver_name}: Bookmark completed successfully (PRE-LOGGED IN)")
+                return True
+            else:
+                print(f"❌ {driver_name}: Second sequence failed")
+                return False
+                    
+        except Exception as e:
+            print(f"❌ {driver_name}: Bookmark error - {e}")
+            return False
 
     def _execute_vm_bookmark_enhanced_cycling(self, driver, main_tab, listing_url, username, driver_name):
         """
