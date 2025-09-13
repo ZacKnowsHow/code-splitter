@@ -1,4 +1,25 @@
 # Continuation from line 4401
+            return False
+        except:
+            print(f"💀 DEAD: Driver {driver_num} is unresponsive")
+            return True
+
+    def release_driver(self, driver_num):
+        """
+        FIXED: Release a driver back to the free pool with special handling for driver 1
+        """
+        with self.driver_lock:
+            print(f"🔓 RELEASING: Buying driver {driver_num}")
+            
+            if driver_num == 1:
+                # Driver 1 is the persistent driver - keep it alive, just mark as free
+                self.driver_status[driver_num] = 'not_created'  # Allow it to be reused
+                print(f"🔄 KEPT ALIVE: Persistent buying driver (driver 1) marked as available")
+            else:
+                # For drivers 2-5, close them after use
+                if self.buying_drivers[driver_num] is not None:
+                    try:
+                        print(f"🗑️ CLOSING: Buying driver {driver_num}")
                         self.buying_drivers[driver_num].quit()
                         
                         # Wait a moment for cleanup
@@ -182,7 +203,30 @@
 
         self.save_rectangle_config(rectangles)
         pygame.quit()
+            
+    def _check_for_session_blocked(self, driver, driver_name, duration_seconds=10):
+        """
+        NEW METHOD: Check for session blocked message for specified duration
+        Returns True if session blocked found, False otherwise
+        """
+        print(f"🔍 CHECKING: Session blocked for {driver_name} ({duration_seconds}s)")
         
+        checks = duration_seconds // 2  # Check every 2 seconds
+        for i in range(checks):
+            try:
+                # Check for the exact element you specified
+                session_element = driver.find_element(By.CSS_SELECTOR, 'p[data-dd-captcha-human-title=""].captcha__human__title.no-margin')
+                if session_element and "Your session has been blocked" in session_element.text:
+                    print(f"🚫 SESSION BLOCKED: Found for {driver_name}")
+                    return True
+            except:
+                pass  # Element not found, continue checking
+            
+            time.sleep(2)
+        
+        print(f"✅ NO BLOCK: Session OK for {driver_name}")
+        return False
+
     def base64_encode_image(self, img):
         """Convert PIL Image to base64 string, resizing if necessary"""
         # Resize image while maintaining aspect ratio
@@ -2155,47 +2199,3 @@
                     if print_debug:
                         print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
                 elif key == "username":
-                    data[key] = "Username not found"
-                    if print_debug:
-                        print("DEBUG: NoSuchElementException - set username to 'Username not found'")
-                else:
-                    data[key] = None
-
-        # Keep title formatting for pygame display
-        if data["title"]:
-            data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
-
-        # NEW: Calculate and store the total price for threshold filtering
-        second_price = self.extract_price(data.get("second_price", "0"))
-        postage = self.extract_price(data.get("postage", "0"))
-        total_price = second_price + postage
-        
-        # Store the calculated price for use in object detection
-        self.current_listing_price_float = total_price
-        
-        # DEBUG: Print final scraped data for seller_reviews and username
-        if print_debug:
-            print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
-            print(f"DEBUG: Final scraped username: '{data.get('username')}'")
-            print(f"DEBUG: Total price calculated: £{total_price:.2f} (stored for threshold filtering)")
-            
-        return data
-
-    def clear_download_folder(self):
-        if os.path.exists(DOWNLOAD_ROOT):
-            shutil.rmtree(DOWNLOAD_ROOT)
-        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
-
-    # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
-
-    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
-        """
-        Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
-        FIXED: Now passes username to bookmark_driver
-        MODIFIED: Separate logic for pygame and website display - pygame shows all suitable listings with bookmark failure notices
-        UPDATED: Now includes time tracking when items are added to pygame
-        """
-        global suitable_listings, current_listing_index, recent_listings
-
-        # Extract username from details
-        username = details.get("username", None)

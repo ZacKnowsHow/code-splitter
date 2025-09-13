@@ -1,4 +1,48 @@
 # Continuation from line 6601
+                    data[key] = "Username not found"
+                    if print_debug:
+                        print("DEBUG: NoSuchElementException - set username to 'Username not found'")
+                else:
+                    data[key] = None
+
+        # Keep title formatting for pygame display
+        if data["title"]:
+            data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
+
+        # NEW: Calculate and store the total price for threshold filtering
+        second_price = self.extract_price(data.get("second_price", "0"))
+        postage = self.extract_price(data.get("postage", "0"))
+        total_price = second_price + postage
+        
+        # Store the calculated price for use in object detection
+        self.current_listing_price_float = total_price
+        
+        # DEBUG: Print final scraped data for seller_reviews and username
+        if print_debug:
+            print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
+            print(f"DEBUG: Final scraped username: '{data.get('username')}'")
+            print(f"DEBUG: Total price calculated: £{total_price:.2f} (stored for threshold filtering)")
+            
+        return data
+
+    def clear_download_folder(self):
+        if os.path.exists(DOWNLOAD_ROOT):
+            shutil.rmtree(DOWNLOAD_ROOT)
+        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
+
+    # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
+
+    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
+        """
+        Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
+        FIXED: Now passes username to bookmark_driver
+        MODIFIED: Separate logic for pygame and website display - pygame shows all suitable listings with bookmark failure notices
+        UPDATED: Now includes time tracking when items are added to pygame
+        """
+        global suitable_listings, current_listing_index, recent_listings
+
+        # Extract username from details
+        username = details.get("username", None)
 
         if not username or username == "Username not found":
             username = None
@@ -1082,6 +1126,20 @@
             cycles_since_restart += 1  # NEW: Increment counter after each cycle
             is_first_refresh = False
 
+    # Add this somewhere in your main code to check thread status
+    def debug_bookmark_threads(self):
+        print("🔍 DEBUG: Checking bookmark threads...")
+        all_threads = threading.enumerate()
+        for thread in all_threads:
+            if "Bookmark" in thread.name:
+                print(f"  Thread: {thread.name} - Alive: {thread.is_alive()} - ID: {thread.ident}")
+        
+        bookmark_threads = [t for t in all_threads if t.name == "Bookmark-Queue-Processor"]
+        if not bookmark_threads:
+            print("❌ DEBUG: No bookmark processor thread found!")
+        else:
+            print(f"✅ DEBUG: Bookmark processor thread exists and is {'alive' if bookmark_threads[0].is_alive() else 'dead'}")
+
     def start_cloudflare_tunnel(self, port=5000):
         """
         Starts a Cloudflare Tunnel using the cloudflared binary.
@@ -1162,6 +1220,10 @@
                 google_button.click()
                 print(f"✅ LOGIN: Google login initiated for {driver_name}")
                 
+                if self._check_for_session_blocked(driver, driver_name, 10):
+                    print(f"🔄 RESTART: Session blocked detected, restarting {driver_name}")
+                    return False  # This will trigger your existing retry logic
+                
             else:
                 print(f"🔐 LOGIN: Using email login for {driver_name}")
                 
@@ -1185,11 +1247,17 @@
                 )
                 continue_button.click()
                 print(f"✅ LOGIN: Email login initiated for {driver_name}")
-            
+
+                if self._check_for_session_blocked(driver, driver_name, 10):
+                    print(f"🔄 RESTART: Session blocked detected, restarting {driver_name}")
+                    return False
+                
             # Wait for login to complete
             time.sleep(random.uniform(3, 5))
             print(f"✅ LOGIN: Login process completed for {driver_name}")
             return True
+            
+
             
         except Exception as login_error:
             print(f"❌ LOGIN ERROR: {driver_name} login failed: {login_error}")
@@ -1548,6 +1616,7 @@
                 print(f"⚠️ CLEANUP: Error cleaning up driver {current_index + 1}: {cleanup_error}")
 
     def add_to_bookmark_queue(self, listing_url, username=None):
+
         print(f"🔍 DEBUG: bookmark_queue exists: {hasattr(self, 'bookmark_queue')}")
         print(f"🔍 DEBUG: scraping_paused exists: {hasattr(self, 'scraping_paused')}")
         print(f"🔍 DEBUG: scraping_paused is set: {self.scraping_paused.is_set() if hasattr(self, 'scraping_paused') else 'N/A'}")
@@ -1560,16 +1629,32 @@
         
         self.bookmark_queue.put((listing_url, username))
         print(f"📊 QUEUE: {self.bookmark_queue.qsize()} items in bookmark queue")
-
-        def _advance_to_next_driver(self):
-            """Advance to the next driver in the cycle"""
-            old_index = self.current_bookmark_driver_index
-            self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
+        """
+        FIXED: Add a listing to the bookmark queue with better debugging
+        """
+        print(f"➕ QUEUE: Adding {listing_url[:50]}... to bookmark queue")
+        
+        # CRITICAL CHECK: Make sure queue exists
+        if not hasattr(self, 'bookmark_queue'):
+            print("❌ QUEUE: bookmark_queue not found! This is a critical error!")
+            return
+        
+        # Add to queue
+        try:
+            self.bookmark_queue.put((listing_url, username))
+            queue_size = self.bookmark_queue.qsize()
+            print(f"📊 QUEUE: {queue_size} items in bookmark queue")
             
-            old_name = self.bookmark_driver_configs[old_index]['driver_name']
-            new_name = self.bookmark_driver_configs[self.current_bookmark_driver_index]['driver_name']
-            
-            print(f"🔄 ADVANCE: Cycled from {old_name} to {new_name}")
+            # CRITICAL DEBUG: Check if queue processor is alive
+            bookmark_threads = [t for t in threading.enumerate() if t.name == "Bookmark-Queue-Processor"]
+            if bookmark_threads:
+                thread = bookmark_threads[0]
+                print(f"🔖 QUEUE: Processor thread is {'ALIVE' if thread.is_alive() else 'DEAD'}")
+            else:
+                print("❌ QUEUE: No bookmark processor thread found!")
+                
+        except Exception as queue_error:
+            print(f"❌ QUEUE ERROR: {queue_error}")
 
     def _execute_vm_second_sequence_cycling(self, driver, listing_url, username, driver_name):
         """
@@ -2114,88 +2199,3 @@
             else:
                 self._log_step(step_log, "second_buy_button_not_found", False, "Proceeding with messages")
             
-            # Execute messages sequence (only if not monitoring)
-            if not step_log.get('monitoring_active', False):
-                return self._execute_messages_sequence(current_driver, actual_url, username, step_log)
-            else:
-                return True  # Return true if monitoring started
-                
-        except Exception as second_sequence_error:
-            self._log_step(step_log, "second_sequence_error", False, str(second_sequence_error))
-            return True  # Return True as this isn't a critical failure
-
-    def _check_processing_payment_with_monitoring(self, current_driver, step_log):
-        """Check for processing payment message and start monitoring if found"""
-        processing_element, processing_selector = self._try_selectors(
-            current_driver,
-            'processing_payment',
-            operation='find',
-            timeout=3,
-            step_log=step_log
-        )
-        
-        if processing_element:
-            element_text = processing_element.text.strip()
-            self._log_step(step_log, "processing_payment_found", True, f"Text: {element_text}")
-            print('SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
-            
-            # START MONITORING FOR "Purchase unsuccessful" - NEW FUNCTIONALITY
-            print('🔍 MONITORING: Starting "Purchase unsuccessful" detection...')
-            step_log['success'] = True
-            step_log['monitoring_active'] = True
-            
-            # Start monitoring in separate thread so other processing can continue
-            monitoring_thread = threading.Thread(
-                target=self._monitor_purchase_unsuccessful,
-                args=(current_driver, step_log)
-            )
-            monitoring_thread.daemon = True  # Don't block program exit
-            monitoring_thread.start()
-            
-            return True
-        else:
-            self._log_step(step_log, "processing_payment_not_found", False, "Processing payment message not found")
-            print('listing likely bookmarked by another')
-            return False
-
-
-    def bookmark_driver(self, listing_url, username=None):
-        """
-        MAIN bookmark driver function - FIXED to properly handle monitoring cleanup
-        """
-        
-        # Initialize step logging
-        step_log = self._initialize_step_logging()
-        
-        # Validate inputs and setup
-        if not self._validate_bookmark_inputs(listing_url, username, step_log):
-            self._log_final_bookmark_result(step_log)
-            return False
-        
-        try:
-            # Get the cycling driver
-            current_driver = self.get_next_bookmark_driver()
-            if current_driver is None:
-                self._log_step(step_log, "driver_creation_failed", False, "Could not create cycling driver")
-                self._log_final_bookmark_result(step_log)
-                return False
-            
-            self._log_step(step_log, "cycling_driver_created", True, f"Driver {step_log['driver_number']} ready")
-            
-            try:
-                # Execute the main bookmark sequences
-                success = self._execute_bookmark_sequences_with_monitoring(current_driver, listing_url, username, step_log)
-                
-                if success:
-                    step_log['success'] = True
-                    self._log_step(step_log, "bookmark_function_success", True)
-                
-                self._log_final_bookmark_result(step_log)
-                return success
-                
-            except Exception as main_error:
-                self._log_step(step_log, "main_function_error", False, str(main_error))
-                self._log_final_bookmark_result(step_log)
-                return False
-                
-        finally:

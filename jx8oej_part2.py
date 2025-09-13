@@ -1614,7 +1614,28 @@ class VintedScraper:
         self.shutdown_event = threading.Event()
 
 
+    def _advance_to_next_driver(self):
+        """
+        NEW METHOD: Advance to the next driver in the cycling system
+        """
+        print(f"🔄 ADVANCE: Moving from driver {self.current_bookmark_driver_index + 1} to next")
+        
+        # Move to next driver index (cycling from 0-4)
+        self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
+        
+        print(f"➡️ ADVANCE: Now at driver {self.current_bookmark_driver_index + 1}/5")
+        
+        # Update the current driver reference
+        if self.current_bookmark_driver_index in self.bookmark_drivers:
+            self.current_bookmark_driver = self.bookmark_drivers[self.current_bookmark_driver_index]
+            print(f"✅ ADVANCE: Current driver updated to driver {self.current_bookmark_driver_index + 1}")
+        else:
+            self.current_bookmark_driver = None
+            print(f"⚠️ ADVANCE: No driver available at index {self.current_bookmark_driver_index + 1}")
+
+
     def _initialize_bookmark_system(self):
+        import threading
         """
         FIXED: Initialize the 5-driver cycling bookmark system with better debugging
         """
@@ -2178,24 +2199,3 @@ class VintedScraper:
         try:
             # Try to access current_url to test if driver is alive
             _ = self.buying_drivers[driver_num].current_url
-            return False
-        except:
-            print(f"💀 DEAD: Driver {driver_num} is unresponsive")
-            return True
-
-    def release_driver(self, driver_num):
-        """
-        FIXED: Release a driver back to the free pool with special handling for driver 1
-        """
-        with self.driver_lock:
-            print(f"🔓 RELEASING: Buying driver {driver_num}")
-            
-            if driver_num == 1:
-                # Driver 1 is the persistent driver - keep it alive, just mark as free
-                self.driver_status[driver_num] = 'not_created'  # Allow it to be reused
-                print(f"🔄 KEPT ALIVE: Persistent buying driver (driver 1) marked as available")
-            else:
-                # For drivers 2-5, close them after use
-                if self.buying_drivers[driver_num] is not None:
-                    try:
-                        print(f"🗑️ CLOSING: Buying driver {driver_num}")

@@ -1,4 +1,89 @@
 # Continuation from line 8801
+            # Execute messages sequence (only if not monitoring)
+            if not step_log.get('monitoring_active', False):
+                return self._execute_messages_sequence(current_driver, actual_url, username, step_log)
+            else:
+                return True  # Return true if monitoring started
+                
+        except Exception as second_sequence_error:
+            self._log_step(step_log, "second_sequence_error", False, str(second_sequence_error))
+            return True  # Return True as this isn't a critical failure
+
+    def _check_processing_payment_with_monitoring(self, current_driver, step_log):
+        """Check for processing payment message and start monitoring if found"""
+        processing_element, processing_selector = self._try_selectors(
+            current_driver,
+            'processing_payment',
+            operation='find',
+            timeout=3,
+            step_log=step_log
+        )
+        
+        if processing_element:
+            element_text = processing_element.text.strip()
+            self._log_step(step_log, "processing_payment_found", True, f"Text: {element_text}")
+            print('SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+            
+            # START MONITORING FOR "Purchase unsuccessful" - NEW FUNCTIONALITY
+            print('🔍 MONITORING: Starting "Purchase unsuccessful" detection...')
+            step_log['success'] = True
+            step_log['monitoring_active'] = True
+            
+            # Start monitoring in separate thread so other processing can continue
+            monitoring_thread = threading.Thread(
+                target=self._monitor_purchase_unsuccessful,
+                args=(current_driver, step_log)
+            )
+            monitoring_thread.daemon = True  # Don't block program exit
+            monitoring_thread.start()
+            
+            return True
+        else:
+            self._log_step(step_log, "processing_payment_not_found", False, "Processing payment message not found")
+            print('listing likely bookmarked by another')
+            return False
+
+
+    def bookmark_driver(self, listing_url, username=None):
+        """
+        MAIN bookmark driver function - FIXED to properly handle monitoring cleanup
+        """
+        
+        # Initialize step logging
+        step_log = self._initialize_step_logging()
+        
+        # Validate inputs and setup
+        if not self._validate_bookmark_inputs(listing_url, username, step_log):
+            self._log_final_bookmark_result(step_log)
+            return False
+        
+        try:
+            # Get the cycling driver
+            current_driver = self.get_next_bookmark_driver()
+            if current_driver is None:
+                self._log_step(step_log, "driver_creation_failed", False, "Could not create cycling driver")
+                self._log_final_bookmark_result(step_log)
+                return False
+            
+            self._log_step(step_log, "cycling_driver_created", True, f"Driver {step_log['driver_number']} ready")
+            
+            try:
+                # Execute the main bookmark sequences
+                success = self._execute_bookmark_sequences_with_monitoring(current_driver, listing_url, username, step_log)
+                
+                if success:
+                    step_log['success'] = True
+                    self._log_step(step_log, "bookmark_function_success", True)
+                
+                self._log_final_bookmark_result(step_log)
+                return success
+                
+            except Exception as main_error:
+                self._log_step(step_log, "main_function_error", False, str(main_error))
+                self._log_final_bookmark_result(step_log)
+                return False
+                
+        finally:
             # FIXED: Only close driver if monitoring is NOT active
             if step_log.get('monitoring_active', False):
                 print(f"🔍 MONITORING: Active - driver cleanup will be handled by monitoring thread")
