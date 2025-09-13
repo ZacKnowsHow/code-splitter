@@ -1610,6 +1610,7 @@ class VintedScraper:
         # Start the bookmark system
         self._initialize_bookmark_system()
         self.current_bookmark_driver = None
+        self.available_ready_drivers = 0  # Track count of ready drivers
         self.shutdown_event = threading.Event()
 
 
@@ -1643,9 +1644,27 @@ class VintedScraper:
                 except Empty:
                     continue
                 
-                # PAUSE SCRAPING while processing bookmark
-                print("⏸️ PAUSE: Pausing main scraping during bookmark process")
-                self.scraping_paused.clear()
+                # FIXED: Check if we have any ready drivers BEFORE pausing scraping
+                ready_driver_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
+                
+                if ready_driver_count == 0:
+                    print("⏸️ NO DRIVERS: No ready bookmark drivers available - PAUSING SCRAPING")
+                    self.scraping_paused.clear()  # Pause scraping
+                    
+                    # Wait until we have at least 1 ready driver
+                    while True:
+                        time.sleep(1)
+                        ready_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
+                        if ready_count > 0:
+                            print(f"✅ DRIVER READY: {ready_count} drivers ready - RESUMING SCRAPING")
+                            self.scraping_paused.set()  # Resume scraping
+                            break
+                        print(f"⏳ WAITING: Still no ready drivers ({ready_count}/5 ready)")
+                else:
+                    print(f"✅ DRIVERS AVAILABLE: {ready_driver_count} ready drivers - no need to pause")
+                    # STILL pause briefly to prevent overwhelming
+                    print("⏸️ PAUSE: Brief pause for bookmark processing")
+                    self.scraping_paused.clear()
                 
                 try:
                     # Process the bookmark request
@@ -1660,7 +1679,7 @@ class VintedScraper:
                     print("▶️ RESUME: Resuming main scraping after bookmark")
                     self.scraping_paused.set()
                     self.bookmark_queue.task_done()
-                
+                    
             except Exception as processor_error:
                 print(f"❌ PROCESSOR ERROR: {processor_error}")
                 # Make sure to resume scraping even if there's an error
@@ -1668,35 +1687,42 @@ class VintedScraper:
                 continue
 
     def _process_bookmark_with_cycling(self, listing_url, username):
-        """
-        FIXED: Process bookmark using the cycling driver system with proper timing
-        """
+        """Process bookmark using the cycling driver system with proper timing"""
         with self.bookmark_system_lock:
             print(f"🔖 CYCLE: Processing bookmark with driver {self.current_bookmark_driver_index + 1}/5")
             
-            # Get the current driver (should be ready)
-            current_driver = self._get_ready_bookmark_driver()
+            # FIXED: Wait for a ready driver instead of just checking once
+            max_wait_attempts = 30  # 30 seconds max wait
+            wait_attempt = 0
+            current_driver = None
+            
+            while current_driver is None and wait_attempt < max_wait_attempts:
+                current_driver = self._get_ready_bookmark_driver()
+                
+                if current_driver is None:
+                    print(f"⏳ CYCLE: No ready driver, waiting... (attempt {wait_attempt + 1})")
+                    time.sleep(1)
+                    wait_attempt += 1
+                    continue
             
             if current_driver is None:
-                print(f"❌ CYCLE: No ready driver available")
+                print(f"❌ CYCLE: No ready driver available after {max_wait_attempts} seconds")
                 return False
             
             # Mark current driver as busy
             self.bookmark_driver_status[self.current_bookmark_driver_index] = 'busy'
-            
             print(f"🔖 EXEC: Executing bookmark with driver {self.current_bookmark_driver_index + 1}")
-            
+        
         # Execute bookmark outside the lock to prevent blocking
         success = self._execute_enhanced_bookmark(current_driver, listing_url, username, self.current_bookmark_driver_index)
         
         with self.bookmark_system_lock:
-            # FIXED: Only advance and clean up if monitoring is NOT active
             if success:
                 print(f"✅ CYCLE: Driver {self.current_bookmark_driver_index + 1} completed successfully")
             else:
                 print(f"❌ CYCLE: Driver {self.current_bookmark_driver_index + 1} failed")
             
-            # FIXED: Check if monitoring is active for this driver before cleanup
+            # Check if monitoring is active for this driver before cleanup
             if not self._is_monitoring_active_for_current_driver():
                 # No monitoring active - safe to clean up and advance
                 self._cleanup_current_driver()
@@ -1708,6 +1734,11 @@ class VintedScraper:
                 print(f"🔍 CYCLE: Monitoring active - cleanup will be handled by monitoring thread")
                 
         return success
+
+    def _get_ready_driver_count(self):
+        """Get count of ready drivers"""
+        return sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
+
 
     def _is_monitoring_active_for_current_driver(self):
         """Check if monitoring is currently active for the current driver"""
@@ -1938,6 +1969,8 @@ class VintedScraper:
             with self.bookmark_system_lock:
                 self.bookmark_drivers[driver_index] = fresh_driver
                 self.bookmark_driver_status[driver_index] = 'ready'
+                ready_count = self._get_ready_driver_count()  # ADD THIS LINE
+                print(f"📊 DRIVER COUNT: Now have {ready_count}/5 ready drivers")  # ADD THIS LINE
                 
             print(f"✅ PREPARE: {driver_name} is now ready for bookmarking")
             
@@ -2166,36 +2199,3 @@ class VintedScraper:
         
         # Start the timer thread
         timer_thread = threading.Thread(target=stopwatch_timer)
-        timer_thread.daemon = True
-        timer_thread.start()
-        
-        # Store reference to track active timers
-        self.bookmark_timers[listing_url] = timer_thread
-
-    def cleanup_bookmark_timers(self):
-        """
-        Clean up any remaining bookmark timers when shutting down
-        """
-        print(f"🧹 CLEANUP: Stopping {len(self.bookmark_timers)} active bookmark timers")
-        self.bookmark_timers.clear()  # Timer threads are daemon threads, so they'll stop automatically
-
-    def run_pygame_window(self):
-        global LOCK_POSITION, current_listing_index, suitable_listings
-        screen, clock = self.initialize_pygame_window()
-        rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
-            pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
-            pygame.Rect(0, 180, 240, 180), pygame.Rect(240, 180, 240, 180), pygame.Rect(480, 180, 320, 180),
-            pygame.Rect(0, 360, 240, 240), pygame.Rect(240, 360, 240, 120), pygame.Rect(240, 480, 240, 120),
-            pygame.Rect(480, 360, 160, 240), pygame.Rect(640, 360, 160, 240)
-        ]
-        fonts = {
-            'number': pygame.font.Font(None, 24),
-            'price': pygame.font.Font(None, 36),
-            'title': pygame.font.Font(None, 40),
-            'description': pygame.font.Font(None, 28),
-            'join_date': pygame.font.Font(None, 28),
-            'revenue': pygame.font.Font(None, 36),
-            'profit': pygame.font.Font(None, 36),
-            'items': pygame.font.Font(None, 30),
-            'click': pygame.font.Font(None, 28),
-            'suitability': pygame.font.Font(None, 28),

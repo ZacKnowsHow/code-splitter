@@ -1,4 +1,37 @@
 # Continuation from line 4401
+        timer_thread.daemon = True
+        timer_thread.start()
+        
+        # Store reference to track active timers
+        self.bookmark_timers[listing_url] = timer_thread
+
+    def cleanup_bookmark_timers(self):
+        """
+        Clean up any remaining bookmark timers when shutting down
+        """
+        print(f"🧹 CLEANUP: Stopping {len(self.bookmark_timers)} active bookmark timers")
+        self.bookmark_timers.clear()  # Timer threads are daemon threads, so they'll stop automatically
+
+    def run_pygame_window(self):
+        global LOCK_POSITION, current_listing_index, suitable_listings
+        screen, clock = self.initialize_pygame_window()
+        rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
+            pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
+            pygame.Rect(0, 180, 240, 180), pygame.Rect(240, 180, 240, 180), pygame.Rect(480, 180, 320, 180),
+            pygame.Rect(0, 360, 240, 240), pygame.Rect(240, 360, 240, 120), pygame.Rect(240, 480, 240, 120),
+            pygame.Rect(480, 360, 160, 240), pygame.Rect(640, 360, 160, 240)
+        ]
+        fonts = {
+            'number': pygame.font.Font(None, 24),
+            'price': pygame.font.Font(None, 36),
+            'title': pygame.font.Font(None, 40),
+            'description': pygame.font.Font(None, 28),
+            'join_date': pygame.font.Font(None, 28),
+            'revenue': pygame.font.Font(None, 36),
+            'profit': pygame.font.Font(None, 36),
+            'items': pygame.font.Font(None, 30),
+            'click': pygame.font.Font(None, 28),
+            'suitability': pygame.font.Font(None, 28),
             'reviews': pygame.font.Font(None, 28),
             'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
         }
@@ -2166,36 +2199,3 @@
                 detected_objects[item] = 1 if item == detected_console else 0
 
         # Apply OLED title conversion
-        detected_objects = self.handle_oled_title_conversion_vinted(
-            detected_objects,
-            details.get("title", ""),
-            details.get("description", "")
-        )
-
-        # Calculate revenue with enhanced logic
-        total_revenue, expected_profit, profit_percentage, display_objects = self.calculate_vinted_revenue(
-            detected_objects, total_price, details.get("title", ""), details.get("description", "")
-        )
-
-        # Check profit suitability
-        profit_suitability = self.check_vinted_profit_suitability(total_price, profit_percentage)
-
-        # Game count suitability check (same as Facebook) - but don't return early if showing all
-        game_classes = [
-            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
-            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
-            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
-            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
-            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
-            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
-            'sword_p', 'tears_z', 'violet_p'
-        ]
-        game_count = sum(detected_objects.get(game, 0) for game in game_classes)
-        non_game_classes = [cls for cls in detected_objects.keys() if cls not in game_classes and detected_objects.get(cls, 0) > 0]
-
-        # Build comprehensive suitability reason
-        unsuitability_reasons = []
-
-        # Add basic suitability issues
-        if "Unsuitable" in suitability_result:
-            unsuitability_reasons.append(suitability_result.replace("Unsuitable: ", ""))

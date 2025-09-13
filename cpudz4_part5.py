@@ -1,4 +1,37 @@
 # Continuation from line 8801
+        
+        try:
+            while True:
+                elapsed_time = time.time() - monitoring_start_time
+                
+                # Check if we've exceeded the maximum wait time
+                if elapsed_time >= max_wait_time:
+                    print(f"⏰ TIMEOUT: Maximum wait time of {max_wait_time/60:.0f} minutes reached")
+                    print(f"⏱️ STOPWATCH: Monitoring ended after {elapsed_time/60:.2f} minutes (TIMEOUT)")
+                    break
+                
+                # Check if driver is still alive
+                try:
+                    current_driver.current_url
+                except Exception as driver_dead:
+                    print(f"💀 MONITORING: Driver died during monitoring: {driver_dead}")
+                    print(f"⏱️ STOPWATCH: Monitoring ended after {elapsed_time/60:.2f} minutes (DRIVER DIED)")
+                    break
+                
+                # Try each selector to find "Purchase unsuccessful"
+                found_unsuccessful = False
+                for selector in unsuccessful_selectors:
+                    try:
+                        element = WebDriverWait(current_driver, 1).until(
+                            EC.presence_of_element_located((By.XPATH, selector))
+                        )
+                        
+                        # Found it!
+                        end_time = time.time()
+                        total_elapsed = end_time - monitoring_start_time
+                        
+                        print(f"🎯 FOUND! 'Purchase unsuccessful' detected!")
+                        print(f"📍 ELEMENT: Found using selector: {selector}")
                         print(f"⏱️ STOPWATCH: Monitoring completed in {total_elapsed/60:.2f} minutes ({total_elapsed:.2f} seconds)")
                         print(f"🕒 TIME: Found at {time.strftime('%H:%M:%S')}")
                         
