@@ -1,4 +1,258 @@
 # Continuation from line 8801
+                        
+                except NoSuchElementException:
+                    # Pickup is selected but no "Choose a pick-up point" message
+                    print("✅ PICKUP OK: Pick-up point selected but no 'Choose a pick-up point' message - continuing normally")
+                    self._log_step(step_log, "pickup_point_ready", True)
+            
+            else:
+                # Ship to home is selected - continue normally  
+                print("✅ HOME OK: Ship to home is selected - no changes needed")
+                self._log_step(step_log, "ship_home_already_selected", True)
+            
+        except Exception as shipping_error:
+            print(f"❌ SHIPPING ERROR: Unexpected error during shipping check: {shipping_error}")
+            self._log_step(step_log, "shipping_check_error", False, str(shipping_error))
+            # Continue anyway - don't fail the entire process for shipping issues
+        
+        print("✅ SHIPPING CHECK: Validation completed - proceeding to click pay button")
+        
+        # Verify we have a valid pay button before clicking
+        if not pay_button_is_valid or not pay_button:
+            print("❌ PAY BUTTON: No valid pay button reference - cannot proceed")
+            self._log_step(step_log, "no_valid_pay_button", False)
+            return False
+        
+        # Execute the critical pay sequence with our confirmed valid pay button
+        return self._execute_critical_pay_sequence_with_button(current_driver, pay_button, step_log)
+
+    def _execute_critical_pay_sequence_with_button(self, current_driver, pay_button, step_log):
+        """Execute the critical pay sequence using the provided pay button - CANNOT be modified!"""
+        try:
+            # FORCE-click the pay button using multiple aggressive methods
+            pay_clicked = False
+            
+            # Method 1: Click the pay button directly
+            try:
+                pay_button.click()
+                self._log_step(step_log, "pay_button_click_direct", True, "Clicked pay button directly")
+                pay_clicked = True
+            except Exception as direct_error:
+                self._log_step(step_log, "pay_button_click_direct", False, str(direct_error))
+            
+            # Method 2: Click the inner span directly
+            if not pay_clicked:
+                try:
+                    pay_span = current_driver.find_element(By.XPATH, "//button[@data-testid='single-checkout-order-summary-purchase-button']//span[text()='Pay']")
+                    pay_span.click()
+                    self._log_step(step_log, "pay_button_click_span", True, "Clicked Pay span directly")
+                    pay_clicked = True
+                except Exception as span_error:
+                    self._log_step(step_log, "pay_button_click_span", False, str(span_error))
+            
+            # Method 3: Force enable button and click via JS
+            if not pay_clicked:
+                try:
+                    current_driver.execute_script("""
+                        var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
+                        if (button) {
+                            button.disabled = false;
+                            button.setAttribute('aria-disabled', 'false');
+                            button.click();
+                        }
+                    """)
+                    self._log_step(step_log, "pay_button_click_force_js", True, "Force-enabled and clicked via JS")
+                    pay_clicked = True
+                except Exception as js_error:
+                    self._log_step(step_log, "pay_button_click_force_js", False, str(js_error))
+            
+            # Method 4: Dispatch click event directly
+            if not pay_clicked:
+                try:
+                    current_driver.execute_script("""
+                        var button = document.querySelector('button[data-testid="single-checkout-order-summary-purchase-button"]');
+                        if (button) {
+                            var event = new MouseEvent('click', {
+                                view: window,
+                                bubbles: true,
+                                cancelable: true
+                            });
+                            button.dispatchEvent(event);
+                        }
+                    """)
+                    self._log_step(step_log, "pay_button_click_dispatch_event", True, "Dispatched click event directly")
+                    pay_clicked = True
+                except Exception as dispatch_error:
+                    self._log_step(step_log, "pay_button_click_dispatch_event", False, str(dispatch_error))
+            
+            if not pay_clicked:
+                self._log_step(step_log, "pay_button_click_all_failed", False, "All 4 aggressive methods failed")
+                return False
+            
+            # ⚠️ CRITICAL: Exact 0.25 second wait - DO NOT MODIFY! ⚠️
+            print("🔖 CRITICAL: Waiting exactly 0.25 seconds...")
+            time.sleep(0.25)
+            
+            # ⚠️ CRITICAL: Immediate tab close - DO NOT MODIFY! ⚠️ 
+            print("🔖 CRITICAL: Closing tab immediately...")
+            current_driver.close()
+
+            stopwatch_end = time.time()
+            elapsed = stopwatch_end - step_log['start_time']
+            print(f"⏱️ STOPWATCH: First sequence completed in {elapsed:.3f} seconds")
+                            
+            step_log['critical_sequence_completed'] = True
+            self._log_step(step_log, "critical_sequence_completed", True, "0.25s wait + tab close")
+            
+            # Switch back to main tab
+            if len(current_driver.window_handles) > 0:
+                current_driver.switch_to.window(current_driver.window_handles[0])
+                self._log_step(step_log, "return_to_main_tab", True)
+            
+            self._log_step(step_log, "first_sequence_complete", True)
+            return True
+            
+        except Exception as critical_error:
+            self._log_step(step_log, "critical_sequence_error", False, str(critical_error))
+            return False
+
+    def _execute_second_sequence_with_monitoring(self, current_driver, actual_url, username, step_log):
+        """Execute second sequence with Purchase unsuccessful monitoring"""
+        self._log_step(step_log, "second_sequence_start", True)
+        
+        try:
+            # Open new tab for second sequence
+            current_driver.execute_script("window.open('');")
+            second_tab = current_driver.window_handles[-1]
+            current_driver.switch_to.window(second_tab)
+            self._log_step(step_log, "second_tab_created", True)
+            
+            # Navigate again
+            current_driver.get(actual_url)
+            self._log_step(step_log, "second_navigation", True)
+            
+            # Look for buy button again
+            second_buy_element, second_buy_selector = self._try_selectors(
+                current_driver,
+                'buy_button',
+                operation='click',
+                timeout=15,
+                click_method='all',
+                step_log=step_log
+            )
+            
+            if second_buy_element:
+                self._log_step(step_log, "second_buy_button_clicked", True, f"Used: {second_buy_selector[:30]}...")
+                
+                # Check for processing payment success
+                success = self._check_processing_payment_with_monitoring(current_driver, step_log)
+                
+                # MODIFIED: Don't close second tab here if monitoring is active
+                if not (success and step_log.get('monitoring_active', False)):
+                    # Close second tab only if not monitoring
+                    current_driver.close()
+                    if len(current_driver.window_handles) > 0:
+                        current_driver.switch_to.window(current_driver.window_handles[0])
+                    self._log_step(step_log, "second_tab_closed", True)
+                
+                if success:
+                    return True
+            else:
+                self._log_step(step_log, "second_buy_button_not_found", False, "Proceeding with messages")
+            
+            # Execute messages sequence (only if not monitoring)
+            if not step_log.get('monitoring_active', False):
+                return self._execute_messages_sequence(current_driver, actual_url, username, step_log)
+            else:
+                return True  # Return true if monitoring started
+                
+        except Exception as second_sequence_error:
+            self._log_step(step_log, "second_sequence_error", False, str(second_sequence_error))
+            return True  # Return True as this isn't a critical failure
+
+    def _check_processing_payment_with_monitoring(self, current_driver, step_log):
+        """Check for processing payment message and start monitoring if found"""
+        processing_element, processing_selector = self._try_selectors(
+            current_driver,
+            'processing_payment',
+            operation='find',
+            timeout=3,
+            step_log=step_log
+        )
+        
+        if processing_element:
+            element_text = processing_element.text.strip()
+            self._log_step(step_log, "processing_payment_found", True, f"Text: {element_text}")
+            print('SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+            
+            # START MONITORING FOR "Purchase unsuccessful" - NEW FUNCTIONALITY
+            print('🔍 MONITORING: Starting "Purchase unsuccessful" detection...')
+            step_log['success'] = True
+            step_log['monitoring_active'] = True
+            
+            # Start monitoring in separate thread so other processing can continue
+            monitoring_thread = threading.Thread(
+                target=self._monitor_purchase_unsuccessful,
+                args=(current_driver, step_log)
+            )
+            monitoring_thread.daemon = True  # Don't block program exit
+            monitoring_thread.start()
+            
+            return True
+        else:
+            self._log_step(step_log, "processing_payment_not_found", False, "Processing payment message not found")
+            print('listing likely bookmarked by another')
+            return False
+
+
+    def bookmark_driver(self, listing_url, username=None):
+        """
+        MAIN bookmark driver function - FIXED to properly handle monitoring cleanup
+        """
+        
+        # Initialize step logging
+        step_log = self._initialize_step_logging()
+        
+        # Validate inputs and setup
+        if not self._validate_bookmark_inputs(listing_url, username, step_log):
+            self._log_final_bookmark_result(step_log)
+            return False
+        
+        try:
+            # Get the cycling driver
+            current_driver = self.get_next_bookmark_driver()
+            if current_driver is None:
+                self._log_step(step_log, "driver_creation_failed", False, "Could not create cycling driver")
+                self._log_final_bookmark_result(step_log)
+                return False
+            
+            self._log_step(step_log, "cycling_driver_created", True, f"Driver {step_log['driver_number']} ready")
+            
+            try:
+                # Execute the main bookmark sequences
+                success = self._execute_bookmark_sequences_with_monitoring(current_driver, listing_url, username, step_log)
+                
+                if success:
+                    step_log['success'] = True
+                    self._log_step(step_log, "bookmark_function_success", True)
+                
+                self._log_final_bookmark_result(step_log)
+                return success
+                
+            except Exception as main_error:
+                self._log_step(step_log, "main_function_error", False, str(main_error))
+                self._log_final_bookmark_result(step_log)
+                return False
+                
+        finally:
+            # FIXED: Only close driver if monitoring is NOT active
+            if step_log.get('monitoring_active', False):
+                print(f"🔍 MONITORING: Active - driver cleanup will be handled by monitoring thread")
+                # The monitoring thread will handle driver cleanup when it completes
+            else:
+                print(f"🗑️ CYCLING: No monitoring active - closing driver normally")
+                self.close_current_bookmark_driver()
+                print(f"🔄 CYCLING: Driver {step_log['driver_number']} processed, next will be {self.current_bookmark_driver_index + 1}/5")
 
     def cleanup_purchase_unsuccessful_monitoring(self):
         """
@@ -1184,4 +1438,4 @@ if __name__ == "__main__":
         print("VM_DRIVER_USE = False - Running main Vinted scraper")
         scraper = VintedScraper()
         globals()['vinted_scraper_instance'] = scraper
-        scraper.run()#
+        scraper.run()
