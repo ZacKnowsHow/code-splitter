@@ -1550,6 +1550,9 @@ class VintedScraper:
             'current_index': 0
         }
         
+        self.session_monitoring_threads = {}  # Track monitoring threads for each driver
+        self.session_monitoring_active = {}   # Track if monitoring is active for each driver
+    
         # Initialize all current listing variables
         current_listing_title = "No title"
         current_listing_description = "No description"
@@ -1674,6 +1677,175 @@ class VintedScraper:
         
         print("✅ INIT: 5-driver bookmark system initialized")
 
+    def _start_session_monitoring(self, driver, driver_index, driver_name):
+        """
+        Start session blocking monitoring for a specific bookmark driver
+        """
+        print(f"🛡️ SESSION MONITOR: Starting monitoring for {driver_name}")
+        
+        # Mark monitoring as active
+        self.session_monitoring_active[driver_index] = True
+        
+        # Create and start monitoring thread
+        monitor_thread = threading.Thread(
+            target=self._session_blocking_monitor_thread,
+            args=(driver, driver_index, driver_name),
+            name=f"SessionMonitor-{driver_name}",
+            daemon=True
+        )
+        
+        # Store thread reference
+        self.session_monitoring_threads[driver_index] = monitor_thread
+        
+        # Start the monitoring
+        monitor_thread.start()
+        
+        print(f"✅ SESSION MONITOR: {driver_name} monitoring thread started")
+
+    def _find_next_available_driver_slot(self):
+        """
+        Find the next available driver slot for replacement
+        """
+        for i in range(5):
+            status = self.bookmark_driver_status.get(i, 'not_created')
+            if status in ['not_created', 'error', 'session_blocked']:
+                return i
+        return None
+    
+    def _session_blocking_monitor_thread(self, driver, driver_index, driver_name):
+        """
+        Main monitoring thread that checks for session blocking
+        Runs continuously while the driver is active
+        """
+        print(f"🛡️ {driver_name}: Session monitoring thread started")
+        
+        # Session blocking detection selectors based on your document
+        blocking_selectors = [
+            # Main blocking message
+            "p.captcha__human__title",
+            
+            # Specific text indicators
+            "//p[contains(text(), 'Your session has been blocked')]",
+            "//p[contains(text(), 'unusual activity with your session')]",
+            "//p[contains(text(), 'temporarily blocked your access')]",
+            
+            # DataDome captcha indicators
+            "iframe[src*='captcha']",
+            "iframe[src*='datadome']",
+            "iframe[id*='captcha']",
+            
+            # Button elements that indicate blocking
+            "button[id='show-human-auth']",
+            "#show-human-requestId",
+            
+            # Form elements specific to the blocking page
+            "form[id='human-contact-form']",
+            "textarea[id='human-comment']",
+            
+            # Warning/error class indicators
+            ".captcha__robot__warning",
+            ".captcha__human__title"
+        ]
+        
+        try:
+            while self.session_monitoring_active.get(driver_index, False):
+                try:
+                    # Quick check if driver is still alive
+                    current_url = driver.current_url
+                    
+                    # Check each selector for blocking indicators
+                    session_blocked = False
+                    
+                    for selector in blocking_selectors:
+                        try:
+                            if selector.startswith('//'):
+                                # XPath selector
+                                element = driver.find_element(By.XPATH, selector)
+                            else:
+                                # CSS selector
+                                element = driver.find_element(By.CSS_SELECTOR, selector)
+                            
+                            if element:
+                                # Found a blocking indicator
+                                print(f"🚨 SESSION BLOCKED")
+                                print(f"🛡️ {driver_name}: Detected blocking element: {selector}")
+                                session_blocked = True
+                                break
+                                
+                        except NoSuchElementException:
+                            # Element not found - continue checking
+                            continue
+                        except Exception as selector_error:
+                            # Selector failed - continue with next one
+                            continue
+                    
+                    if session_blocked:
+                        # Session is blocked - trigger cleanup and driver cycling
+                        print(f"🛡️ {driver_name}: SESSION BLOCKED - Initiating driver cleanup")
+                        self._handle_session_blocking(driver, driver_index, driver_name)
+                        break
+                    
+                    # Wait before next check (check every 2 seconds)
+                    time.sleep(2)
+                    
+                except Exception as driver_error:
+                    # Driver is dead or unresponsive
+                    print(f"💀 {driver_name}: Driver died during session monitoring: {driver_error}")
+                    break
+            
+            print(f"🛡️ {driver_name}: Session monitoring stopped")
+            
+        except Exception as monitor_error:
+            print(f"❌ {driver_name}: Session monitoring error: {monitor_error}")
+            
+        finally:
+            # Clean up monitoring references
+            self.session_monitoring_active[driver_index] = False
+            if driver_index in self.session_monitoring_threads:
+                del self.session_monitoring_threads[driver_index]
+
+    def _handle_session_blocking(self, driver, driver_index, driver_name):
+        """
+        Handle when session blocking is detected
+        Close the driver and advance to the next one
+        """
+        print(f"🚨 BLOCKING HANDLER: {driver_name} session blocked - starting cleanup")
+        
+        try:
+            # Stop monitoring for this driver
+            self.session_monitoring_active[driver_index] = False
+            
+            # Close the blocked driver
+            print(f"🗑️ BLOCKING HANDLER: Closing blocked {driver_name}")
+            driver.quit()
+            
+            # Remove from active drivers
+            if driver_index in self.bookmark_drivers:
+                del self.bookmark_drivers[driver_index]
+            
+            # Mark as blocked/error state
+            self.bookmark_driver_status[driver_index] = 'session_blocked'
+            
+            print(f"✅ BLOCKING HANDLER: {driver_name} cleaned up due to session blocking")
+            
+            # If this was the current driver, advance to next
+            if driver_index == self.current_bookmark_driver_index:
+                print(f"🔄 BLOCKING HANDLER: Advancing from blocked current driver")
+                
+                with self.bookmark_system_lock:
+                    self._advance_to_next_driver()
+                    
+                    # Start preparing a replacement driver
+                    replacement_index = self._find_next_available_driver_slot()
+                    if replacement_index is not None:
+                        self._prepare_next_driver_async(replacement_index)
+                        print(f"🔧 BLOCKING HANDLER: Started preparing replacement driver {replacement_index + 1}")
+            
+            print(f"🔄 BLOCKING HANDLER: Session blocking handled for {driver_name}")
+            
+        except Exception as cleanup_error:
+            print(f"❌ BLOCKING HANDLER: Error during cleanup: {cleanup_error}")
+            
     def _bookmark_queue_processor(self):
         """Main queue processor that handles bookmark requests"""
         print("🔖 PROCESSOR: Bookmark queue processor started")
@@ -2021,181 +2193,9 @@ class VintedScraper:
             print(f"❌ PREPARE ERROR: {driver_name} preparation failed: {prepare_error}")
             self.bookmark_driver_status[driver_index] = 'error'
 
-    def _create_vm_bookmark_driver(self, config, driver_index):
-        """Create a bookmark driver connected to the VM"""
-        vm_ip_address = "192.168.56.101"  # Your VM IP
+    def cleanup_all_session_monitoring(self):
+        """
+        Clean up all session monitoring threads when program exits
+        """
+        print("🧹 SESSION CLEANUP: Stopping all session monitoring threads...")
         
-        try:
-            chrome_options = ChromeOptions()
-            chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
-            chrome_options.add_argument(f"--profile-directory={config['profile_directory']}")
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
-            chrome_options.add_argument('--force-device-scale-factor=1')
-            chrome_options.add_argument('--high-dpi-support=1')
-            chrome_options.add_argument(f'--remote-debugging-port={9230 + driver_index}')  # Unique port for each driver
-            chrome_options.add_argument('--remote-allow-origins=*')
-            chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--disable-extensions')
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--disable-web-security')
-            chrome_options.add_argument('--allow-running-insecure-content')
-            
-            # Create driver connection to VM
-            driver = webdriver.Remote(
-                command_executor=f'http://{vm_ip_address}:4444',
-                options=chrome_options
-            )
-            
-            # Apply stealth modifications
-            stealth_script = """
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-            window.chrome = {runtime: {}};
-            Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
-            """
-            driver.execute_script(stealth_script)
-            
-            print(f"✅ CREATE: Driver {driver_index + 1} connected to VM successfully")
-            return driver
-            
-        except Exception as e:
-            print(f"❌ CREATE: Failed to create VM driver {driver_index + 1}: {e}")
-            return None
-
-    def _handle_cookie_consent(self, driver, driver_name):
-        """Handle cookie consent for the driver"""
-        try:
-            cookie_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler"))
-            )
-            cookie_button.click()
-            print(f"🍪 COOKIES: Accepted for {driver_name}")
-            time.sleep(random.uniform(1, 2))
-        except TimeoutException:
-            print(f"🍪 COOKIES: No consent dialog for {driver_name}")
-
-    def cleanup_all_bookmark_threads(self):
-        """
-        Clean up all bookmark driver threads when program exits
-        """
-        print("🧹 CLEANUP: Stopping all bookmark driver threads...")
-        
-        active_threads = []
-        for driver_index, thread in self.bookmark_driver_threads.items():
-            if thread and thread.is_alive():
-                active_threads.append((driver_index + 1, thread))
-        
-        if active_threads:
-            print(f"🧹 CLEANUP: Found {len(active_threads)} active bookmark threads")
-            
-            # Give threads 10 seconds to finish naturally
-            print("⏳ CLEANUP: Waiting 10 seconds for threads to complete...")
-            for driver_num, thread in active_threads:
-                thread.join(timeout=10)
-                if thread.is_alive():
-                    print(f"⚠️ CLEANUP: BookmarkDriver-{driver_num} still running after timeout")
-                else:
-                    print(f"✅ CLEANUP: BookmarkDriver-{driver_num} completed")
-        
-        print("✅ CLEANUP: Bookmark thread cleanup completed")
-            
-
-    def get_available_driver(self):
-        """
-        FIXED: Find and reserve the first available driver with proper initialization
-        Driver 1 uses the persistent_buying_driver, drivers 2-5 are created on demand
-        """
-        with self.driver_lock:
-            for driver_num in range(1, 6):  # Check drivers 1-5
-                # Skip drivers that are currently busy
-                if self.driver_status[driver_num] == 'busy':
-                    continue
-                    
-                # Reserve this driver slot
-                self.driver_status[driver_num] = 'busy'
-                
-                # SPECIAL HANDLING FOR DRIVER 1 - use persistent_buying_driver
-                if driver_num == 1:
-                    print(f"🚗 DRIVER 1: Using persistent buying driver")
-                    
-                    # Check if persistent driver exists and is alive
-                    if self.persistent_buying_driver is None or self.is_persistent_driver_dead():
-                        print(f"🚗 DRIVER 1: Persistent driver is dead, recreating...")
-                        if not self.setup_persistent_buying_driver():
-                            print(f"❌ DRIVER 1: Failed to recreate persistent driver")
-                            self.driver_status[driver_num] = 'not_created'
-                            continue
-                    
-                    print(f"✅ RESERVED: Persistent buying driver (driver 1)")
-                    return driver_num, self.persistent_buying_driver
-                    
-                # For drivers 2-5, create on demand as before
-                else:
-                    if self.buying_drivers[driver_num] is None or self.is_driver_dead(driver_num):
-                        print(f"🚗 CREATING: Buying driver {driver_num}")
-                        new_driver = self.setup_buying_driver(driver_num)
-                        
-                        if new_driver is None:
-                            print(f"❌ FAILED: Could not create buying driver {driver_num}")
-                            self.driver_status[driver_num] = 'not_created'
-                            continue
-                            
-                        self.buying_drivers[driver_num] = new_driver
-                        print(f"✅ CREATED: Buying driver {driver_num} successfully")
-                    
-                    print(f"✅ RESERVED: Buying driver {driver_num}")
-                    return driver_num, self.buying_drivers[driver_num]
-            
-            print("❌ ERROR: All 5 buying drivers are currently busy")
-            return None, None
-    
-    def is_persistent_driver_dead(self):
-        """
-        Check if the persistent buying driver is dead/unresponsive
-        """
-        if self.persistent_buying_driver is None:
-            return True
-            
-        try:
-            # Try to access current_url to test if driver is alive
-            _ = self.persistent_buying_driver.current_url
-            return False
-        except:
-            print(f"💀 DEAD: Persistent buying driver is unresponsive")
-            return True
-
-    def is_driver_dead(self, driver_num):
-        """
-        Check if a driver is dead/unresponsive
-        """
-        if self.buying_drivers[driver_num] is None:
-            return True
-            
-        try:
-            # Try to access current_url to test if driver is alive
-            _ = self.buying_drivers[driver_num].current_url
-            return False
-        except:
-            print(f"💀 DEAD: Driver {driver_num} is unresponsive")
-            return True
-
-    def release_driver(self, driver_num):
-        """
-        FIXED: Release a driver back to the free pool with special handling for driver 1
-        """
-        with self.driver_lock:
-            print(f"🔓 RELEASING: Buying driver {driver_num}")
-            
-            if driver_num == 1:
-                # Driver 1 is the persistent driver - keep it alive, just mark as free
-                self.driver_status[driver_num] = 'not_created'  # Allow it to be reused
-                print(f"🔄 KEPT ALIVE: Persistent buying driver (driver 1) marked as available")
-            else:
-                # For drivers 2-5, close them after use
-                if self.buying_drivers[driver_num] is not None:
-                    try:
