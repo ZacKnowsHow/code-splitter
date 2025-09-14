@@ -1,4 +1,30 @@
 # Continuation from line 4401
+            if captcha_result == "no_captcha":
+                print(f"✅ PREPARE: {driver_name} ready - no captcha needed")
+            elif captcha_result == True:
+                print(f"🎧 PREPARE: {driver_name} captcha solved")
+            else:
+                print(f"⚠️ PREPARE: {driver_name} captcha handling failed, continuing anyway")
+            
+            # STEP 8: Store the driver and mark as ready
+            with self.bookmark_system_lock:
+                self.bookmark_drivers[driver_index] = fresh_driver
+                self.bookmark_driver_status[driver_index] = 'ready'
+                ready_count = self._get_ready_driver_count()  # ADD THIS LINE
+                print(f"📊 DRIVER COUNT: Now have {ready_count}/5 ready drivers")  # ADD THIS LINE
+                
+            print(f"✅ PREPARE: {driver_name} is now ready for bookmarking")
+            
+        except Exception as prepare_error:
+            print(f"❌ PREPARE ERROR: {driver_name} preparation failed: {prepare_error}")
+            self.bookmark_driver_status[driver_index] = 'error'
+
+    def cleanup_all_session_monitoring(self):
+        """
+        Clean up all session monitoring threads when program exits
+        """
+        print("🧹 SESSION CLEANUP: Stopping all session monitoring threads...")
+        
         # Stop all active monitoring
         for driver_index in list(self.session_monitoring_active.keys()):
             self.session_monitoring_active[driver_index] = False
@@ -2173,29 +2199,3 @@
                 detected_objects['comfort_h'] = 0
                 
             if selected_item in ['switch_in_tv', 'switch_box']:
-                detected_objects['tv_black'] = 0
-                
-            if selected_item in ['oled_in_tv', 'oled_box']:
-                detected_objects['tv_white'] = 0
-        
-        return detected_objects
-
-    def handle_oled_title_conversion_vinted(self, detected_objects, listing_title, listing_description):
-        """
-        Handle OLED title conversion logic (ported from Facebook)
-        """
-        listing_title_lower = listing_title.lower()
-        listing_description_lower = listing_description.lower()
-        
-        if (('oled' in listing_title_lower) or ('oled' in listing_description_lower)) and \
-        'not oled' not in listing_title_lower and 'not oled' not in listing_description_lower:
-            
-            for old, new in [('switch', 'oled'), ('switch_in_tv', 'oled_in_tv'), ('switch_box', 'oled_box')]:
-                if detected_objects.get(old, 0) > 0:
-                    detected_objects[old] = 0
-                    detected_objects[new] = 1
-        
-        return detected_objects
-    
-    def check_vinted_listing_suitability(self, listing_info):
-        """

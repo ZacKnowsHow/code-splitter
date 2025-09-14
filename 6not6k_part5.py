@@ -1,4 +1,56 @@
 # Continuation from line 8801
+                        ship_home_element.click()
+                        print("🏠 SWITCHED: Successfully clicked 'Ship to home'")
+                        self._log_step(step_log, "switched_to_ship_home", True)
+                        
+                        # CRITICAL: The previous pay button reference is now INVALID
+                        pay_button_is_valid = False
+                        print("⚠️ PAY BUTTON: Previous reference invalidated by shipping change")
+                        
+                        # Wait 0.3 seconds as specifically requested
+                        time.sleep(0.3)
+                        print("⏳ WAITED: 0.3 seconds after switching to Ship to home")
+                        
+                        # NOW search for pay button again
+                        print("🔍 PAY BUTTON: Searching again after shipping change...")
+                        
+                        pay_button_found_again = False
+                        max_retry_attempts = 10  # 10 attempts * 0.5s = 5 seconds max
+                        retry_attempt = 0
+                        
+                        while not pay_button_found_again and retry_attempt < max_retry_attempts:
+                            retry_attempt += 1
+                            
+                            pay_element_new, pay_sel_new = self._try_selectors(
+                                current_driver,
+                                'pay_button',
+                                operation='find',
+                                timeout=0.5,
+                                step_log=step_log
+                            )
+                            
+                            if pay_element_new:
+                                pay_button = pay_element_new
+                                pay_selector = pay_sel_new
+                                pay_button_is_valid = True
+                                pay_button_found_again = True
+                                print(f"✅ PAY BUTTON: Found again after shipping change (attempt {retry_attempt})")
+                                self._log_step(step_log, "pay_button_found_after_shipping_change", True)
+                                break
+                            
+                            time.sleep(0.5)
+                        
+                        if not pay_button_found_again:
+                            print("❌ PAY BUTTON: Could not find pay button after shipping change")
+                            self._log_step(step_log, "pay_button_not_found_after_shipping", False)
+                            return False
+                            
+                    except NoSuchElementException:
+                        print("❌ SWITCH ERROR: Could not find 'Ship to home' button")
+                        self._log_step(step_log, "ship_home_button_not_found", False)
+                    except Exception as switch_error:
+                        print(f"❌ SWITCH ERROR: Could not click 'Ship to home': {switch_error}")
+                        self._log_step(step_log, "switch_to_home_failed", False, str(switch_error))
                         
                 except NoSuchElementException:
                     # Pickup is selected but no "Choose a pick-up point" message
