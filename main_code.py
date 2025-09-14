@@ -3860,8 +3860,14 @@ class VintedScraper:
 
 
     def _initialize_bookmark_system(self):
-        """Initialize the 5-driver cycling bookmark system"""
+        """
+        FIXED: Initialize the 5-driver cycling bookmark system with proper order tracking
+        """
         print("🔖 INIT: Starting 5-driver cycling bookmark system")
+        
+        # FIXED: Initialize current driver index to 0 (driver 1)
+        self.current_bookmark_driver_index = 0
+        print(f"🔖 INIT: Starting with driver {self.current_bookmark_driver_index + 1}/5")
         
         # Start the bookmark queue processor in a separate thread
         bookmark_processor_thread = threading.Thread(
@@ -3871,10 +3877,12 @@ class VintedScraper:
         )
         bookmark_processor_thread.start()
         
-        # Prepare the first driver immediately
-        self._prepare_next_driver_async(0)
+        # FIXED: Prepare driver 1 first (index 0)
+        print(f"🔧 INIT: Preparing initial driver {self.current_bookmark_driver_index + 1}")
+        self._prepare_next_driver_async(self.current_bookmark_driver_index)
         
         print("✅ INIT: 5-driver bookmark system initialized")
+
 
     def _start_session_monitoring(self, driver, driver_index, driver_name):
         """
@@ -4061,6 +4069,8 @@ class VintedScraper:
                 # FIXED: Check if we have any ready drivers BEFORE pausing scraping
                 ready_driver_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
                 
+                self.debug_driver_status()
+
                 if ready_driver_count == 0:
                     print("⏸️ NO DRIVERS: No ready bookmark drivers available - PAUSING SCRAPING")
                     self.scraping_paused.clear()  # Pause scraping
@@ -4101,26 +4111,41 @@ class VintedScraper:
                 continue
 
     def _process_bookmark_with_cycling(self, listing_url, username):
-        """Process bookmark using the cycling driver system with proper timing"""
+        """
+        FIXED: Process bookmark using the cycling driver system with proper sequential order
+        """
         with self.bookmark_system_lock:
             print(f"🔖 CYCLE: Processing bookmark with driver {self.current_bookmark_driver_index + 1}/5")
             
-            # FIXED: Wait for a ready driver instead of just checking once
+            # CRITICAL FIX: If current driver is not ready, prepare it first
+            if self.bookmark_driver_status[self.current_bookmark_driver_index] != 'ready':
+                current_status = self.bookmark_driver_status.get(self.current_bookmark_driver_index, 'unknown')
+                print(f"🔧 CYCLE: Driver {self.current_bookmark_driver_index + 1} not ready (status: {current_status})")
+                print(f"🔧 CYCLE: Preparing driver {self.current_bookmark_driver_index + 1} immediately")
+                
+                # Prepare the current driver synchronously
+                self._prepare_driver(self.current_bookmark_driver_index)
+            
+            # Wait for current driver to be ready
             max_wait_attempts = 30  # 30 seconds max wait
             wait_attempt = 0
             current_driver = None
             
             while current_driver is None and wait_attempt < max_wait_attempts:
-                current_driver = self._get_ready_bookmark_driver()
-                
-                if current_driver is None:
-                    print(f"⏳ CYCLE: No ready driver, waiting... (attempt {wait_attempt + 1})")
+                if (self.current_bookmark_driver_index in self.bookmark_drivers and 
+                    self.bookmark_driver_status[self.current_bookmark_driver_index] == 'ready'):
+                    current_driver = self.bookmark_drivers[self.current_bookmark_driver_index]
+                    print(f"✅ CYCLE: Current driver {self.current_bookmark_driver_index + 1} is ready")
+                    break
+                else:
+                    current_status = self.bookmark_driver_status.get(self.current_bookmark_driver_index, 'unknown')
+                    print(f"⏳ CYCLE: Driver {self.current_bookmark_driver_index + 1} not ready (status: {current_status}), waiting...")
                     time.sleep(1)
                     wait_attempt += 1
                     continue
             
             if current_driver is None:
-                print(f"❌ CYCLE: No ready driver available after {max_wait_attempts} seconds")
+                print(f"❌ CYCLE: Driver {self.current_bookmark_driver_index + 1} not available after {max_wait_attempts} seconds")
                 return False
             
             # Mark current driver as busy
@@ -4136,17 +4161,18 @@ class VintedScraper:
             else:
                 print(f"❌ CYCLE: Driver {self.current_bookmark_driver_index + 1} failed")
             
-            # Check if monitoring is active for this driver before cleanup
-            if not self._is_monitoring_active_for_current_driver():
-                # No monitoring active - safe to clean up and advance
-                self._cleanup_current_driver()
-                self._advance_to_next_driver()
-                # Start preparing the next driver now
-                next_driver_index = (self.current_bookmark_driver_index + 1) % 5
-                self._prepare_next_driver_async(next_driver_index)
-            else:
-                print(f"🔍 CYCLE: Monitoring active - cleanup will be handled by monitoring thread")
-                
+            # Clean up current driver
+            self._cleanup_current_driver()
+            
+            # Advance to next driver
+            print(f"🔄 ADVANCING: From driver {self.current_bookmark_driver_index + 1} to next")
+            self._advance_to_next_driver()
+            
+            # CRITICAL FIX: Prepare the NEW current driver (not a future driver)
+            if self.bookmark_driver_status[self.current_bookmark_driver_index] == 'not_created':
+                print(f"🔧 PREP: Starting preparation of NEW current driver {self.current_bookmark_driver_index + 1}")
+                self._prepare_next_driver_async(self.current_bookmark_driver_index)
+                    
         return success
 
     def _get_ready_driver_count(self):
@@ -8407,14 +8433,19 @@ class VintedScraper:
         print(f"📊 QUEUE: {self.bookmark_queue.qsize()} items in bookmark queue")
 
     def _advance_to_next_driver(self):
-        """Advance to the next driver in the cycle"""
+        """
+        FIXED: Advance to the next driver in the cycle with proper sequential ordering
+        """
         old_index = self.current_bookmark_driver_index
+        
+        # CRITICAL FIX: Ensure we always increment sequentially
         self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
         
         old_name = self.bookmark_driver_configs[old_index]['driver_name']
         new_name = self.bookmark_driver_configs[self.current_bookmark_driver_index]['driver_name']
         
-        print(f"🔄 ADVANCE: Cycled from {old_name} to {new_name}")
+        print(f"🔄 ADVANCE: Cycled from {old_name} (index {old_index}) to {new_name} (index {self.current_bookmark_driver_index})")
+
 
     def _execute_vm_second_sequence_cycling(self, driver, listing_url, username, driver_name):
         """
@@ -8485,6 +8516,27 @@ class VintedScraper:
             print(f"❌ {driver_name}: Second sequence error: {second_sequence_error}")
             return False
 
+
+    def debug_driver_status(self):
+        """
+        Debug helper to show current driver status
+        """
+        print("=" * 50)
+        print("DRIVER STATUS DEBUG")
+        print("=" * 50)
+        print(f"Current driver index: {self.current_bookmark_driver_index} (Driver {self.current_bookmark_driver_index + 1})")
+        
+        for i in range(5):
+            driver_name = self.bookmark_driver_configs[i]['driver_name']
+            status = self.bookmark_driver_status.get(i, 'unknown')
+            in_drivers = i in self.bookmark_drivers
+            
+            marker = ">> " if i == self.current_bookmark_driver_index else "   "
+            print(f"{marker}Driver {i+1} ({driver_name}): {status} (exists: {in_drivers})")
+        
+        ready_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
+        print(f"Total ready drivers: {ready_count}/5")
+        print("=" * 50)
 
     def cleanup_all_bookmark_drivers(self):
         """Clean up all bookmark drivers when program exits"""
