@@ -1,7 +1,4 @@
 # Continuation from line 8801
-                        ship_home_element.click()
-                        print("🏠 SWITCHED: Successfully clicked 'Ship to home'")
-                        self._log_step(step_log, "switched_to_ship_home", True)
                         
                         # CRITICAL: The previous pay button reference is now INVALID
                         pay_button_is_valid = False
