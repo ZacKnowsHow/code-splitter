@@ -1,9 +1,4 @@
 # Continuation from line 4401
-            if captcha_result == "no_captcha":
-                print(f"✅ PREPARE: {driver_name} ready - no captcha needed")
-            elif captcha_result == True:
-                print(f"🎧 PREPARE: {driver_name} captcha solved")
-            else:
                 print(f"⚠️ PREPARE: {driver_name} captcha handling failed, continuing anyway")
             
             # STEP 8: Store the driver and mark as ready
@@ -2199,3 +2194,8 @@
                 detected_objects['comfort_h'] = 0
                 
             if selected_item in ['switch_in_tv', 'switch_box']:
+                detected_objects['tv_black'] = 0
+                
+            if selected_item in ['oled_in_tv', 'oled_box']:
+                detected_objects['tv_white'] = 0
+        

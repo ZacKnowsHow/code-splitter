@@ -1,9 +1,4 @@
 # Continuation from line 6601
-                detected_objects['tv_black'] = 0
-                
-            if selected_item in ['oled_in_tv', 'oled_box']:
-                detected_objects['tv_white'] = 0
-        
         return detected_objects
 
     def handle_oled_title_conversion_vinted(self, detected_objects, listing_title, listing_description):
@@ -1886,19 +1881,21 @@
                 # CRITICAL: Set monitoring flag BEFORE starting monitoring
                 self.current_driver_monitoring_active = True
                 
-                # FIXED: NOW is the time to prepare the next driver (monitoring about to start)
-                print(f"🔧 TIMING: Monitoring about to start - preparing next driver now")
+                # FIXED: Prepare the next driver in sequence AFTER monitoring starts
                 with self.bookmark_system_lock:
-                    # Clean up current driver slot and advance
-                    self._cleanup_current_driver()
+                    # Store current driver index before advancing
+                    current_driver_index = self.current_bookmark_driver_index
+                    
+                    # Advance to next driver
                     self._advance_to_next_driver()
                     
-                    # Start preparing the next driver AFTER advancing
-                    next_driver_index = (self.current_bookmark_driver_index + 1) % 5
-                    self._prepare_next_driver_async(next_driver_index)
-                    print(f"🔧 TIMING: Next driver preparation started")
+                    # FIXED: Prepare the driver we just advanced to (the next in sequence)
+                    next_driver_index = self.current_bookmark_driver_index
+                    if self.bookmark_driver_status[next_driver_index] == 'not_created':
+                        self._prepare_next_driver_async(next_driver_index)
+                        print(f"🔧 TIMING: Preparing next driver {next_driver_index + 1} while {current_driver_index + 1} monitors")
                 
-                # Start monitoring in a separate thread (this will take up to 25 minutes)
+                # Start monitoring in a separate thread (this will take up to 25 minutes)  
                 monitoring_thread = threading.Thread(
                     target=self._background_purchase_monitoring_with_cleanup,
                     args=(driver, listing_url, username, driver_name),
@@ -2199,3 +2196,6 @@
                             By.XPATH,
                             '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
                         )
+                        ship_home_element.click()
+                        print("🏠 SWITCHED: Successfully clicked 'Ship to home'")
+                        self._log_step(step_log, "switched_to_ship_home", True)

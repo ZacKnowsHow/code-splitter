@@ -1626,7 +1626,7 @@ class VintedScraper:
             {
                 'user_data_dir': 'C:\\VintedScraper_Default2_Bookmark', 
                 'profile_directory': 'Profile 17',
-                'google_login': False,  # This one uses email login
+                'google_login': True,  # This one uses email login
                 'driver_name': 'BookmarkDriver-2'
             },
             {
@@ -1638,7 +1638,7 @@ class VintedScraper:
             {
                 'user_data_dir': 'C:\\VintedScraper_Default4_Bookmark',
                 'profile_directory': 'Profile 12',
-                'google_login': False,  # Uses email login
+                'google_login': True,  # Uses email login
                 'driver_name': 'BookmarkDriver-4'
             },
             {
@@ -1666,11 +1666,11 @@ class VintedScraper:
         """
         print("🔖 INIT: Starting 5-driver cycling bookmark system")
         
-        # FIXED: Initialize current driver index to 0 (driver 1)
+        # KEEP EXISTING: Initialize current driver index to 0 (driver 1)
         self.current_bookmark_driver_index = 0
         print(f"🔖 INIT: Starting with driver {self.current_bookmark_driver_index + 1}/5")
         
-        # Start the bookmark queue processor in a separate thread
+        # KEEP EXISTING: Start the bookmark queue processor in a separate thread
         bookmark_processor_thread = threading.Thread(
             target=self._bookmark_queue_processor,
             name="Bookmark-Queue-Processor",
@@ -1678,7 +1678,7 @@ class VintedScraper:
         )
         bookmark_processor_thread.start()
         
-        # FIXED: Prepare driver 1 first (index 0)
+        # KEEP EXISTING: Prepare driver 1 first (index 0)
         print(f"🔧 INIT: Preparing initial driver {self.current_bookmark_driver_index + 1}")
         self._prepare_next_driver_async(self.current_bookmark_driver_index)
         
@@ -1914,11 +1914,12 @@ class VintedScraper:
     def _process_bookmark_with_cycling(self, listing_url, username):
         """
         FIXED: Process bookmark using the cycling driver system with proper sequential order
+        Keep all existing logic, just ensure proper sequencing
         """
         with self.bookmark_system_lock:
             print(f"🔖 CYCLE: Processing bookmark with driver {self.current_bookmark_driver_index + 1}/5")
             
-            # CRITICAL FIX: If current driver is not ready, prepare it first
+            # KEEP EXISTING: If current driver is not ready, prepare it first
             if self.bookmark_driver_status[self.current_bookmark_driver_index] != 'ready':
                 current_status = self.bookmark_driver_status.get(self.current_bookmark_driver_index, 'unknown')
                 print(f"🔧 CYCLE: Driver {self.current_bookmark_driver_index + 1} not ready (status: {current_status})")
@@ -1927,7 +1928,7 @@ class VintedScraper:
                 # Prepare the current driver synchronously
                 self._prepare_driver(self.current_bookmark_driver_index)
             
-            # Wait for current driver to be ready
+            # KEEP EXISTING: Wait for current driver to be ready
             max_wait_attempts = 30  # 30 seconds max wait
             wait_attempt = 0
             current_driver = None
@@ -1962,18 +1963,12 @@ class VintedScraper:
             else:
                 print(f"❌ CYCLE: Driver {self.current_bookmark_driver_index + 1} failed")
             
-            # Clean up current driver
+            # KEEP EXISTING: Clean up current driver
             self._cleanup_current_driver()
             
-            # Advance to next driver
-            print(f"🔄 ADVANCING: From driver {self.current_bookmark_driver_index + 1} to next")
-            self._advance_to_next_driver()
+            # REMOVED: Don't advance or prepare here - let the second sequence handle it
+            # The _execute_vm_second_sequence_cycling will handle advancement and preparation
             
-            # CRITICAL FIX: Prepare the NEW current driver (not a future driver)
-            if self.bookmark_driver_status[self.current_bookmark_driver_index] == 'not_created':
-                print(f"🔧 PREP: Starting preparation of NEW current driver {self.current_bookmark_driver_index + 1}")
-                self._prepare_next_driver_async(self.current_bookmark_driver_index)
-                    
         return success
 
     def _get_ready_driver_count(self):
@@ -2199,3 +2194,8 @@ class VintedScraper:
             # STEP 7: Handle any captcha that appears
             captcha_result = handle_datadome_audio_captcha(fresh_driver)
             
+            if captcha_result == "no_captcha":
+                print(f"✅ PREPARE: {driver_name} ready - no captcha needed")
+            elif captcha_result == True:
+                print(f"🎧 PREPARE: {driver_name} captcha solved")
+            else:
