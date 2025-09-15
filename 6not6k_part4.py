@@ -1,4 +1,30 @@
 # Continuation from line 6601
+                detected_objects['tv_black'] = 0
+                
+            if selected_item in ['oled_in_tv', 'oled_box']:
+                detected_objects['tv_white'] = 0
+        
+        return detected_objects
+
+    def handle_oled_title_conversion_vinted(self, detected_objects, listing_title, listing_description):
+        """
+        Handle OLED title conversion logic (ported from Facebook)
+        """
+        listing_title_lower = listing_title.lower()
+        listing_description_lower = listing_description.lower()
+        
+        if (('oled' in listing_title_lower) or ('oled' in listing_description_lower)) and \
+        'not oled' not in listing_title_lower and 'not oled' not in listing_description_lower:
+            
+            for old, new in [('switch', 'oled'), ('switch_in_tv', 'oled_in_tv'), ('switch_box', 'oled_box')]:
+                if detected_objects.get(old, 0) > 0:
+                    detected_objects[old] = 0
+                    detected_objects[new] = 1
+        
+        return detected_objects
+    
+    def check_vinted_listing_suitability(self, listing_info):
+        """
         Check if a Vinted listing meets all suitability criteria
         FIXED: Properly extract review count from seller_reviews field
         """
@@ -1808,14 +1834,19 @@
         print(f"📊 QUEUE: {self.bookmark_queue.qsize()} items in bookmark queue")
 
     def _advance_to_next_driver(self):
-        """Advance to the next driver in the cycle"""
+        """
+        FIXED: Advance to the next driver in the cycle with proper sequential ordering
+        """
         old_index = self.current_bookmark_driver_index
+        
+        # CRITICAL FIX: Ensure we always increment sequentially
         self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
         
         old_name = self.bookmark_driver_configs[old_index]['driver_name']
         new_name = self.bookmark_driver_configs[self.current_bookmark_driver_index]['driver_name']
         
-        print(f"🔄 ADVANCE: Cycled from {old_name} to {new_name}")
+        print(f"🔄 ADVANCE: Cycled from {old_name} (index {old_index}) to {new_name} (index {self.current_bookmark_driver_index})")
+
 
     def _execute_vm_second_sequence_cycling(self, driver, listing_url, username, driver_name):
         """
@@ -1886,6 +1917,27 @@
             print(f"❌ {driver_name}: Second sequence error: {second_sequence_error}")
             return False
 
+
+    def debug_driver_status(self):
+        """
+        Debug helper to show current driver status
+        """
+        print("=" * 50)
+        print("DRIVER STATUS DEBUG")
+        print("=" * 50)
+        print(f"Current driver index: {self.current_bookmark_driver_index} (Driver {self.current_bookmark_driver_index + 1})")
+        
+        for i in range(5):
+            driver_name = self.bookmark_driver_configs[i]['driver_name']
+            status = self.bookmark_driver_status.get(i, 'unknown')
+            in_drivers = i in self.bookmark_drivers
+            
+            marker = ">> " if i == self.current_bookmark_driver_index else "   "
+            print(f"{marker}Driver {i+1} ({driver_name}): {status} (exists: {in_drivers})")
+        
+        ready_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
+        print(f"Total ready drivers: {ready_count}/5")
+        print("=" * 50)
 
     def cleanup_all_bookmark_drivers(self):
         """Clean up all bookmark drivers when program exits"""
@@ -2147,55 +2199,3 @@
                             By.XPATH,
                             '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
                         )
-                        ship_home_element.click()
-                        print("🏠 SWITCHED: Successfully clicked 'Ship to home'")
-                        self._log_step(step_log, "switched_to_ship_home", True)
-                        
-                        # CRITICAL: The previous pay button reference is now INVALID
-                        pay_button_is_valid = False
-                        print("⚠️ PAY BUTTON: Previous reference invalidated by shipping change")
-                        
-                        # Wait 0.3 seconds as specifically requested
-                        time.sleep(0.3)
-                        print("⏳ WAITED: 0.3 seconds after switching to Ship to home")
-                        
-                        # NOW search for pay button again
-                        print("🔍 PAY BUTTON: Searching again after shipping change...")
-                        
-                        pay_button_found_again = False
-                        max_retry_attempts = 10  # 10 attempts * 0.5s = 5 seconds max
-                        retry_attempt = 0
-                        
-                        while not pay_button_found_again and retry_attempt < max_retry_attempts:
-                            retry_attempt += 1
-                            
-                            pay_element_new, pay_sel_new = self._try_selectors(
-                                current_driver,
-                                'pay_button',
-                                operation='find',
-                                timeout=0.5,
-                                step_log=step_log
-                            )
-                            
-                            if pay_element_new:
-                                pay_button = pay_element_new
-                                pay_selector = pay_sel_new
-                                pay_button_is_valid = True
-                                pay_button_found_again = True
-                                print(f"✅ PAY BUTTON: Found again after shipping change (attempt {retry_attempt})")
-                                self._log_step(step_log, "pay_button_found_after_shipping_change", True)
-                                break
-                            
-                            time.sleep(0.5)
-                        
-                        if not pay_button_found_again:
-                            print("❌ PAY BUTTON: Could not find pay button after shipping change")
-                            self._log_step(step_log, "pay_button_not_found_after_shipping", False)
-                            return False
-                            
-                    except NoSuchElementException:
-                        print("❌ SWITCH ERROR: Could not find 'Ship to home' button")
-                        self._log_step(step_log, "ship_home_button_not_found", False)
-                    except Exception as switch_error:
-                        print(f"❌ SWITCH ERROR: Could not click 'Ship to home': {switch_error}")
-                        self._log_step(step_log, "switch_to_home_failed", False, str(switch_error))
