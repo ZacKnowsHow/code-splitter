@@ -63,6 +63,7 @@ import subprocess
 import pyautogui
 from scipy import signal
 import wave
+import ctypes
 
 
 VM_DRIVER_USE = True
@@ -391,6 +392,335 @@ def send_keypress_with_pyautogui(key, hold_time=None):
     except Exception as e:
         print(f"PyAutoGUI keystroke failed for {key}: {e}")
         return False
+
+def send_keypress_with_hid_keyboard(key, hold_time=None):
+    """
+    Send keypress using HID Keyboard (replacement for PyAutoGUI)
+    
+    Args:
+        key (str): Key to send ('0'-'9', 'right', 'left', etc.)
+        hold_time (float): How long to hold the key
+    
+    Returns:
+        bool: True if successful
+    """
+    try:
+        # Initialize HID keyboard if not already done
+        if not hasattr(send_keypress_with_hid_keyboard, 'hid_keyboard'):
+            send_keypress_with_hid_keyboard.hid_keyboard = HIDKeyboard()
+        
+        # Add human-like delay before keystroke
+        time.sleep(random.uniform(0.05, 0.15))
+        
+        # Send the key using HID keyboard
+        success = send_keypress_with_hid_keyboard.hid_keyboard.send_key_press(key, hold_time)
+        
+        if success:
+            # Optional additional delay after keystroke
+            if not hold_time:
+                time.sleep(random.uniform(0.05, 0.12))
+            
+            print(f"🎹 HID: Successfully pressed key '{key}'")
+            return True
+        else:
+            print(f"❌ HID: Failed to press key '{key}'")
+            return False
+        
+    except Exception as e:
+        print(f"❌ HID: Keystroke failed for '{key}': {e}")
+        return False
+
+def input_captcha_solution_hid(self, sequence):
+    """
+    Input the 6-digit sequence into the captcha form using HID keyboard
+    This generates true OS-level keystrokes indistinguishable from real keyboard input
+    """
+    if not self.driver or not sequence or len(sequence) != 6:
+        print("Cannot input solution: missing driver or invalid sequence")
+        return False
+    
+    print(f"🎹 HID: Starting to input captcha solution: {sequence}")
+    
+    try:
+        # Initialize HID keyboard
+        hid_keyboard = HIDKeyboard()
+        
+        # Navigate to the correct iframe (same iframe logic as before)
+        self.driver.switch_to.default_content()
+        
+        iframe_selectors = [
+            "iframe[src*='captcha']",
+            "iframe[src*='datadome']",
+            "iframe[id*='datadome']",
+            "iframe[class*='datadome']",
+            "iframe[title*='captcha']",
+            "iframe[title*='DataDome']"
+        ]
+        
+        iframe_found = False
+        for selector in iframe_selectors:
+            try:
+                iframe = WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+                print(f"Found main iframe with selector: {selector}")
+                self.driver.switch_to.frame(iframe)
+                iframe_found = True
+                break
+            except TimeoutException:
+                continue
+        
+        if not iframe_found:
+            print("Could not find captcha iframe for input")
+            return False
+        
+        # Find input fields
+        input_selectors = [
+            "input.audio-captcha-inputs",
+            "input[class*='audio-captcha-inputs']",
+            "input[data-index='1']",
+            "input[maxlength='1'][inputmode='numeric']",
+            "input[data-form-type='other'][maxlength='1']"
+        ]
+        
+        input_found = False
+        first_input = None
+        
+        for selector in input_selectors:
+            try:
+                first_input = WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+                print(f"Found first input field with selector: {selector}")
+                input_found = True
+                break
+            except TimeoutException:
+                continue
+        
+        # Check nested iframes if not found
+        if not input_found:
+            print("Input fields not found in current iframe, checking nested iframes...")
+            
+            try:
+                nested_iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
+                print(f"Found {len(nested_iframes)} nested iframes")
+                
+                for i, nested_iframe in enumerate(nested_iframes):
+                    try:
+                        print(f"Trying nested iframe {i}...")
+                        self.driver.switch_to.frame(nested_iframe)
+                        
+                        for selector in input_selectors:
+                            try:
+                                first_input = WebDriverWait(self.driver, 3).until(
+                                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                                )
+                                print(f"Found first input field in nested iframe {i} with selector: {selector}")
+                                input_found = True
+                                break
+                            except:
+                                continue
+                        
+                        if input_found:
+                            break
+                        
+                        self.driver.switch_to.parent_frame()
+                        
+                    except Exception as e:
+                        print(f"Error with nested iframe {i}: {e}")
+                        try:
+                            self.driver.switch_to.parent_frame()
+                        except:
+                            self.driver.switch_to.default_content()
+                            for sel in iframe_selectors:
+                                try:
+                                    iframe = self.driver.find_element(By.CSS_SELECTOR, sel)
+                                    self.driver.switch_to.frame(iframe)
+                                    break
+                                except:
+                                    continue
+                        continue
+            
+            except Exception as e:
+                print(f"Error searching nested iframes for inputs: {e}")
+        
+        if not input_found or not first_input:
+            print("Could not find input fields")
+            self.driver.switch_to.default_content()
+            return False
+        
+        print("🎹 HID: Starting to input digits using OS-level keyboard events...")
+        
+        # Click on the first input field to focus it (using Selenium for positioning)
+        time.sleep(random.uniform(0.5, 1.0))
+        
+        # Scroll into view
+        self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", first_input)
+        time.sleep(random.uniform(0.3, 0.6))
+
+        # Click with ActionChains to focus the field
+        from selenium.webdriver.common.action_chains import ActionChains
+        action = ActionChains(self.driver)
+
+        offset_x = random.randint(-2, 2)
+        offset_y = random.randint(-2, 2)
+
+        action.move_to_element_with_offset(first_input, offset_x, offset_y)
+        time.sleep(random.uniform(0.2, 0.4))
+        action.move_to_element(first_input)
+        time.sleep(random.uniform(0.1, 0.3))
+        action.click().perform()
+        
+        print("🎹 HID: Clicked on first input field, now sending HID keystrokes...")
+
+        # Input each digit using HID keyboard (TRUE OS-LEVEL KEYSTROKES)
+        for i, digit in enumerate(sequence):
+            print(f"🎹 HID: Inputting digit {i+1}: {digit}")
+            
+            # Special handling for '1' digit as in original code
+            if digit == '1':
+                time.sleep(2.3)
+            
+            # Random delay before typing (human-like)
+            time.sleep(random.uniform(0.2, 0.6))
+            
+            # Send the digit using HID keyboard (OS-LEVEL)
+            success = hid_keyboard.send_key_press(digit)
+            
+            if success:
+                print(f"✅ HID: Successfully sent OS-level keystroke for digit: {digit}")
+            else:
+                print(f"❌ HID: Failed to send OS-level keystroke for digit: {digit}")
+                # Continue anyway - partial input might still work
+            
+            time.sleep(random.uniform(0.3, 0.4))
+            
+            # If not the last digit, move to next field with HID arrow key
+            if i < len(sequence) - 1:
+                time.sleep(random.uniform(0.2, 0.6))
+                
+                # Use HID keyboard for RIGHT arrow key (OS-LEVEL)
+                arrow_success = hid_keyboard.send_navigation_key('right')
+                
+                if arrow_success:
+                    print(f"✅ HID: Successfully sent OS-level RIGHT arrow key")
+                else:
+                    print(f"❌ HID: Failed to send OS-level RIGHT arrow key")
+                    # Try TAB as backup
+                    tab_success = hid_keyboard.send_navigation_key('tab')
+                    if tab_success:
+                        print(f"✅ HID: Successfully sent OS-level TAB key as backup")
+                    else:
+                        print(f"❌ HID: Both RIGHT and TAB keys failed")
+                
+                time.sleep(random.uniform(0.05, 0.25))
+
+        print("🎹 HID: All digits entered using OS-level keystrokes!")
+            
+        # Wait a moment for any validation
+        time.sleep(random.uniform(1.0, 2.0))
+            
+        # Find and click the Verify button (same as before)
+        print("Looking for Verify button...")
+        
+        verify_button_selectors = [
+            "button.audio-captcha-submit-button",
+            "button[class*='audio-captcha-submit-button']",
+            "button.push-button.no-margin",
+            "button[role='button'][class*='submit']",
+            "button:contains('Verify')",
+            "//button[contains(@class, 'audio-captcha-submit-button')]",
+            "//button[text()='Verify']",
+            "//button[contains(text(), 'Verify')]"
+        ]
+        
+        verify_button = None
+        for selector in verify_button_selectors:
+            try:
+                if selector.startswith("//"):
+                    verify_button = WebDriverWait(self.driver, 5).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                else:
+                    verify_button = WebDriverWait(self.driver, 5).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                    )
+                print(f"Found Verify button with selector: {selector}")
+                break
+            except TimeoutException:
+                continue
+        
+        if not verify_button:
+            print("Verify button not found, trying to find any submit-like button...")
+            try:
+                all_buttons = self.driver.find_elements(By.TAG_NAME, "button")
+                for button in all_buttons:
+                    button_text = button.text.lower().strip()
+                    button_class = button.get_attribute("class") or ""
+                    
+                    if ("verify" in button_text or 
+                        "submit" in button_text or 
+                        "confirm" in button_text or
+                        "submit" in button_class.lower() or
+                        "verify" in button_class.lower()):
+                        verify_button = button
+                        print(f"Found potential verify button: text='{button_text}', class='{button_class}'")
+                        break
+            except Exception as e:
+                print(f"Error searching for buttons: {e}")
+        
+        if verify_button:
+            # Wait a moment before clicking verify
+            time.sleep(random.uniform(0.5, 1.0))
+            
+            # Scroll into view
+            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", verify_button)
+            time.sleep(random.uniform(0.3, 0.6))
+            
+            # Human-like click with ActionChains (generates trusted events)
+            action = ActionChains(self.driver)
+            offset_x = random.randint(-3, 3)
+            offset_y = random.randint(-3, 3)
+            action.move_to_element_with_offset(verify_button, offset_x, offset_y)
+            time.sleep(random.uniform(0.2, 0.4))
+            action.move_to_element(verify_button)
+            time.sleep(random.uniform(0.2, 0.5))
+            action.click().perform()
+            
+            print("✅ HID: Successfully clicked Verify button!")
+            
+            # Wait to see the result
+            time.sleep(random.uniform(2.0, 4.0))
+            
+            self.driver.switch_to.default_content()
+            return True
+            
+        else:
+            print("Could not find Verify button")
+            self.driver.switch_to.default_content()
+            return False
+            
+    except Exception as e:
+        print(f"❌ HID: Error inputting captcha solution: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            self.driver.switch_to.default_content()
+        except:
+            pass
+        return False
+
+
+# Integration helper function for your existing code
+def replace_pyautogui_with_hid():
+    """
+    Helper function to replace PyAutoGUI calls with HID keyboard
+    Call this to patch your existing send_keypress_with_pyautogui function
+    """
+    global send_keypress_with_pyautogui
+    send_keypress_with_pyautogui = send_keypress_with_hid_keyboard
+    print("✅ Replaced PyAutoGUI with HID Keyboard implementation")
+
 
 def clear_browser_data(vm_ip_address="192.168.56.101"):
     """
@@ -1352,7 +1682,254 @@ def setup_driver_universal(vm_ip_address, config):
                 pass
         
         return None
+
+class HIDKeyboard:
+    """
+    True OS-level keyboard input using Windows SendInput API
+    Generates hardware-level events indistinguishable from real keyboard
+    """
     
+    # Windows API constants
+    INPUT_KEYBOARD = 1
+    KEYEVENTF_KEYUP = 0x0002
+    KEYEVENTF_UNICODE = 0x0004
+    
+    # Virtual Key Codes for common keys
+    VK_CODES = {
+        '0': 0x30, '1': 0x31, '2': 0x32, '3': 0x33, '4': 0x34,
+        '5': 0x35, '6': 0x36, '7': 0x37, '8': 0x38, '9': 0x39,
+        'right': 0x27,  # Right arrow key
+        'left': 0x25,   # Left arrow key
+        'tab': 0x09,    # Tab key
+        'enter': 0x0D,  # Enter key
+        'space': 0x20,  # Space key
+        'backspace': 0x08  # Backspace key
+    }
+    
+    def __init__(self):
+        """Initialize the HID keyboard with Windows API structures"""
+        self.user32 = ctypes.windll.user32
+        self.kernel32 = ctypes.windll.kernel32
+        
+        # Define Windows structures
+        class KEYBDINPUT(ctypes.Structure):
+            _fields_ = [
+                ("wVk", ctypes.wintypes.WORD),
+                ("wScan", ctypes.wintypes.WORD),
+                ("dwFlags", ctypes.wintypes.DWORD),
+                ("time", ctypes.wintypes.DWORD),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.wintypes.ULONG))
+            ]
+        
+        class HARDWAREINPUT(ctypes.Structure):
+            _fields_ = [
+                ("uMsg", ctypes.wintypes.DWORD),
+                ("wParamL", ctypes.wintypes.WORD),
+                ("wParamH", ctypes.wintypes.WORD)
+            ]
+        
+        class MOUSEINPUT(ctypes.Structure):
+            _fields_ = [
+                ("dx", ctypes.wintypes.LONG),
+                ("dy", ctypes.wintypes.LONG),
+                ("mouseData", ctypes.wintypes.DWORD),
+                ("dwFlags", ctypes.wintypes.DWORD),
+                ("time", ctypes.wintypes.DWORD),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.wintypes.ULONG))
+            ]
+        
+        class INPUT_UNION(ctypes.Union):
+            _fields_ = [
+                ("ki", KEYBDINPUT),
+                ("mi", MOUSEINPUT),
+                ("hi", HARDWAREINPUT)
+            ]
+        
+        class INPUT(ctypes.Structure):
+            _fields_ = [
+                ("type", ctypes.wintypes.DWORD),
+                ("ii", INPUT_UNION)
+            ]
+        
+        # Store structure classes for use
+        self.KEYBDINPUT = KEYBDINPUT
+        self.INPUT = INPUT
+        self.INPUT_UNION = INPUT_UNION
+        
+        print("✅ HID Keyboard initialized with Windows SendInput API")
+    
+    def send_key_press(self, key, hold_time=None):
+        """
+        Send a single key press event (key down + key up)
+        
+        Args:
+            key (str): The key to press ('0'-'9', 'right', 'left', etc.)
+            hold_time (float): Time to hold key down in seconds (optional)
+        
+        Returns:
+            bool: True if successful, False if failed
+        """
+        if key not in self.VK_CODES:
+            print(f"❌ HID: Unknown key '{key}'")
+            return False
+        
+        vk_code = self.VK_CODES[key]
+        
+        try:
+            # Create key down event
+            key_input_down = self.INPUT()
+            key_input_down.type = self.INPUT_KEYBOARD
+            key_input_down.ii.ki = self.KEYBDINPUT()
+            key_input_down.ii.ki.wVk = vk_code
+            key_input_down.ii.ki.wScan = 0
+            key_input_down.ii.ki.dwFlags = 0  # Key down
+            key_input_down.ii.ki.time = 0
+            key_input_down.ii.ki.dwExtraInfo = None
+            
+            # Create key up event
+            key_input_up = self.INPUT()
+            key_input_up.type = self.INPUT_KEYBOARD
+            key_input_up.ii.ki = self.KEYBDINPUT()
+            key_input_up.ii.ki.wVk = vk_code
+            key_input_up.ii.ki.wScan = 0
+            key_input_up.ii.ki.dwFlags = self.KEYEVENTF_KEYUP  # Key up
+            key_input_up.ii.ki.time = 0
+            key_input_up.ii.ki.dwExtraInfo = None
+            
+            # Send key down event
+            result_down = self.user32.SendInput(
+                1,  # Number of inputs
+                ctypes.pointer(key_input_down),
+                ctypes.sizeof(self.INPUT)
+            )
+            
+            if result_down == 0:
+                error_code = self.kernel32.GetLastError()
+                print(f"❌ HID: SendInput key down failed, error code: {error_code}")
+                return False
+            
+            # Hold the key if specified
+            if hold_time:
+                time.sleep(hold_time)
+            else:
+                # Default brief hold time for realistic key press
+                time.sleep(random.uniform(0.02, 0.08))
+            
+            # Send key up event
+            result_up = self.user32.SendInput(
+                1,  # Number of inputs
+                ctypes.pointer(key_input_up),
+                ctypes.sizeof(self.INPUT)
+            )
+            
+            if result_up == 0:
+                error_code = self.kernel32.GetLastError()
+                print(f"❌ HID: SendInput key up failed, error code: {error_code}")
+                return False
+            
+            print(f"✅ HID: Successfully sent key '{key}' (VK: {vk_code:02X})")
+            return True
+            
+        except Exception as e:
+            print(f"❌ HID: Exception sending key '{key}': {e}")
+            return False
+    
+    def send_unicode_char(self, char):
+        """
+        Send a Unicode character directly (alternative method)
+        
+        Args:
+            char (str): Single Unicode character to send
+        
+        Returns:
+            bool: True if successful, False if failed
+        """
+        try:
+            unicode_value = ord(char)
+            
+            # Create Unicode input event
+            unicode_input = self.INPUT()
+            unicode_input.type = self.INPUT_KEYBOARD
+            unicode_input.ii.ki = self.KEYBDINPUT()
+            unicode_input.ii.ki.wVk = 0  # Must be 0 for Unicode
+            unicode_input.ii.ki.wScan = unicode_value
+            unicode_input.ii.ki.dwFlags = self.KEYEVENTF_UNICODE
+            unicode_input.ii.ki.time = 0
+            unicode_input.ii.ki.dwExtraInfo = None
+            
+            result = self.user32.SendInput(
+                1,
+                ctypes.pointer(unicode_input),
+                ctypes.sizeof(self.INPUT)
+            )
+            
+            if result == 0:
+                error_code = self.kernel32.GetLastError()
+                print(f"❌ HID: Unicode input failed for '{char}', error code: {error_code}")
+                return False
+            
+            print(f"✅ HID: Successfully sent Unicode char '{char}' (U+{unicode_value:04X})")
+            return True
+            
+        except Exception as e:
+            print(f"❌ HID: Exception sending Unicode '{char}': {e}")
+            return False
+    
+    def type_sequence(self, sequence, delay_between_keys=None):
+        """
+        Type a sequence of characters with realistic timing
+        
+        Args:
+            sequence (str): String of characters to type
+            delay_between_keys (float): Delay between keystrokes (optional)
+        
+        Returns:
+            bool: True if all keys sent successfully
+        """
+        success_count = 0
+        
+        for i, char in enumerate(sequence):
+            print(f"🔤 HID: Typing character {i+1}/{len(sequence)}: '{char}'")
+            
+            # Add realistic pre-keystroke delay
+            if i > 0:  # No delay before first character
+                delay = delay_between_keys if delay_between_keys else random.uniform(0.1, 0.3)
+                time.sleep(delay)
+            
+            # Try virtual key code method first (more reliable)
+            if char in self.VK_CODES:
+                success = self.send_key_press(char)
+            else:
+                # Fallback to Unicode method
+                success = self.send_unicode_char(char)
+            
+            if success:
+                success_count += 1
+            else:
+                print(f"❌ HID: Failed to send character '{char}' at position {i}")
+        
+        success_rate = (success_count / len(sequence)) * 100
+        print(f"📊 HID: Typing complete - {success_count}/{len(sequence)} characters sent ({success_rate:.1f}% success)")
+        
+        return success_count == len(sequence)
+    
+    def send_navigation_key(self, direction):
+        """
+        Send navigation keys (arrow keys, tab, enter, etc.)
+        
+        Args:
+            direction (str): 'right', 'left', 'tab', 'enter', 'space', 'backspace'
+        
+        Returns:
+            bool: True if successful
+        """
+        if direction not in self.VK_CODES:
+            print(f"❌ HID: Unknown navigation key '{direction}'")
+            return False
+        
+        return self.send_key_press(direction)
+
+
 class AudioNumberDetector:
     def __init__(self, driver=None):
         self.driver = driver
