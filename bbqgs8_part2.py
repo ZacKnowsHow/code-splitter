@@ -1,4 +1,581 @@
 # Continuation from line 2201
+                
+                if digit == '1':
+                    time.sleep(2.3)
+                
+                # Random delay before typing
+                time.sleep(random.uniform(0.2, 0.6))
+                
+                # Use PyAutoGUI instead of Windows API
+                if not send_keypress_with_pyautogui(digit):
+                    print(f"Failed to send PyAutoGUI keystroke for digit: {digit}")
+                
+                time.sleep(random.uniform(0.3, 0.4))
+                
+                print(f"Typed digit: {digit}")
+                
+                # If not the last digit, move to next field with arrow key
+                if i < len(sequence) - 1:
+                    time.sleep(random.uniform(0.2, 0.6))
+                    
+                    # Use PyAutoGUI for arrow key
+                    if not send_keypress_with_pyautogui('right'):
+                        print(f"Failed to send PyAutoGUI RIGHT key")
+                    
+                    print(f"Moved to next input field")
+                    time.sleep(random.uniform(0.05, 0.25))
+
+            print("All digits entered successfully!")
+                
+                # Wait a moment for any validation
+            time.sleep(random.uniform(1.0, 2.0))
+                
+                # Find and click the Verify button (same as before)
+            print("Looking for Verify button...")
+            
+            verify_button_selectors = [
+                "button.audio-captcha-submit-button",
+                "button[class*='audio-captcha-submit-button']",
+                "button.push-button.no-margin",
+                "button[role='button'][class*='submit']",
+                "button:contains('Verify')",
+                "//button[contains(@class, 'audio-captcha-submit-button')]",
+                "//button[text()='Verify']",
+                "//button[contains(text(), 'Verify')]"
+            ]
+            
+            verify_button = None
+            for selector in verify_button_selectors:
+                try:
+                    if selector.startswith("//"):
+                        verify_button = WebDriverWait(self.driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        verify_button = WebDriverWait(self.driver, 5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                    print(f"Found Verify button with selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not verify_button:
+                print("Verify button not found, trying to find any submit-like button...")
+                try:
+                    all_buttons = self.driver.find_elements(By.TAG_NAME, "button")
+                    for button in all_buttons:
+                        button_text = button.text.lower().strip()
+                        button_class = button.get_attribute("class") or ""
+                        
+                        if ("verify" in button_text or 
+                            "submit" in button_text or 
+                            "confirm" in button_text or
+                            "submit" in button_class.lower() or
+                            "verify" in button_class.lower()):
+                            verify_button = button
+                            print(f"Found potential verify button: text='{button_text}', class='{button_class}'")
+                            break
+                except Exception as e:
+                    print(f"Error searching for buttons: {e}")
+            
+            if verify_button:
+                # Wait a moment before clicking verify
+                time.sleep(random.uniform(0.5, 1.0))
+                
+                # Scroll into view
+                self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", verify_button)
+                time.sleep(random.uniform(0.3, 0.6))
+                
+                # Human-like click with ActionChains (generates trusted events)
+                action = ActionChains(self.driver)
+                offset_x = random.randint(-3, 3)
+                offset_y = random.randint(-3, 3)
+                action.move_to_element_with_offset(verify_button, offset_x, offset_y)
+                time.sleep(random.uniform(0.2, 0.4))
+                action.move_to_element(verify_button)
+                time.sleep(random.uniform(0.2, 0.5))
+                action.click().perform()
+                
+                print("Successfully clicked Verify button!")
+                
+                # Wait to see the result
+                time.sleep(random.uniform(2.0, 4.0))
+                
+                self.driver.switch_to.default_content()
+                return True
+                
+            else:
+                print("Could not find Verify button")
+                self.driver.switch_to.default_content()
+                return False
+                
+        except Exception as e:
+            print(f"Error inputting captcha solution: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                self.driver.switch_to.default_content()
+            except:
+                pass
+            return False
+
+    def preprocess_audio(self, audio_data, sample_rate):
+        """Enhanced audio preprocessing for better recognition"""
+        audio_np = np.frombuffer(audio_data, dtype=np.int16)
+        
+        if self.CHANNELS == 2:
+            audio_np = audio_np.reshape(-1, 2).mean(axis=1).astype(np.int16)
+        
+        if np.max(np.abs(audio_np)) > 0:
+            audio_np = audio_np.astype(np.float32)
+            audio_np = audio_np / np.max(np.abs(audio_np)) * 0.8
+        
+        nyquist = sample_rate / 2
+        high_cutoff = 100
+        high = high_cutoff / nyquist
+        b, a = signal.butter(2, high, btype='high')
+        audio_np = signal.filtfilt(b, a, audio_np)
+        
+        low_cutoff = 8000
+        low = low_cutoff / nyquist
+        b, a = signal.butter(2, low, btype='low')
+        audio_np = signal.filtfilt(b, a, audio_np)
+        
+        if HAS_NOISEREDUCE:
+            try:
+                noise_sample_length = min(sample_rate, len(audio_np) // 4)
+                if len(audio_np) > noise_sample_length * 2:
+                    audio_np = nr.reduce_noise(
+                        y=audio_np, 
+                        sr=sample_rate,
+                        stationary=False,
+                        prop_decrease=0.8
+                    )
+            except Exception as e:
+                print(f"Noise reduction failed: {e}")
+        
+        pre_emphasis = 0.97
+        audio_np = np.append(audio_np[0], audio_np[1:] - pre_emphasis * audio_np[:-1])
+        
+        if np.max(np.abs(audio_np)) > 0:
+            audio_np = audio_np / np.max(np.abs(audio_np)) * 0.9
+        
+        audio_np = (audio_np * 32767).astype(np.int16)
+        return audio_np.tobytes()
+    
+    def process_audio_data(self, audio_data):
+        """Process audio data and extract numbers"""
+        try:
+            audio_np = np.frombuffer(audio_data, dtype=np.int16)
+            volume = np.sqrt(np.mean(audio_np**2))
+            max_volume = np.max(np.abs(audio_np))
+            
+            print(f"Audio volume: {volume:.1f}, max: {max_volume}")
+            
+            if volume < 8:
+                print("Audio too quiet, skipping...")
+                return
+            
+            processed_audio = self.preprocess_audio(audio_data, self.RATE)
+            
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+                wf = wave.open(tmp_file.name, 'wb')
+                wf.setnchannels(1)
+                wf.setsampwidth(self.p.get_sample_size(self.FORMAT))
+                wf.setframerate(self.RATE)
+                wf.writeframes(processed_audio)
+                wf.close()
+                
+                try:
+                    with sr.AudioFile(tmp_file.name) as source:
+                        self.recognizer.adjust_for_ambient_noise(source, duration=0.3)
+                        audio = self.recognizer.record(source)
+                        
+                        print("Attempting speech recognition...")
+                        
+                        text = None
+                        try:
+                            # Try with show_all=True to get confidence scores and alternatives
+                            result = self.recognizer.recognize_google(audio, language='en-US', show_all=True)
+                            if isinstance(result, dict) and 'alternative' in result:
+                                # Get the most confident result
+                                text = result['alternative'][0]['transcript']
+                                print(f"Google Recognition (detailed): '{text}'")
+                                
+                                # Also check other alternatives for better matches
+                                for alt in result['alternative'][:3]:  # Check top 3 alternatives
+                                    alt_text = alt['transcript']
+                                    alt_numbers = self.extract_numbers_sequence(alt_text)
+                                    if len(alt_numbers) >= 6:
+                                        text = alt_text
+                                        print(f"Using alternative with more numbers: '{text}'")
+                                        break
+                            else:
+                                text = self.recognizer.recognize_google(audio, language='en-US', show_all=False)
+                                print(f"Google Recognition: '{text}'")
+                                
+                        except (sr.UnknownValueError, sr.RequestError):
+                            print("Google recognition failed, trying Sphinx...")
+                            try:
+                                text = self.recognizer.recognize_sphinx(audio)
+                                print(f"Sphinx Recognition: '{text}'")
+                            except:
+                                print("Sphinx recognition also failed")
+                        
+                        if text:
+                            timestamp = time.strftime("%H:%M:%S")
+                            
+                            # Try to find complete sequence
+                            complete_seq = self.find_complete_sequence(text)
+                            if complete_seq and len(complete_seq) == 6:
+                                with self.numbers_lock:
+                                    self.complete_sequence = complete_seq
+                                    print(f"\n[{timestamp}] *** COMPLETE SEQUENCE FOUND: {complete_seq} ***")
+                                    print(f"[{timestamp}] From text: '{text}'")
+                                    print("="*60)
+                                    print(f"SUCCESS! Complete 6-digit sequence: {complete_seq}")
+                                    print("="*60)
+                                    
+                                    # Input the sequence into the captcha form
+                                    if self.input_captcha_solution(complete_seq):
+                                        print("Successfully inputted captcha solution!")
+                                    else:
+                                        print("Failed to input captcha solution")
+                                    
+                                    self.stop()
+                                    return
+                            
+                            # Otherwise collect individual numbers
+                            numbers = self.extract_numbers_sequence(text)
+                            if numbers:
+                                with self.numbers_lock:
+                                    new_numbers = []
+                                    for num in numbers:
+                                        if len(self.collected_numbers) < self.target_count:
+                                            self.collected_numbers.append(num)
+                                            new_numbers.append(num)
+                                    
+                                    if new_numbers:
+                                        print(f"[{timestamp}] NEW NUMBERS: {' '.join(new_numbers)}")
+                                        print(f"[{timestamp}] Full text: '{text}'")
+                                        print(f"[{timestamp}] Sequence so far ({len(self.collected_numbers)}/{self.target_count}): {' '.join(self.collected_numbers)}")
+                                    
+                                    if len(self.collected_numbers) >= self.target_count:
+                                        final_sequence = ''.join(self.collected_numbers[:self.target_count])
+                                        print("\n" + "="*60)
+                                        print(f"SUCCESS! Collected {self.target_count} numbers:")
+                                        print(f"FINAL SEQUENCE: {final_sequence}")
+                                        print("="*60)
+                                        
+                                        # Input the sequence into the captcha form
+                                        if self.input_captcha_solution(final_sequence):
+                                            print("Successfully inputted captcha solution!")
+                                        else:
+                                            print("Failed to input captcha solution")
+                                        
+                                        self.stop()
+                                        return
+                            else:
+                                print(f"[{timestamp}] No numbers found in: '{text}'")
+                        
+                finally:
+                    try:
+                        os.unlink(tmp_file.name)
+                    except:
+                        pass
+                        
+        except Exception as e:
+            print(f"Audio processing error: {e}")
+    
+    def audio_processor_thread(self):
+        """Background thread to process audio chunks"""
+        while self.is_running:
+            try:
+                if not self.audio_queue.empty():
+                    audio_data = self.audio_queue.get(timeout=1)
+                    processor = threading.Thread(target=self.process_audio_data, args=(audio_data,), daemon=True)
+                    processor.start()
+                else:
+                    time.sleep(0.1)
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"Processor thread error: {e}")
+    
+    def start_listening(self):
+        """Start capturing system audio output"""
+        default_speakers = self.get_default_speakers()
+        
+        if not default_speakers:
+            print("Could not find system speakers!")
+            return
+        
+        try:
+            stream = self.p.open(
+                format=self.FORMAT,
+                channels=int(default_speakers["maxInputChannels"]),
+                rate=int(default_speakers["defaultSampleRate"]),
+                input=True,
+                input_device_index=default_speakers["index"],
+                frames_per_buffer=self.CHUNK
+            )
+            
+            print(f"Listening to PC system audio... Press Ctrl+C to stop.")
+            print("Looking for 6-digit number sequence...")
+            print("-" * 60)
+            
+            self.is_running = True
+            
+            # Start processor threads
+            for i in range(2):
+                processor = threading.Thread(target=self.audio_processor_thread, daemon=True)
+                processor.start()
+                print(f"Started audio processor thread {i+1}")
+            
+            audio_buffer = b""
+            buffer_size = self.RATE * self.buffer_duration * 2
+            overlap_size = self.RATE * self.overlap_duration * 2
+            
+            while self.is_running:
+                try:
+                    data = stream.read(self.CHUNK, exception_on_overflow=False)
+                    audio_buffer += data
+                    
+                    with self.numbers_lock:
+                        if len(self.collected_numbers) >= self.target_count or self.complete_sequence:
+                            break
+                    
+                    if len(audio_buffer) >= buffer_size:
+                        print(f"Processing {self.buffer_duration}s audio chunk...")
+                        
+                        if self.audio_queue.qsize() < 3:
+                            self.audio_queue.put(audio_buffer[:buffer_size])
+                        else:
+                            print("Audio queue full, skipping chunk...")
+                            
+                        audio_buffer = audio_buffer[-overlap_size:]
+                        
+                except Exception as e:
+                    print(f"Stream error: {e}")
+                    break
+            
+            stream.stop_stream()
+            stream.close()
+            
+        except Exception as e:
+            print(f"Error starting capture: {e}")
+
+    def stop(self):
+        """Stop the transcriber"""
+        self.is_running = False
+        self.p.terminate()
+
+def debug_function_call(func_name, line_number=None):
+    """Debug function to track where errors occur"""
+    if print_debug:
+        print(f"DEBUG: Entering function {func_name}" + (f" at line {line_number}" if line_number else ""))
+
+# Vinted profit suitability ranges (same structure as Facebook but independent variables)
+def check_vinted_profit_suitability(listing_price, profit_percentage):
+    if 10 <= listing_price < 16:
+        return 100 <= profit_percentage <= 600
+    elif 16 <= listing_price < 25:
+        return 50 <= profit_percentage <= 400
+    elif 25 <= listing_price < 50:
+        return 37.5 <= profit_percentage <= 550
+    elif 50 <= listing_price < 100:
+        return 35 <= profit_percentage <= 500
+    elif listing_price >= 100:
+        return 30 <= profit_percentage <= 450
+    else:
+        return False
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    # Remove the 'self' parameter and access global variables instead
+    global recent_listings, current_listing_title, current_listing_price, current_listing_description
+    global current_listing_join_date, current_detected_items, current_profit, current_listing_images
+    global current_listing_url
+    
+    if "authenticated" in session:
+        return render_main_page()  # Call the standalone function
+    
+    if request.method == "POST":
+        entered_pin = request.form.get("pin")
+        if int(entered_pin) == PIN_CODE:
+            session["authenticated"] = True
+            return redirect(url_for("index"))
+        else:
+            return '''
+            <html>
+            <head>
+                <title>Enter PIN</title>
+            </head>
+            <body>
+                <h2>Enter 5-digit PIN to access</h2>
+                <p style="color: red;">Incorrect PIN</p>
+                <form method="POST">
+                    <input type="password" name="pin" maxlength="5" required>
+                    <button type="submit">Submit</button>
+                </form>
+            </body>
+            </html>
+            '''
+    
+    return '''
+    <html>
+    <head>
+        <title>Enter PIN</title>
+    </head>
+    <body>
+        <h2>Enter 5-digit PIN to access</h2>
+        <form method="POST">
+            <input type="password" name="pin" maxlength="5" required>
+            <button type="submit">Submit</button>
+        </form>
+    </body>
+    </html>
+    '''
+
+@app.route("/logout")
+def logout():
+    session.pop("authenticated", None)
+    return redirect(url_for("index"))
+
+@app.route('/static/icon.png')
+def serve_icon():
+    #pc
+    #return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2 (1).png", mimetype='image/png')
+    #laptop
+    return send_file(r"C:\Users\ZacKnowsHow\Downloads\icon_2.png", mimetype='image/png')
+
+@app.route('/change_listing', methods=['POST'])
+def change_listing():
+    direction = request.form.get('direction')
+    total_listings = len(recent_listings['listings'])
+    
+    if direction == 'next':
+        recent_listings['current_index'] = (recent_listings['current_index'] + 1) % total_listings
+    elif direction == 'previous':
+        recent_listings['current_index'] = (recent_listings['current_index'] - 1) % total_listings
+    
+    current_listing = recent_listings['listings'][recent_listings['current_index']]
+    
+    # Convert images to base64
+    processed_images_base64 = []
+    for img in current_listing['processed_images']:
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        processed_images_base64.append(img_str)
+    
+    return jsonify({
+        'title': current_listing['title'],
+        'description': current_listing['description'],
+        'join_date': current_listing['join_date'],
+        'price': current_listing['price'],
+        'expected_revenue': current_listing['expected_revenue'],
+        'profit': current_listing['profit'],
+        'detected_items': current_listing['detected_items'],
+        'processed_images': processed_images_base64,
+        'bounding_boxes': current_listing['bounding_boxes'],
+        'url': current_listing['url'],
+        'suitability': current_listing['suitability'],
+        'current_index': recent_listings['current_index'] + 1,
+        'total_listings': total_listings
+    })
+
+@app.route('/vinted-button-clicked', methods=['POST'])
+def vinted_button_clicked():
+    """Handle Vinted scraper button clicks with enhanced functionality"""
+    if print_debug:
+        print("DEBUG: Received a Vinted button-click POST request")
+    
+    # Get the listing URL and action from the form data
+    url = request.form.get('url')
+    action = request.form.get('action')
+    
+    if not url:
+        print("ERROR: No URL provided in Vinted button click")
+        return 'NO URL PROVIDED', 400
+    
+    try:
+        # Print the appropriate message based on the action
+        if action == 'buy_yes':
+            print(f'✅ VINTED YES BUTTON: User wishes to buy listing: {url}')
+            
+            # Access the Vinted scraper instance and trigger enhanced button functionality
+            if 'vinted_scraper_instance' in globals():
+                vinted_scraper_instance.vinted_button_clicked_enhanced(url)
+            else:
+                print("WARNING: No Vinted scraper instance found")
+                print(f'Vinted button clicked on listing: {url}')
+                with open('vinted_clicked_listings.txt', 'a') as f:
+                    f.write(f"{action}: {url}\n")
+                    
+        elif action == 'buy_no':
+            print(f'❌ VINTED NO BUTTON: User does not wish to buy listing: {url}')
+            # DO NOT CALL vinted_button_clicked_enhanced - just print message
+            # No navigation should happen for "No" button
+        else:
+            print(f'🔘 VINTED BUTTON: Unknown action "{action}" for listing: {url}')
+        
+        return 'VINTED BUTTON CLICK PROCESSED', 200
+        
+    except Exception as e:
+        print(f"ERROR processing Vinted button click: {e}")
+        return 'ERROR PROCESSING REQUEST', 500
+
+
+# Replace the render_main_page function starting at line ~465 with this modified version
+
+def render_main_page():
+    try:
+        # Access global variables
+        global current_listing_title, current_listing_price, current_listing_description
+        global current_listing_join_date, current_detected_items, current_profit
+        global current_listing_images, current_listing_url, recent_listings
+        if print_debug:
+            print("DEBUG: render_main_page called")
+            print(f"DEBUG: recent_listings has {len(recent_listings.get('listings', []))} listings")
+            print(f"DEBUG: current_listing_title = {current_listing_title}")
+            print(f"DEBUG: current_listing_price = {current_listing_price}")
+
+        # Ensure default values if variables are None or empty
+        title = str(current_listing_title or 'No Title Available')
+        price = str(current_listing_price or 'Price: £0.00')
+        description = str(current_listing_description or 'No Description Available')
+        detected_items = str(current_detected_items or 'No items detected')
+        profit = str(current_profit or 'Profit: £0.00')
+        join_date = str(current_listing_join_date or 'No Join Date Available')
+        listing_url = str(current_listing_url or 'No URL Available')
+
+        # Create all_listings_json - this is crucial for the JavaScript
+        all_listings_json = "[]" # Default empty array
+        if recent_listings and 'listings' in recent_listings and recent_listings['listings']:
+            try:
+                listings_data = []
+                for listing in recent_listings['listings']:
+                    # Convert images to base64
+                    processed_images_base64 = []
+                    if 'processed_images' in listing and listing['processed_images']:
+                        for img in listing['processed_images']:
+                            try:
+                                processed_images_base64.append(base64_encode_image(img))
+                            except Exception as img_error:
+                                print(f"Error encoding image: {img_error}")
+
+                    listings_data.append({
+                        'title': str(listing.get('title', 'No Title')),
+                        'description': str(listing.get('description', 'No Description')),
+                        'join_date': str(listing.get('join_date', 'No Date')),
+                        'price': str(listing.get('price', '0')),
+                        'profit': float(listing.get('profit', 0)),
+                        'detected_items': str(listing.get('detected_items', 'No Items')),
+                        'processed_images': processed_images_base64,
+                        'url': str(listing.get('url', 'No URL')),
+                        'suitability': str(listing.get('suitability', 'Unknown'))
                     })
                 all_listings_json = json.dumps(listings_data)
                 if print_debug:
@@ -1622,580 +2199,3 @@ class VintedScraper:
             try:
                 error_element = WebDriverWait(driver, 2).until(
                     EC.presence_of_element_located((By.XPATH, 
-                        "//span[contains(text(), \"Sorry, we couldn't process your payment\")]"))
-                )
-                
-                if error_element:
-                    print(f"❌ DRIVER {driver_num}: Payment error detected, retrying...")
-                    
-                    # Click OK to dismiss error
-                    try:
-                        ok_button = WebDriverWait(driver, 3).until(
-                            EC.element_to_be_clickable((By.XPATH, "//button[contains(.//text(), 'OK, close')]"))
-                        )
-                        ok_button.click()
-                        print(f"✅ DRIVER {driver_num}: Error dismissed")
-                    except:
-                        print(f"⚠️ DRIVER {driver_num}: Could not dismiss error")
-                    
-                    # Wait and try to click pay again
-                    time.sleep(buying_driver_click_pay_wait_time)
-                    
-                    # Re-find and click pay button
-                    try:
-                        pay_button = driver.find_element(By.CSS_SELECTOR, 
-                            'button[data-testid="single-checkout-order-summary-purchase-button"]')
-                        pay_button.click()
-                    except:
-                        print(f"❌ DRIVER {driver_num}: Could not re-click pay button")
-                        break
-                    
-                    continue
-            
-            except TimeoutException:
-                pass  # No error found, continue
-            
-            # Check for success
-            try:
-                success_element = WebDriverWait(driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, 
-                        "//h2[text()='Purchase successful']"))
-                )
-                
-                if success_element:
-                    print(f"🎉 DRIVER {driver_num}: PURCHASE SUCCESSFUL!")
-                    purchase_successful = True
-                    
-                    # Send success notification
-                    try:
-                        self.send_pushover_notification(
-                            "Vinted Purchase Successful",
-                            f"Successfully purchased: {url}",
-                            'aks3to8guqjye193w7ajnydk9jaxh5',
-                            'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
-                        )
-                    except Exception as notification_error:
-                        print(f"⚠️ DRIVER {driver_num}: Notification failed: {notification_error}")
-                    
-                    break
-            
-            except TimeoutException:
-                # No success message yet, continue trying
-                continue
-        
-        if not purchase_successful:
-            print(f"❌ DRIVER {driver_num}: Purchase failed after {attempt} attempts")
-        
-        # Clean up
-        try:
-            driver.close()
-            if len(driver.window_handles) > 0:
-                driver.switch_to.window(driver.window_handles[0])
-        except:
-            pass
-        
-        self.release_driver(driver_num)
-        print(f"✅ DRIVER {driver_num}: Post-payment cleanup completed")
-
-
-    def monitor_for_purchase_unsuccessful(self, url, driver, driver_num, pay_button):
-        """
-        Monitor for "Purchase unsuccessful" detection from bookmark driver and click pay immediately
-        """
-        print(f"🔍 DRIVER {driver_num}: Starting 'Purchase unsuccessful' monitoring for {url[:50]}...")
-        
-        start_time = time.time()
-        check_interval = 0.1  # Check every 100ms for ultra-fast response
-        timeout = 25 * 60  # 25 minutes timeout
-        
-        global purchase_unsuccessful_detected_urls
-        
-        try:
-            while True:
-                elapsed = time.time() - start_time
-                
-                # Check timeout
-                if elapsed >= timeout:
-                    print(f"⏰ DRIVER {driver_num}: Monitoring timeout after {elapsed/60:.1f} minutes")
-                    break
-                
-                # Check if driver is still alive
-                try:
-                    driver.current_url
-                except:
-                    print(f"💀 DRIVER {driver_num}: Driver died during monitoring")
-                    break
-                
-                # CRITICAL: Check if "Purchase unsuccessful" was detected
-                if url in purchase_unsuccessful_detected_urls:
-                    entry = purchase_unsuccessful_detected_urls[url]
-                    if not entry.get('waiting', True):  # Flag changed by bookmark driver
-                        print(f"🎯 DRIVER {driver_num}: 'Purchase unsuccessful' detected! CLICKING PAY NOW!")
-                        
-                        # IMMEDIATELY click pay button
-                        try:
-                            # Try multiple click methods for maximum reliability
-                            pay_clicked = False
-                            
-                            # Method 1: Standard click
-                            try:
-                                pay_button.click()
-                                pay_clicked = True
-                                print(f"✅ DRIVER {driver_num}: Pay clicked using standard method")
-                            except:
-                                # Method 2: JavaScript click
-                                try:
-                                    driver.execute_script("arguments[0].click();", pay_button)
-                                    pay_clicked = True
-                                    print(f"✅ DRIVER {driver_num}: Pay clicked using JavaScript")
-                                except:
-                                    # Method 3: Force enable and click
-                                    try:
-                                        driver.execute_script("""
-                                            arguments[0].disabled = false;
-                                            arguments[0].click();
-                                        """, pay_button)
-                                        pay_clicked = True
-                                        print(f"✅ DRIVER {driver_num}: Pay clicked using force method")
-                                    except Exception as final_error:
-                                        print(f"❌ DRIVER {driver_num}: All pay click methods failed: {final_error}")
-                            
-                            if pay_clicked:
-                                print(f"💳 DRIVER {driver_num}: Payment initiated successfully!")
-                                
-                                # Continue with existing purchase logic
-                                self.handle_post_payment_logic(driver, driver_num, url)
-                            
-                            break  # Exit monitoring loop
-                            
-                        except Exception as click_error:
-                            print(f"❌ DRIVER {driver_num}: Error clicking pay button: {click_error}")
-                            break
-                
-                # Sleep briefly before next check
-                time.sleep(check_interval)
-        
-        except Exception as monitoring_error:
-            print(f"❌ DRIVER {driver_num}: Monitoring error: {monitoring_error}")
-        
-        finally:
-            # Clean up monitoring entry
-            if url in purchase_unsuccessful_detected_urls:
-                del purchase_unsuccessful_detected_urls[url]
-            
-            print(f"🧹 DRIVER {driver_num}: Monitoring cleanup completed")
-
-
-    def process_single_listing_with_driver_modified(self, url, driver_num, driver):
-        """
-        MODIFIED: Process listing that immediately navigates to buy page and waits for "Purchase unsuccessful"
-        """
-        print(f"🔥 DRIVER {driver_num}: Starting MODIFIED processing of {url[:50]}...")
-        
-        try:
-            # Driver health check
-            try:
-                current_url = driver.current_url
-                print(f"✅ DRIVER {driver_num}: Driver alive")
-            except Exception as e:
-                print(f"❌ DRIVER {driver_num}: Driver is dead: {str(e)}")
-                return
-            
-            # Open new tab
-            try:
-                driver.execute_script("window.open('');")
-                new_tab = driver.window_handles[-1]
-                driver.switch_to.window(new_tab)
-                print(f"✅ DRIVER {driver_num}: New tab opened")
-            except Exception as e:
-                print(f"❌ DRIVER {driver_num}: Failed to open new tab: {str(e)}")
-                return
-            
-            # Navigate to URL
-            actual_url = test_purchase_url if test_purchase_not_true else url
-            
-            navigation_success = False
-            for nav_attempt in range(3):
-                try:
-                    driver.get(actual_url)
-                    WebDriverWait(driver, 8).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
-                    navigation_success = True
-                    print(f"✅ DRIVER {driver_num}: Navigation successful")
-                    break
-                except Exception as nav_error:
-                    print(f"❌ DRIVER {driver_num}: Navigation attempt {nav_attempt+1} failed: {str(nav_error)}")
-                    if nav_attempt < 2:
-                        time.sleep(1)
-            
-            if not navigation_success:
-                print(f"❌ DRIVER {driver_num}: All navigation attempts failed")
-                try:
-                    driver.close()
-                    if len(driver.window_handles) > 0:
-                        driver.switch_to.window(driver.window_handles[0])
-                except:
-                    pass
-                return
-            
-            # Click Buy now button
-            buy_button_clicked = False
-            buy_selectors = [
-                'button[data-testid="item-buy-button"]',
-                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
-                '//button[@data-testid="item-buy-button"]',
-                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]'
-            ]
-            
-            for selector in buy_selectors:
-                try:
-                    if selector.startswith('//'):
-                        buy_button = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.XPATH, selector))
-                        )
-                    else:
-                        buy_button = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                        )
-                    
-                    # Try multiple click methods
-                    for click_method in ['standard', 'javascript']:
-                        try:
-                            if click_method == 'standard':
-                                buy_button.click()
-                            else:
-                                driver.execute_script("arguments[0].click();", buy_button)
-                            
-                            buy_button_clicked = True
-                            print(f"✅ DRIVER {driver_num}: Buy button clicked using {click_method}")
-                            break
-                        except Exception as click_error:
-                            continue
-                    
-                    if buy_button_clicked:
-                        break
-                        
-                except Exception as selector_error:
-                    continue
-            
-            if not buy_button_clicked:
-                print(f"❌ DRIVER {driver_num}: Could not click buy button - item likely sold")
-                try:
-                    driver.close()
-                    if len(driver.window_handles) > 0:
-                        driver.switch_to.window(driver.window_handles[0])
-                except:
-                    pass
-                return
-            
-            # MODIFIED: Find and store pay button location BUT DON'T CLICK YET
-            print(f"🔍 DRIVER {driver_num}: Finding pay button (but not clicking yet)...")
-            
-            pay_button = None
-            pay_selectors = [
-                'button[data-testid="single-checkout-order-summary-purchase-button"]',
-                '//button[@data-testid="single-checkout-order-summary-purchase-button"]'
-            ]
-            
-            for selector in pay_selectors:
-                try:
-                    if selector.startswith('//'):
-                        pay_button = WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.XPATH, selector))
-                        )
-                    else:
-                        pay_button = WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                        )
-                    
-                    print(f"✅ DRIVER {driver_num}: Pay button found and stored")
-                    break
-                    
-                except Exception as selector_error:
-                    continue
-            
-            if not pay_button:
-                print(f"❌ DRIVER {driver_num}: Could not find pay button")
-                try:
-                    driver.close()
-                    if len(driver.window_handles) > 0:
-                        driver.switch_to.window(driver.window_handles[0])
-                except:
-                    pass
-                return
-            
-            # MODIFIED: Register this URL for "Purchase unsuccessful" monitoring
-            global purchase_unsuccessful_detected_urls
-            purchase_unsuccessful_detected_urls[url] = {
-                'driver': driver,
-                'driver_num': driver_num,
-                'pay_button': pay_button,
-                'waiting': True,
-                'start_time': time.time()
-            }
-            
-            print(f"🔍 DRIVER {driver_num}: Registered for 'Purchase unsuccessful' monitoring")
-            print(f"⏱️ DRIVER {driver_num}: Will wait for bookmark driver to detect 'Purchase unsuccessful'")
-            
-            # Start monitoring thread for this specific URL
-            monitoring_thread = threading.Thread(
-                target=self.monitor_for_purchase_unsuccessful,
-                args=(url, driver, driver_num, pay_button)
-            )
-            monitoring_thread.daemon = True
-            monitoring_thread.start()
-            
-        except Exception as critical_error:
-            print(f"❌ DRIVER {driver_num}: Critical error: {str(critical_error)}")
-            # Clean up
-            try:
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-            self.release_driver(driver_num)
-
-    def process_single_listing_with_driver(self, url, driver_num, driver):
-        """
-        ENHANCED: Process a single listing using the specified driver with robust error handling,
-        success rate logging, selector alternatives, and failure fast-path
-        """
-        
-        # SUCCESS RATE LOGGING - Track exactly where and when things break
-        process_log = {
-            'start_time': time.time(),
-            'url': url,
-            'driver_num': driver_num,
-            'steps_completed': [],
-            'failures': [],
-            'success': False,
-            'critical_operations': []
-        }
-        
-        def log_step(step_name, success=True, error_msg=None, duration=None):
-            """Log each step for debugging and success rate analysis"""
-            elapsed = duration if duration else time.time() - process_log['start_time']
-            
-            if success:
-                process_log['steps_completed'].append(f"{step_name} - {elapsed:.2f}s")
-                if print_debug:
-                    print(f"✅ DRIVER {driver_num}: {step_name}")
-            else:
-                process_log['failures'].append(f"{step_name}: {error_msg} - {elapsed:.2f}s")
-                print(f"❌ DRIVER {driver_num}: {step_name} - {error_msg}")
-        
-        def log_final_result():
-            """Log comprehensive results for success rate analysis"""
-            total_time = time.time() - process_log['start_time']
-            print(f"\n📊 PROCESSING ANALYSIS - Driver {driver_num}")
-            print(f"🔗 URL: {url[:60]}...")
-            print(f"⏱️  Total time: {total_time:.2f}s")
-            print(f"✅ Steps completed: {len(process_log['steps_completed'])}")
-            print(f"❌ Failures: {len(process_log['failures'])}")
-            print(f"🏆 Overall success: {'YES' if process_log['success'] else 'NO'}")
-            
-            if process_log['failures'] and print_debug:
-                print("🔍 FAILURE DETAILS:")
-                for failure in process_log['failures'][:5]:  # Show first 5 failures
-                    print(f"  • {failure}")
-
-        # SELECTOR ALTERNATIVES - Multiple backup selectors for each critical element
-        SELECTOR_SETS = {
-
-            'purchase_unsuccessful': [
-                 "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
-                "//*[text()='Purchase unsuccessful']"
-            ],
-            
-            'buy_button': [
-                'button[data-testid="item-buy-button"]',
-                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
-                'button.web_ui__Button__button[data-testid="item-buy-button"]',
-                '//button[@data-testid="item-buy-button"]',
-                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
-                '//span[text()="Buy now"]/parent::button'
-            ],
-            
-            'pay_button': [
-                'button[data-testid="single-checkout-order-summary-purchase-button"]',
-                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
-                '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
-                'button.web_ui__Button__primary[data-testid*="purchase"]',
-                '//button[contains(@data-testid, "purchase-button")]',
-                '//button[contains(@class, "web_ui__Button__primary")]'
-            ],
-            
-            'ship_to_home': [
-                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]',
-                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to home"]',
-                '//h2[text()="Ship to home"]',
-                '//*[text()="Ship to home"]'
-            ],
-            
-            'ship_to_pickup': [
-                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]',
-                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to pick-up point"]',
-                '//h2[text()="Ship to pick-up point"]',
-                '//*[text()="Ship to pick-up point"]'
-            ],
-            
-            'success_message': [
-                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Purchase successful']",
-                "//h2[contains(@class, 'web_ui__Text__title') and text()='Purchase successful']",
-                "//h2[text()='Purchase successful']",
-                "//*[contains(text(), 'Purchase successful')]"
-            ],
-            
-            'error_modal': [
-                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format']//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left' and contains(text(), 'Sorry, we couldn')]",
-                "//span[@data-testid='checkout-payment-error-modal--body']",
-                "//div[@data-testid='checkout-payment-error-modal--overlay']",
-                "//span[contains(text(), \"Sorry, we couldn't process your payment\")]",
-                "//*[contains(text(), 'Some of the items belong to another purchase')]"
-            ],
-            
-            'ok_button': [
-                "//button[@data-testid='checkout-payment-error-modal-action-button']",
-                "//button//span[@class='web_ui__Button__label' and text()='OK, close']",
-                "//button[contains(.//text(), 'OK, close')]",
-                "//button[contains(@class, 'web_ui__Button__primary')]",
-                "//*[text()='OK, close']"
-            ]
-        }
-        
-        def try_selectors_fast_fail(driver, selector_set_name, operation='find', timeout=3, click_method='standard'):
-            """
-            FAILURE FAST-PATH - Try selectors with quick timeouts and fail quickly
-            Returns (element, selector_used) or (None, None) if all fail
-            """
-            selectors = SELECTOR_SETS.get(selector_set_name, [])
-            if not selectors:
-                log_step(f"no_selectors_{selector_set_name}", False, "No selectors defined")
-                return None, None
-            
-            for i, selector in enumerate(selectors):
-                try:
-                    if print_debug:
-                        print(f"🔍 DRIVER {driver_num}: Trying selector {i+1}/{len(selectors)} for {selector_set_name}")
-                    
-                    # Use appropriate locator strategy
-                    if selector.startswith('//'):
-                        if operation == 'click':
-                            element = WebDriverWait(driver, timeout).until(
-                                EC.element_to_be_clickable((By.XPATH, selector))
-                            )
-                        else:
-                            element = WebDriverWait(driver, timeout).until(
-                                EC.presence_of_element_located((By.XPATH, selector))
-                            )
-                    else:
-                        if operation == 'click':
-                            element = WebDriverWait(driver, timeout).until(
-                                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                            )
-                        else:
-                            element = WebDriverWait(driver, timeout).until(
-                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                            )
-                    
-                    # If we need to click, try the requested click method(s)
-                    if operation == 'click':
-                        click_methods = ['standard', 'javascript', 'actionchains'] if click_method == 'all' else [click_method]
-                        
-                        for method in click_methods:
-                            try:
-                                if method == 'standard':
-                                    element.click()
-                                elif method == 'javascript':
-                                    driver.execute_script("arguments[0].click();", element)
-                                elif method == 'actionchains':
-                                    from selenium.webdriver.common.action_chains import ActionChains
-                                    ActionChains(driver).move_to_element(element).click().perform()
-                                
-                                log_step(f"click_{selector_set_name}_{method}", True)
-                                break
-                            except Exception as click_error:
-                                log_step(f"click_{selector_set_name}_{method}_attempt", False, str(click_error))
-                                continue
-                        else:
-                            continue  # All click methods failed, try next selector
-                    
-                    log_step(f"selector_{selector_set_name}_success", True, f"Used #{i+1}: {selector[:30]}...")
-                    return element, selector
-                    
-                except TimeoutException:
-                    log_step(f"selector_{selector_set_name}_{i+1}_timeout", False, f"Timeout after {timeout}s")
-                    continue
-                except Exception as e:
-                    log_step(f"selector_{selector_set_name}_{i+1}_error", False, str(e)[:100])
-                    continue
-            
-            log_step(f"all_selectors_{selector_set_name}_failed", False, f"All {len(selectors)} selectors failed")
-            return None, None
-
-        # START OF MAIN PROCESSING LOGIC
-        start_time = time.time()
-        log_step("processing_started", True)
-        
-        try:
-            print(f"🔥 DRIVER {driver_num}: Starting robust processing of {url[:50]}...")
-            
-            # DRIVER HEALTH CHECK - Verify driver is alive before using it
-            try:
-                current_url = driver.current_url
-                log_step("driver_health_check", True, f"Driver alive: {current_url[:30]}...")
-            except Exception as e:
-                log_step("driver_health_check", False, f"Driver is dead: {str(e)}")
-                log_final_result()
-                return
-            
-            # TAB MANAGEMENT - Open new tab for processing
-            try:
-                stopwatch_start = time.time()
-                print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
-                driver.execute_script("window.open('');")
-                new_tab = driver.window_handles[-1]
-                driver.switch_to.window(new_tab)
-                log_step("new_tab_opened", True, f"Total tabs: {len(driver.window_handles)}")
-            except Exception as e:
-                log_step("new_tab_creation", False, str(e))
-                log_final_result()
-                return
-
-            # URL HANDLING - Support test mode
-            if test_purchase_not_true:
-                actual_url = test_purchase_url
-                log_step("test_mode_url", True, f"Using test URL: {actual_url}")
-            else:
-                actual_url = url
-                log_step("normal_url", True)
-            
-            # NAVIGATION - Navigate to listing with retry logic
-            navigation_success = False
-            for nav_attempt in range(3):  # Try up to 3 times
-                try:
-                    log_step(f"navigation_attempt_{nav_attempt+1}", True)
-                    driver.get(actual_url)
-                    
-                    # Wait for page to load with timeout
-                    WebDriverWait(driver, 8).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
-                    navigation_success = True
-                    log_step("navigation_success", True)
-                    break
-                    
-                except TimeoutException:
-                    log_step(f"navigation_timeout_{nav_attempt+1}", False, "Page load timeout")
-                    if nav_attempt < 2:  # Not the last attempt
-                        time.sleep(1)
-                        continue
-                except Exception as nav_error:
-                    log_step(f"navigation_error_{nav_attempt+1}", False, str(nav_error))
-                    if nav_attempt < 2:  # Not the last attempt
-                        time.sleep(1)

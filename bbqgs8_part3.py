@@ -1,4 +1,581 @@
 # Continuation from line 4401
+                        "//span[contains(text(), \"Sorry, we couldn't process your payment\")]"))
+                )
+                
+                if error_element:
+                    print(f"❌ DRIVER {driver_num}: Payment error detected, retrying...")
+                    
+                    # Click OK to dismiss error
+                    try:
+                        ok_button = WebDriverWait(driver, 3).until(
+                            EC.element_to_be_clickable((By.XPATH, "//button[contains(.//text(), 'OK, close')]"))
+                        )
+                        ok_button.click()
+                        print(f"✅ DRIVER {driver_num}: Error dismissed")
+                    except:
+                        print(f"⚠️ DRIVER {driver_num}: Could not dismiss error")
+                    
+                    # Wait and try to click pay again
+                    time.sleep(buying_driver_click_pay_wait_time)
+                    
+                    # Re-find and click pay button
+                    try:
+                        pay_button = driver.find_element(By.CSS_SELECTOR, 
+                            'button[data-testid="single-checkout-order-summary-purchase-button"]')
+                        pay_button.click()
+                    except:
+                        print(f"❌ DRIVER {driver_num}: Could not re-click pay button")
+                        break
+                    
+                    continue
+            
+            except TimeoutException:
+                pass  # No error found, continue
+            
+            # Check for success
+            try:
+                success_element = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//h2[text()='Purchase successful']"))
+                )
+                
+                if success_element:
+                    print(f"🎉 DRIVER {driver_num}: PURCHASE SUCCESSFUL!")
+                    purchase_successful = True
+                    
+                    # Send success notification
+                    try:
+                        self.send_pushover_notification(
+                            "Vinted Purchase Successful",
+                            f"Successfully purchased: {url}",
+                            'aks3to8guqjye193w7ajnydk9jaxh5',
+                            'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                        )
+                    except Exception as notification_error:
+                        print(f"⚠️ DRIVER {driver_num}: Notification failed: {notification_error}")
+                    
+                    break
+            
+            except TimeoutException:
+                # No success message yet, continue trying
+                continue
+        
+        if not purchase_successful:
+            print(f"❌ DRIVER {driver_num}: Purchase failed after {attempt} attempts")
+        
+        # Clean up
+        try:
+            driver.close()
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+        
+        self.release_driver(driver_num)
+        print(f"✅ DRIVER {driver_num}: Post-payment cleanup completed")
+
+
+    def monitor_for_purchase_unsuccessful(self, url, driver, driver_num, pay_button):
+        """
+        Monitor for "Purchase unsuccessful" detection from bookmark driver and click pay immediately
+        """
+        print(f"🔍 DRIVER {driver_num}: Starting 'Purchase unsuccessful' monitoring for {url[:50]}...")
+        
+        start_time = time.time()
+        check_interval = 0.1  # Check every 100ms for ultra-fast response
+        timeout = 25 * 60  # 25 minutes timeout
+        
+        global purchase_unsuccessful_detected_urls
+        
+        try:
+            while True:
+                elapsed = time.time() - start_time
+                
+                # Check timeout
+                if elapsed >= timeout:
+                    print(f"⏰ DRIVER {driver_num}: Monitoring timeout after {elapsed/60:.1f} minutes")
+                    break
+                
+                # Check if driver is still alive
+                try:
+                    driver.current_url
+                except:
+                    print(f"💀 DRIVER {driver_num}: Driver died during monitoring")
+                    break
+                
+                # CRITICAL: Check if "Purchase unsuccessful" was detected
+                if url in purchase_unsuccessful_detected_urls:
+                    entry = purchase_unsuccessful_detected_urls[url]
+                    if not entry.get('waiting', True):  # Flag changed by bookmark driver
+                        print(f"🎯 DRIVER {driver_num}: 'Purchase unsuccessful' detected! CLICKING PAY NOW!")
+                        
+                        # IMMEDIATELY click pay button
+                        try:
+                            # Try multiple click methods for maximum reliability
+                            pay_clicked = False
+                            
+                            # Method 1: Standard click
+                            try:
+                                pay_button.click()
+                                pay_clicked = True
+                                print(f"✅ DRIVER {driver_num}: Pay clicked using standard method")
+                            except:
+                                # Method 2: JavaScript click
+                                try:
+                                    driver.execute_script("arguments[0].click();", pay_button)
+                                    pay_clicked = True
+                                    print(f"✅ DRIVER {driver_num}: Pay clicked using JavaScript")
+                                except:
+                                    # Method 3: Force enable and click
+                                    try:
+                                        driver.execute_script("""
+                                            arguments[0].disabled = false;
+                                            arguments[0].click();
+                                        """, pay_button)
+                                        pay_clicked = True
+                                        print(f"✅ DRIVER {driver_num}: Pay clicked using force method")
+                                    except Exception as final_error:
+                                        print(f"❌ DRIVER {driver_num}: All pay click methods failed: {final_error}")
+                            
+                            if pay_clicked:
+                                print(f"💳 DRIVER {driver_num}: Payment initiated successfully!")
+                                
+                                # Continue with existing purchase logic
+                                self.handle_post_payment_logic(driver, driver_num, url)
+                            
+                            break  # Exit monitoring loop
+                            
+                        except Exception as click_error:
+                            print(f"❌ DRIVER {driver_num}: Error clicking pay button: {click_error}")
+                            break
+                
+                # Sleep briefly before next check
+                time.sleep(check_interval)
+        
+        except Exception as monitoring_error:
+            print(f"❌ DRIVER {driver_num}: Monitoring error: {monitoring_error}")
+        
+        finally:
+            # Clean up monitoring entry
+            if url in purchase_unsuccessful_detected_urls:
+                del purchase_unsuccessful_detected_urls[url]
+            
+            print(f"🧹 DRIVER {driver_num}: Monitoring cleanup completed")
+
+
+    def process_single_listing_with_driver_modified(self, url, driver_num, driver):
+        """
+        MODIFIED: Process listing that immediately navigates to buy page and waits for "Purchase unsuccessful"
+        """
+        print(f"🔥 DRIVER {driver_num}: Starting MODIFIED processing of {url[:50]}...")
+        
+        try:
+            # Driver health check
+            try:
+                current_url = driver.current_url
+                print(f"✅ DRIVER {driver_num}: Driver alive")
+            except Exception as e:
+                print(f"❌ DRIVER {driver_num}: Driver is dead: {str(e)}")
+                return
+            
+            # Open new tab
+            try:
+                driver.execute_script("window.open('');")
+                new_tab = driver.window_handles[-1]
+                driver.switch_to.window(new_tab)
+                print(f"✅ DRIVER {driver_num}: New tab opened")
+            except Exception as e:
+                print(f"❌ DRIVER {driver_num}: Failed to open new tab: {str(e)}")
+                return
+            
+            # Navigate to URL
+            actual_url = test_purchase_url if test_purchase_not_true else url
+            
+            navigation_success = False
+            for nav_attempt in range(3):
+                try:
+                    driver.get(actual_url)
+                    WebDriverWait(driver, 8).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                    navigation_success = True
+                    print(f"✅ DRIVER {driver_num}: Navigation successful")
+                    break
+                except Exception as nav_error:
+                    print(f"❌ DRIVER {driver_num}: Navigation attempt {nav_attempt+1} failed: {str(nav_error)}")
+                    if nav_attempt < 2:
+                        time.sleep(1)
+            
+            if not navigation_success:
+                print(f"❌ DRIVER {driver_num}: All navigation attempts failed")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                return
+            
+            # Click Buy now button
+            buy_button_clicked = False
+            buy_selectors = [
+                'button[data-testid="item-buy-button"]',
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]'
+            ]
+            
+            for selector in buy_selectors:
+                try:
+                    if selector.startswith('//'):
+                        buy_button = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        buy_button = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                    
+                    # Try multiple click methods
+                    for click_method in ['standard', 'javascript']:
+                        try:
+                            if click_method == 'standard':
+                                buy_button.click()
+                            else:
+                                driver.execute_script("arguments[0].click();", buy_button)
+                            
+                            buy_button_clicked = True
+                            print(f"✅ DRIVER {driver_num}: Buy button clicked using {click_method}")
+                            break
+                        except Exception as click_error:
+                            continue
+                    
+                    if buy_button_clicked:
+                        break
+                        
+                except Exception as selector_error:
+                    continue
+            
+            if not buy_button_clicked:
+                print(f"❌ DRIVER {driver_num}: Could not click buy button - item likely sold")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                return
+            
+            # MODIFIED: Find and store pay button location BUT DON'T CLICK YET
+            print(f"🔍 DRIVER {driver_num}: Finding pay button (but not clicking yet)...")
+            
+            pay_button = None
+            pay_selectors = [
+                'button[data-testid="single-checkout-order-summary-purchase-button"]',
+                '//button[@data-testid="single-checkout-order-summary-purchase-button"]'
+            ]
+            
+            for selector in pay_selectors:
+                try:
+                    if selector.startswith('//'):
+                        pay_button = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.XPATH, selector))
+                        )
+                    else:
+                        pay_button = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        )
+                    
+                    print(f"✅ DRIVER {driver_num}: Pay button found and stored")
+                    break
+                    
+                except Exception as selector_error:
+                    continue
+            
+            if not pay_button:
+                print(f"❌ DRIVER {driver_num}: Could not find pay button")
+                try:
+                    driver.close()
+                    if len(driver.window_handles) > 0:
+                        driver.switch_to.window(driver.window_handles[0])
+                except:
+                    pass
+                return
+            
+            # MODIFIED: Register this URL for "Purchase unsuccessful" monitoring
+            global purchase_unsuccessful_detected_urls
+            purchase_unsuccessful_detected_urls[url] = {
+                'driver': driver,
+                'driver_num': driver_num,
+                'pay_button': pay_button,
+                'waiting': True,
+                'start_time': time.time()
+            }
+            
+            print(f"🔍 DRIVER {driver_num}: Registered for 'Purchase unsuccessful' monitoring")
+            print(f"⏱️ DRIVER {driver_num}: Will wait for bookmark driver to detect 'Purchase unsuccessful'")
+            
+            # Start monitoring thread for this specific URL
+            monitoring_thread = threading.Thread(
+                target=self.monitor_for_purchase_unsuccessful,
+                args=(url, driver, driver_num, pay_button)
+            )
+            monitoring_thread.daemon = True
+            monitoring_thread.start()
+            
+        except Exception as critical_error:
+            print(f"❌ DRIVER {driver_num}: Critical error: {str(critical_error)}")
+            # Clean up
+            try:
+                driver.close()
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+            except:
+                pass
+            self.release_driver(driver_num)
+
+    def process_single_listing_with_driver(self, url, driver_num, driver):
+        """
+        ENHANCED: Process a single listing using the specified driver with robust error handling,
+        success rate logging, selector alternatives, and failure fast-path
+        """
+        
+        # SUCCESS RATE LOGGING - Track exactly where and when things break
+        process_log = {
+            'start_time': time.time(),
+            'url': url,
+            'driver_num': driver_num,
+            'steps_completed': [],
+            'failures': [],
+            'success': False,
+            'critical_operations': []
+        }
+        
+        def log_step(step_name, success=True, error_msg=None, duration=None):
+            """Log each step for debugging and success rate analysis"""
+            elapsed = duration if duration else time.time() - process_log['start_time']
+            
+            if success:
+                process_log['steps_completed'].append(f"{step_name} - {elapsed:.2f}s")
+                if print_debug:
+                    print(f"✅ DRIVER {driver_num}: {step_name}")
+            else:
+                process_log['failures'].append(f"{step_name}: {error_msg} - {elapsed:.2f}s")
+                print(f"❌ DRIVER {driver_num}: {step_name} - {error_msg}")
+        
+        def log_final_result():
+            """Log comprehensive results for success rate analysis"""
+            total_time = time.time() - process_log['start_time']
+            print(f"\n📊 PROCESSING ANALYSIS - Driver {driver_num}")
+            print(f"🔗 URL: {url[:60]}...")
+            print(f"⏱️  Total time: {total_time:.2f}s")
+            print(f"✅ Steps completed: {len(process_log['steps_completed'])}")
+            print(f"❌ Failures: {len(process_log['failures'])}")
+            print(f"🏆 Overall success: {'YES' if process_log['success'] else 'NO'}")
+            
+            if process_log['failures'] and print_debug:
+                print("🔍 FAILURE DETAILS:")
+                for failure in process_log['failures'][:5]:  # Show first 5 failures
+                    print(f"  • {failure}")
+
+        # SELECTOR ALTERNATIVES - Multiple backup selectors for each critical element
+        SELECTOR_SETS = {
+
+            'purchase_unsuccessful': [
+                 "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+                "//*[text()='Purchase unsuccessful']"
+            ],
+            
+            'buy_button': [
+                'button[data-testid="item-buy-button"]',
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                'button.web_ui__Button__button[data-testid="item-buy-button"]',
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+                '//span[text()="Buy now"]/parent::button'
+            ],
+            
+            'pay_button': [
+                'button[data-testid="single-checkout-order-summary-purchase-button"]',
+                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
+                '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
+                'button.web_ui__Button__primary[data-testid*="purchase"]',
+                '//button[contains(@data-testid, "purchase-button")]',
+                '//button[contains(@class, "web_ui__Button__primary")]'
+            ],
+            
+            'ship_to_home': [
+                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]',
+                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to home"]',
+                '//h2[text()="Ship to home"]',
+                '//*[text()="Ship to home"]'
+            ],
+            
+            'ship_to_pickup': [
+                '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]',
+                '//h2[contains(@class, "web_ui__Text__title") and text()="Ship to pick-up point"]',
+                '//h2[text()="Ship to pick-up point"]',
+                '//*[text()="Ship to pick-up point"]'
+            ],
+            
+            'success_message': [
+                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Purchase successful']",
+                "//h2[contains(@class, 'web_ui__Text__title') and text()='Purchase successful']",
+                "//h2[text()='Purchase successful']",
+                "//*[contains(text(), 'Purchase successful')]"
+            ],
+            
+            'error_modal': [
+                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format']//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left' and contains(text(), 'Sorry, we couldn')]",
+                "//span[@data-testid='checkout-payment-error-modal--body']",
+                "//div[@data-testid='checkout-payment-error-modal--overlay']",
+                "//span[contains(text(), \"Sorry, we couldn't process your payment\")]",
+                "//*[contains(text(), 'Some of the items belong to another purchase')]"
+            ],
+            
+            'ok_button': [
+                "//button[@data-testid='checkout-payment-error-modal-action-button']",
+                "//button//span[@class='web_ui__Button__label' and text()='OK, close']",
+                "//button[contains(.//text(), 'OK, close')]",
+                "//button[contains(@class, 'web_ui__Button__primary')]",
+                "//*[text()='OK, close']"
+            ]
+        }
+        
+        def try_selectors_fast_fail(driver, selector_set_name, operation='find', timeout=3, click_method='standard'):
+            """
+            FAILURE FAST-PATH - Try selectors with quick timeouts and fail quickly
+            Returns (element, selector_used) or (None, None) if all fail
+            """
+            selectors = SELECTOR_SETS.get(selector_set_name, [])
+            if not selectors:
+                log_step(f"no_selectors_{selector_set_name}", False, "No selectors defined")
+                return None, None
+            
+            for i, selector in enumerate(selectors):
+                try:
+                    if print_debug:
+                        print(f"🔍 DRIVER {driver_num}: Trying selector {i+1}/{len(selectors)} for {selector_set_name}")
+                    
+                    # Use appropriate locator strategy
+                    if selector.startswith('//'):
+                        if operation == 'click':
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.element_to_be_clickable((By.XPATH, selector))
+                            )
+                        else:
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.presence_of_element_located((By.XPATH, selector))
+                            )
+                    else:
+                        if operation == 'click':
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                            )
+                        else:
+                            element = WebDriverWait(driver, timeout).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                            )
+                    
+                    # If we need to click, try the requested click method(s)
+                    if operation == 'click':
+                        click_methods = ['standard', 'javascript', 'actionchains'] if click_method == 'all' else [click_method]
+                        
+                        for method in click_methods:
+                            try:
+                                if method == 'standard':
+                                    element.click()
+                                elif method == 'javascript':
+                                    driver.execute_script("arguments[0].click();", element)
+                                elif method == 'actionchains':
+                                    from selenium.webdriver.common.action_chains import ActionChains
+                                    ActionChains(driver).move_to_element(element).click().perform()
+                                
+                                log_step(f"click_{selector_set_name}_{method}", True)
+                                break
+                            except Exception as click_error:
+                                log_step(f"click_{selector_set_name}_{method}_attempt", False, str(click_error))
+                                continue
+                        else:
+                            continue  # All click methods failed, try next selector
+                    
+                    log_step(f"selector_{selector_set_name}_success", True, f"Used #{i+1}: {selector[:30]}...")
+                    return element, selector
+                    
+                except TimeoutException:
+                    log_step(f"selector_{selector_set_name}_{i+1}_timeout", False, f"Timeout after {timeout}s")
+                    continue
+                except Exception as e:
+                    log_step(f"selector_{selector_set_name}_{i+1}_error", False, str(e)[:100])
+                    continue
+            
+            log_step(f"all_selectors_{selector_set_name}_failed", False, f"All {len(selectors)} selectors failed")
+            return None, None
+
+        # START OF MAIN PROCESSING LOGIC
+        start_time = time.time()
+        log_step("processing_started", True)
+        
+        try:
+            print(f"🔥 DRIVER {driver_num}: Starting robust processing of {url[:50]}...")
+            
+            # DRIVER HEALTH CHECK - Verify driver is alive before using it
+            try:
+                current_url = driver.current_url
+                log_step("driver_health_check", True, f"Driver alive: {current_url[:30]}...")
+            except Exception as e:
+                log_step("driver_health_check", False, f"Driver is dead: {str(e)}")
+                log_final_result()
+                return
+            
+            # TAB MANAGEMENT - Open new tab for processing
+            try:
+                stopwatch_start = time.time()
+                print("⏱️ STOPWATCH: Starting timer for new tab and navigation...")
+                driver.execute_script("window.open('');")
+                new_tab = driver.window_handles[-1]
+                driver.switch_to.window(new_tab)
+                log_step("new_tab_opened", True, f"Total tabs: {len(driver.window_handles)}")
+            except Exception as e:
+                log_step("new_tab_creation", False, str(e))
+                log_final_result()
+                return
+
+            # URL HANDLING - Support test mode
+            if test_purchase_not_true:
+                actual_url = test_purchase_url
+                log_step("test_mode_url", True, f"Using test URL: {actual_url}")
+            else:
+                actual_url = url
+                log_step("normal_url", True)
+            
+            # NAVIGATION - Navigate to listing with retry logic
+            navigation_success = False
+            for nav_attempt in range(3):  # Try up to 3 times
+                try:
+                    log_step(f"navigation_attempt_{nav_attempt+1}", True)
+                    driver.get(actual_url)
+                    
+                    # Wait for page to load with timeout
+                    WebDriverWait(driver, 8).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                    navigation_success = True
+                    log_step("navigation_success", True)
+                    break
+                    
+                except TimeoutException:
+                    log_step(f"navigation_timeout_{nav_attempt+1}", False, "Page load timeout")
+                    if nav_attempt < 2:  # Not the last attempt
+                        time.sleep(1)
+                        continue
+                except Exception as nav_error:
+                    log_step(f"navigation_error_{nav_attempt+1}", False, str(nav_error))
+                    if nav_attempt < 2:  # Not the last attempt
+                        time.sleep(1)
                         continue
 
             if not navigation_success:
@@ -1622,580 +2199,3 @@
                     if final_detected_objects.get(switch_class, 0) > 0:
                         filtered_classes.append(switch_class)
                         final_detected_objects[switch_class] = 0
-                
-                if filtered_classes:
-                    print(f"🚫 PRICE FILTER: Removed Nintendo Switch detections due to low price (£{listing_price:.2f} < £{PRICE_THRESHOLD:.2f})")
-                    print(f"    Filtered classes: {', '.join(filtered_classes)}")
-            elif listing_price >= PRICE_THRESHOLD:
-                # Optional: Log when price threshold allows detection
-                detected_switch_classes = [cls for cls in NINTENDO_SWITCH_CLASSES if final_detected_objects.get(cls, 0) > 0]
-                if detected_switch_classes:
-                    print(f"✅ PRICE FILTER: Nintendo Switch detections allowed (£{listing_price:.2f} >= £{PRICE_THRESHOLD:.2f})")
-        
-        except Exception as price_filter_error:
-            print(f"⚠️ Warning: Price filtering failed: {price_filter_error}")
-            # Continue without price filtering if there's an error
-        
-        return final_detected_objects, processed_images
-
-
-    def download_images_for_listing(self, driver, listing_dir):
-        """FIXED: Download ALL listing images without limits and prevent duplicates"""
-        import concurrent.futures
-        import requests
-        from PIL import Image
-        from io import BytesIO
-        import os
-        import hashlib
-        
-        # Wait for the page to fully load
-        try:
-            WebDriverWait(driver, 10).until(  # Increased timeout for better reliability
-                EC.presence_of_element_located((By.TAG_NAME, "img"))
-            )
-        except TimeoutException:
-            print("  ▶ Timeout waiting for images to load")
-            return []
-        
-        # Try multiple selectors in order of preference - focusing on product images only
-        img_selectors = [
-            # Target product images specifically (avoid profile pictures)
-            "img.web_ui__Image__content[data-testid^='item-photo-']",
-            "img[data-testid^='item-photo-']",
-            # Target images within containers that suggest product photos
-            "div.web_ui__Image__cover img.web_ui__Image__content",
-            "div.web_ui__Image__scaled img.web_ui__Image__content", 
-            "div.web_ui__Image__rounded img.web_ui__Image__content",
-            # Broader selectors but still avoiding profile images
-            "div.feed-grid img",
-            "div[class*='photo'] img",
-        ]
-        
-        imgs = []
-        for selector in img_selectors:
-            imgs = driver.find_elements(By.CSS_SELECTOR, selector)
-            if imgs:
-                if print_images_backend_info:
-                    print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
-                break
-        
-        if not imgs:
-            print("  ▶ No images found with any selector")
-            return []
-        
-        # FIXED: Remove the [:8] limit - process ALL images found
-        valid_urls = []
-        seen_urls = set()  # Track URLs to prevent duplicates
-        
-        if print_images_backend_info:
-            print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
-        
-        for img in imgs:  # REMOVED [:8] limit here
-            src = img.get_attribute("src")
-            parent_classes = ""
-            
-            # Get parent element classes to check for profile picture indicators
-            try:
-                parent = img.find_element(By.XPATH, "..")
-                parent_classes = parent.get_attribute("class") or ""
-            except:
-                pass
-            
-            # Check if this is a valid product image
-            if src and src.startswith('http'):
-                # FIXED: Better duplicate detection using URL normalization
-                # Remove query parameters and fragments for duplicate detection
-                normalized_url = src.split('?')[0].split('#')[0]
-                
-                if normalized_url in seen_urls:
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
-                    continue
-                
-                seen_urls.add(normalized_url)
-                
-                # Exclude profile pictures and small icons based on URL patterns
-                if (
-                    # Skip small profile pictures (50x50, 75x75, etc.)
-                    '/50x50/' in src or 
-                    '/75x75/' in src or 
-                    '/100x100/' in src or
-                    # Skip if parent has circle class (usually profile pics)
-                    'circle' in parent_classes.lower() or
-                    # Skip SVG icons
-                    src.endswith('.svg') or
-                    # Skip very obviously small images by checking dimensions in URL
-                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
-                ):
-                    print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
-                    continue
-                
-                # Only include images that look like product photos
-                if (
-                    # Vinted product images typically have f800, f1200, etc.
-                    '/f800/' in src or 
-                    '/f1200/' in src or 
-                    '/f600/' in src or
-                    # Or contain vinted/cloudinary and are likely product images
-                    (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
-                    # And don't have small size indicators
-                    not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
-                ):
-                    valid_urls.append(src)
-                    if print_images_backend_info:
-                        print(f"    ✅ Added valid image URL: {src[:50]}...")
-
-        if not valid_urls:
-            print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
-            return []
-
-        if print_images_backend_info:
-            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
-        
-        os.makedirs(listing_dir, exist_ok=True)
-        
-        # FIXED: Enhanced duplicate detection using content hashes
-        def download_single_image(args):
-            """Download a single image with enhanced duplicate detection"""
-            url, index = args
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Cache-Control': 'no-cache',
-                'Referer': driver.current_url
-            }
-            
-            try:
-                resp = requests.get(url, timeout=10, headers=headers)
-                resp.raise_for_status()
-                
-                # FIXED: Use content hash to detect identical images with different URLs
-                content_hash = hashlib.md5(resp.content).hexdigest()
-                
-                # Check if we've already downloaded this exact image content
-                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
-                if os.path.exists(hash_file):
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
-                    return None
-                
-                img = Image.open(BytesIO(resp.content))
-                
-                # Skip very small images (likely icons or profile pics that got through)
-                if img.width < 200 or img.height < 200:
-                    print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
-                    return None
-                
-                # Resize image for YOLO detection optimization
-                MAX_SIZE = (1000, 1000)  # Slightly larger for better detection
-                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
-                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
-                    print(f"    📏 Resized image to: {img.width}x{img.height}")
-                
-                # Convert to RGB if needed
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                
-                # Save the image
-                save_path = os.path.join(listing_dir, f"{index}.png")
-                img.save(save_path, format="PNG", optimize=True)
-                
-                # Create hash marker file to prevent future duplicates
-                with open(hash_file, 'w') as f:
-                    f.write(f"Downloaded from: {url}")
-                if print_images_backend_info:
-                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
-                return save_path
-                
-            except Exception as e:
-                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
-                return None
-        if print_images_backend_info:
-            print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
-        
-        # FIXED: Dynamic batch size based on actual image count
-        batch_size = len(valid_urls)  # Each "batch" equals the number of listing images
-        max_workers = min(6, batch_size)  # Use appropriate number of workers
-        
-        if print_images_backend_info:
-            print(f"  ▶ Batch size set to: {batch_size} (= number of listing images)")
-            print(f"  ▶ Using {max_workers} concurrent workers")
-        
-        downloaded_paths = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Prepare arguments for concurrent download
-            download_args = [(url, i+1) for i, url in enumerate(valid_urls)]
-            
-            # Submit all download jobs
-            future_to_url = {executor.submit(download_single_image, args): args[0] for args in download_args}
-            
-            # Collect results as they complete
-            for future in concurrent.futures.as_completed(future_to_url):
-                result = future.result()
-                if result:  # Only add successful downloads
-                    downloaded_paths.append(result)
-
-        print(f"  ▶ Successfully downloaded {len(downloaded_paths)} unique images (from {len(valid_urls)} URLs)")
-        
-        # Clean up hash files (optional - you might want to keep them for faster future runs)
-        # Uncomment the next 6 lines if you want to clean up hash files after each listing
-        # try:
-        #     for file in os.listdir(listing_dir):
-        #         if file.startswith('.hash_'):
-        #             os.remove(os.path.join(listing_dir, file))
-        # except:
-        #     pass
-        
-        return downloaded_paths
-
-
-    def download_and_process_images_vinted(self, image_urls):
-        """FIXED: Process images without arbitrary limits and with better deduplication"""
-        processed_images = []
-        seen_hashes = set()  # Track content hashes to prevent duplicates
-        
-        print(f"🖼️  Processing {len(image_urls)} image URLs (NO LIMIT)")
-        
-        for i, url in enumerate(image_urls):  # REMOVED [:8] limit here
-            try:
-                response = requests.get(url, timeout=10)
-                if response.status_code == 200:
-                    # FIXED: Use content hash for duplicate detection
-                    content_hash = hashlib.md5(response.content).hexdigest()
-                    
-                    if content_hash in seen_hashes:
-                        if print_images_backend_info:
-                            print(f"🖼️  Skipping duplicate image {i+1} (hash: {content_hash[:8]}...)")
-                        continue
-                    
-                    seen_hashes.add(content_hash)
-                    
-                    img = Image.open(io.BytesIO(response.content))
-                    
-                    # Skip very small images
-                    if img.width < 200 or img.height < 200:
-                        print(f"🖼️  Skipping small image {i+1}: {img.width}x{img.height}")
-                        continue
-                    
-                    img = img.convert("RGB")
-                    
-                    # FIXED: Create proper copy to prevent memory issues
-                    img_copy = img.copy()
-                    processed_images.append(img_copy)
-                    img.close()  # Close original to free memory
-                    
-                    print(f"🖼️  Processed unique image {i+1}: {img_copy.width}x{img_copy.height}")
-                    
-                else:
-                    print(f"🖼️  Failed to download image {i+1}. Status code: {response.status_code}")
-            except Exception as e:
-                print(f"🖼️  Error processing image {i+1}: {str(e)}")
-        
-        print(f"🖼️  Final result: {len(processed_images)} unique processed images")
-        return processed_images
-
-
-    
-    def extract_vinted_listing_id(self, url):
-        """
-        Extract listing ID from Vinted URL
-        Example: https://www.vinted.co.uk/items/6862154542-sonic-forces?referrer=catalog
-        Returns: "6862154542"
-        """
-        debug_function_call("extract_vinted_listing_id")
-        import re  # FIXED: Import re at function level
-        
-        if not url:
-            return None
-        
-        # Match pattern: /items/[numbers]-
-        match = re.search(r'/items/(\d+)-', url)
-        if match:
-            return match.group(1)
-        
-        # Fallback: match any sequence of digits after /items/
-        match = re.search(r'/items/(\d+)', url)
-        if match:
-            return match.group(1)
-        
-        return None
-
-    def load_scanned_vinted_ids(self):
-        """Load previously scanned Vinted listing IDs from file"""
-        try:
-            if os.path.exists(VINTED_SCANNED_IDS_FILE):
-                with open(VINTED_SCANNED_IDS_FILE, 'r') as f:
-                    return set(line.strip() for line in f if line.strip())
-            return set()
-        except Exception as e:
-            print(f"Error loading scanned IDs: {e}")
-            return set()
-
-    def save_vinted_listing_id(self, listing_id):
-        """Save a Vinted listing ID to the scanned file"""
-        if not listing_id:
-            return
-        
-        try:
-            with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
-                f.write(f"{listing_id}\n")
-        except Exception as e:
-            print(f"Error saving listing ID {listing_id}: {e}")
-
-    def is_vinted_listing_already_scanned(self, url, scanned_ids):
-        """Check if a Vinted listing has already been scanned"""
-        listing_id = self.extract_vinted_listing_id(url)
-        if not listing_id:
-            return False
-        return listing_id in scanned_ids
-
-    def refresh_vinted_page_and_wait(self, driver, is_first_refresh=True):
-        """
-        Refresh the Vinted page and wait appropriate time
-        """
-        print("🔄 Refreshing Vinted page...")
-        
-        # Navigate back to first page
-        params = {
-            "search_text": SEARCH_QUERY,
-            "price_from": PRICE_FROM,
-            "price_to": PRICE_TO,
-            "currency": CURRENCY,
-            "order": ORDER,
-        }
-        driver.get(f"{BASE_URL}?{urlencode(params)}")
-        
-        # Wait for page to load
-        try:
-            WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-            )
-            print("✅ Page refreshed and loaded successfully")
-        except TimeoutException:
-            print("⚠️ Timeout waiting for page to reload")
-        
-        # Wait for new listings (except first refresh)
-        if not is_first_refresh:
-            print(f"⏳ Waiting {wait_after_max_reached_vinted} seconds for new listings...")
-            time.sleep(wait_after_max_reached_vinted)
-        
-        return True
-
-    def search_vinted_with_refresh(self, driver, search_query):
-        """
-        Enhanced search_vinted method with refresh and rescan functionality
-        UPDATED: Now restarts the main driver every 250 cycles to prevent freezing
-        """
-        global suitable_listings, current_listing_index
-        
-        # CLEAR THE VINTED SCANNED IDS FILE AT THE BEGINNING OF EACH RUN
-        try:
-            with open(VINTED_SCANNED_IDS_FILE, 'w') as f:
-                pass  # This creates an empty file, clearing any existing content
-            print(f"✅ Cleared {VINTED_SCANNED_IDS_FILE} at the start of the run")
-        except Exception as e:
-            print(f"⚠️ Warning: Could not clear {VINTED_SCANNED_IDS_FILE}: {e}")
-        
-        # Clear previous results
-        suitable_listings.clear()
-        current_listing_index = 0
-        
-        # Ensure root download folder exists
-        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
-
-        # Load YOLO Model Once
-        print("🧠 Loading object detection model...")
-        if not os.path.exists(MODEL_WEIGHTS):
-            print(f"❌ Critical Error: Model weights not found at '{MODEL_WEIGHTS}'. Detection will be skipped.")
-        else:
-            try:
-                print("✅ Model loaded successfully.")
-            except Exception as e:
-                print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
-        
-        print(f"CUDA available: {torch.cuda.is_available()}")
-        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
-
-        # Load model with explicit GPU usage
-        if torch.cuda.is_available():
-            model = YOLO(MODEL_WEIGHTS).cuda()
-            print("✅ YOLO model loaded on GPU")
-        else:
-            model = YOLO(MODEL_WEIGHTS).cpu()
-            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
-
-        # Store original driver reference
-        current_driver = driver
-        
-        # Load previously scanned listing IDs
-        scanned_ids = self.load_scanned_vinted_ids()
-        print(f"📚 Loaded {len(scanned_ids)} previously scanned listing IDs")
-
-        page = 1
-        overall_listing_counter = 0
-        refresh_cycle = 1
-        is_first_refresh = True
-        
-        # NEW: Driver restart tracking
-        DRIVER_RESTART_INTERVAL = 100
-        cycles_since_restart = 0
-
-        # Main scanning loop with refresh functionality AND driver restart
-        while True:
-            print(f"\n{'='*60}")
-            print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
-            print(f"🔄 Cycles since last driver restart: {cycles_since_restart}")
-            print(f"{'='*60}")
-            
-            # NEW: Check if we need to restart the driver
-            if cycles_since_restart >= DRIVER_RESTART_INTERVAL:
-                print(f"\n🔄 DRIVER RESTART: Reached {DRIVER_RESTART_INTERVAL} cycles")
-                print("🔄 RESTARTING: Main scraping driver to prevent freezing...")
-                
-                try:
-                    # Close current driver safely
-                    print("🔄 CLOSING: Current driver...")
-                    current_driver.quit()
-                    time.sleep(2)  # Give time for cleanup
-                    
-                    # Create new driver
-                    print("🔄 CREATING: New driver...")
-                    current_driver = self.setup_driver()
-                    
-                    if current_driver is None:
-                        print("❌ CRITICAL: Failed to create new driver after restart")
-                        break
-                    
-                    print("✅ DRIVER RESTART: Successfully restarted main driver")
-                    cycles_since_restart = 0  # Reset counter
-                    
-                    # Re-navigate to search page after restart
-                    params = {
-                        "search_text": search_query,
-                        "price_from": PRICE_FROM,
-                        "price_to": PRICE_TO,
-                        "currency": CURRENCY,
-                        "order": ORDER,
-                    }
-                    current_driver.get(f"{BASE_URL}?{urlencode(params)}")
-                    
-                    # Wait for page to load after restart
-                    try:
-                        WebDriverWait(current_driver, 20).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-                        )
-                        print("✅ RESTART: Page loaded successfully after driver restart")
-                    except TimeoutException:
-                        print("⚠️ RESTART: Timeout waiting for page after driver restart")
-                    
-                except Exception as restart_error:
-                    print(f"❌ RESTART ERROR: Failed to restart driver: {restart_error}")
-                    print("💥 CRITICAL: Cannot continue without working driver")
-                    break
-            
-            cycle_listing_counter = 0  # Listings processed in this cycle
-            found_already_scanned = False
-            
-            # Reset to first page for each cycle
-            page = 1
-            
-            while True:  # Page loop
-                try:
-                    WebDriverWait(current_driver, 20).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-                    )
-                except TimeoutException:
-                    print("⚠️ Timeout waiting for page to load - moving to next cycle")
-                    break
-
-                # Get listing URLs from current page
-                els = current_driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
-                urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
-                
-                if not urls:
-                    print(f"📄 No listings found on page {page} - moving to next cycle")
-                    break
-
-                print(f"📄 Processing page {page} with {len(urls)} listings")
-
-                for idx, url in enumerate(urls, start=1):
-                    cycle_listing_counter += 1
-                    
-                    print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
-                    
-                    # Extract listing ID and check if already scanned
-                    listing_id = self.extract_vinted_listing_id(url)
-                    
-                    if REFRESH_AND_RESCAN and listing_id:
-                        if listing_id in scanned_ids:
-                            print(f"🔁 DUPLICATE DETECTED: Listing ID {listing_id} already scanned")
-                            print(f"🔄 Initiating refresh and rescan process...")
-                            found_already_scanned = True
-                            break
-                    
-                    # Check if we've hit the maximum listings for this cycle
-                    if REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
-                        print(f"📊 Reached MAX_LISTINGS_VINTED_TO_SCAN ({MAX_LISTINGS_VINTED_TO_SCAN})")
-                        print(f"🔄 Initiating refresh cycle...")
-                        break
-
-                    overall_listing_counter += 1
-
-
-                    # Process the listing (using current_driver instead of driver)
-                    current_driver.execute_script("window.open();")
-                    current_driver.switch_to.window(current_driver.window_handles[-1])
-                    current_driver.get(url)
-
-                    try:
-                        listing_start_time = time.time()
-                        details = self.scrape_item_details(current_driver)
-                        second_price = self.extract_price(details["second_price"])
-                        postage = self.extract_price(details["postage"])
-                        total_price = second_price + postage
-
-                        print(f"  Link:         {url}")
-                        print(f"  Title:        {details['title']}")
-                        print(f"  Username:     {details.get('username', 'Username not found')}")
-                        print(f"  Price:        {details['price']}")
-                        print(f"  Second price: {details['second_price']} ({second_price:.2f})")
-                        print(f"  Postage:      {details['postage']} ({postage:.2f})")
-                        print(f"  Total price:  £{total_price:.2f}")
-                        print(f"  Uploaded:     {details['uploaded']}")
-
-                        # Download images for the current listing
-                        listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
-                        image_paths = self.download_images_for_listing(current_driver, listing_dir)
-
-                        # Perform object detection and get processed images
-                        detected_objects = {}
-                        processed_images = []
-                        if model and image_paths:
-                            detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
-                            
-                            # Print detected objects
-                            detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
-                            if detected_classes:
-                                for cls in sorted(detected_classes):
-                                    print(f"  • {cls}: {detected_objects[cls]}")
-
-                        # Process listing for pygame display
-                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
-
-                        # Mark this listing as scanned
-                        if listing_id:
-                            scanned_ids.add(listing_id)
-                            self.save_vinted_listing_id(listing_id)
-                            print(f"✅ Saved listing ID: {listing_id}")
-
-                        print("-" * 40)
-                        self.cleanup_processed_images(processed_images)
-                        listing_end_time = time.time()
-                        elapsed_time = listing_end_time - listing_start_time
-                        print(f"⏱️ Listing {overall_listing_counter} processing completed in {elapsed_time:.2f} seconds")
-
-                        
