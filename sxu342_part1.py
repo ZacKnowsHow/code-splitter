@@ -70,8 +70,7 @@ VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7096578621-stardew-valley-nintendo-switch-game?homepage_session_id=34ca33e1-5065-404b-a8e6-30418b0fdf45",
-    "https://www.vinted.co.uk/items/7098226379-mario-rabbids-kingdom-battle-nintendo-switch?homepage_session_id=194e7299-4ee7-4d6c-b536-392431d64a47", 
+    "https://www.vinted.co.uk/items/7102546985-fc24-nintendo-switch?homepage_session_id=6e3fa7fa-65d1-4aef-a0da-dda652e1c311", 
     "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
     "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
     "https://www.vinted.co.uk/items/7097706534-just-dance-2022-nintendo-switch-game-cartridge?homepage_session_id=6c527539-91d8-4297-8e48-f96581b761d3"
@@ -1551,33 +1550,34 @@ def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
         except:
             pass
 
-# 5. VM-specific first buy sequence (using EXACT main program logic)
 def execute_vm_first_buy_sequence(driver, step_log):
     """
-    Execute first buy sequence for VM driver using EXACT same logic as main program
+    Execute first buy sequence for VM driver using JavaScript-first approach
+    """
+    return execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log)
+
+
+
+# 5. VM-specific first buy sequence (using EXACT main program logic)
+def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log):
+    """
+    Modified first buy sequence - JavaScript-first clicking
     """
     try:
-        # Find and click first buy button using EXACT main program logic
-        print(f"🔖 DRIVER {step_log['driver_number']}: Looking for Buy now button...")
+        print(f"🔖 JAVASCRIPT-FIRST: Looking for Buy now button...")
         
-        buy_button, buy_selector = vm_try_selectors(
-            driver, 
-            'buy_button', 
-            operation='click', 
-            timeout=10, 
-            click_method='all',
-            step_log=step_log
-        )
+        # Use the new JavaScript-first buy button finder (already clicks the button)
+        buy_button, buy_selector = find_buy_button_with_shadow_dom(driver)
         
         if not buy_button:
-            print(f"❌ DRIVER {step_log['driver_number']}: Buy button not found - item likely sold")
+            print(f"❌ JAVASCRIPT-FIRST: Buy button not found - item likely sold")
             return False
         
-        print(f"✅ DRIVER {step_log['driver_number']}: Buy button clicked using: {buy_selector[:30]}...")
-        step_log['steps_completed'].append(f"buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
+        print(f"✅ JAVASCRIPT-FIRST: Buy button found and clicked using: {buy_selector}")
+        step_log['steps_completed'].append(f"javascript_first_buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
         
-        # Wait for pay button to appear using EXACT main program logic
-        print(f"💳 DRIVER {step_log['driver_number']}: Waiting for pay button...")
+        # Wait for pay button to appear using existing logic
+        print(f"💳 JAVASCRIPT-FIRST: Waiting for pay button...")
         
         pay_button, pay_selector = vm_try_selectors(
             driver,
@@ -1588,11 +1588,11 @@ def execute_vm_first_buy_sequence(driver, step_log):
         )
         
         if not pay_button:
-            print(f"❌ DRIVER {step_log['driver_number']}: Pay button not found")
+            print(f"❌ JAVASCRIPT-FIRST: Pay button not found")
             return False
         
-        print(f"✅ DRIVER {step_log['driver_number']}: Pay button found using: {pay_selector[:30]}...")
-        step_log['steps_completed'].append(f"pay_button_found - {time.time() - step_log['start_time']:.2f}s")
+        print(f"✅ JAVASCRIPT-FIRST: Pay button found using: {pay_selector[:30]}...")
+        step_log['steps_completed'].append(f"javascript_first_pay_button_found - {time.time() - step_log['start_time']:.2f}s")
         
         # Handle shipping options (same as main scraper)
         handle_vm_shipping_options(driver, step_log)
@@ -1601,8 +1601,78 @@ def execute_vm_first_buy_sequence(driver, step_log):
         return execute_vm_critical_pay_sequence(driver, pay_button, step_log)
         
     except Exception as e:
-        print(f"❌ DRIVER {step_log['driver_number']}: First buy sequence error: {e}")
+        print(f"❌ JAVASCRIPT-FIRST: First buy sequence error: {e}")
         return False
+
+def execute_vm_second_sequence_with_javascript_first(driver, actual_url, step_log):
+    """
+    Execute second sequence using the same JavaScript-first approach for buy button
+    """
+    print(f"🔍 JAVASCRIPT-FIRST: Executing second sequence...")
+    
+    try:
+        # Open new tab for second sequence
+        driver.execute_script("window.open('');")
+        second_tab = driver.window_handles[-1]
+        driver.switch_to.window(second_tab)
+        step_log['steps_completed'].append(f"second_tab_created - {time.time() - step_log['start_time']:.2f}s")
+        
+        # Navigate again
+        driver.get(actual_url)
+        step_log['steps_completed'].append(f"second_navigation - {time.time() - step_log['start_time']:.2f}s")
+        
+        # Look for buy button again using SAME JavaScript-first approach
+        print(f"🔍 JAVASCRIPT-FIRST: Looking for second buy button...")
+        second_buy_button, second_buy_selector = find_buy_button_with_shadow_dom(driver)
+        
+        if second_buy_button:
+            print(f"✅ JAVASCRIPT-FIRST: Second buy button found and clicked using: {second_buy_selector}")
+            step_log['steps_completed'].append(f"second_buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
+            
+            # Check for processing payment success with extended timeout
+            print(f"🔍 JAVASCRIPT-FIRST: Waiting up to 15 seconds for processing payment message...")
+            processing_element, VM_SELECTOR_SETS = vm_try_selectors(
+                driver,
+                'processing_payment',
+                operation='find',
+                timeout=15,  # Extended timeout to 15 seconds
+                step_log=step_log
+            )
+            
+            if processing_element:
+                element_text = processing_element.text.strip()
+                step_log['steps_completed'].append(f"processing_payment_found - {time.time() - step_log['start_time']:.2f}s")
+                print('✅ JAVASCRIPT-FIRST: SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+                
+                # Close second tab
+                driver.close()
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+                
+                return True
+            else:
+                print('⚠️ JAVASCRIPT-FIRST: Processing payment message not found')
+                
+        else:
+            print(f"❌ JAVASCRIPT-FIRST: Second buy button not found")
+            
+        # Close second tab
+        driver.close()
+        if len(driver.window_handles) > 0:
+            driver.switch_to.window(driver.window_handles[0])
+            
+        return True  # Return true as this isn't a critical failure
+            
+    except Exception as second_sequence_error:
+        print(f"❌ JAVASCRIPT-FIRST: Second sequence error: {second_sequence_error}")
+        # Clean up second tab
+        try:
+            driver.close()
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+        return True
 
 # NEW: Add the EXACT selector system from main program
 def vm_try_selectors(driver, selector_set_name, operation='find', timeout=5, click_method='standard', step_log=None):
@@ -1630,6 +1700,13 @@ def vm_try_selectors(driver, selector_set_name, operation='find', timeout=5, cli
             '//button[contains(@data-testid, "purchase-button")]',
             '//button[contains(@class, "web_ui__Button__primary")]',
             'button[class*="web_ui__Button"][class*="primary"][data-testid*="purchase"]'
+        ],
+        'processing_payment': [
+            "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
+            "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
+            "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format' and contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+            "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+            "//*[contains(text(), 'Processing payment')]"
         ]
     }
     
@@ -1748,9 +1825,8 @@ def handle_vm_shipping_options(driver, step_log):
                 ship_home.click()
                 
                 # Wait 0.3 seconds as in main scraper
-                time.sleep(0.3)
-                print(f"✅ DRIVER {step_log['driver_number']}: Switched to Ship to home")
-                
+                print(f"✅ DRIVER {step_log['driver_number']}: Switched to Ship to home, waiting 3 seconds...")
+                time.sleep(3)
             except:
                 print(f"✅ DRIVER {step_log['driver_number']}: Pickup point ready")
                 
@@ -1824,51 +1900,21 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
 # 8. VM-specific second sequence (for completeness - monitors for success)
 def execute_vm_second_sequence(driver, listing_url, step_log):
     """
-    Execute second sequence for VM driver (monitors for processing payment)
+    Execute second sequence for VM driver using JavaScript-first approach
     """
-    try:
-        print(f"🔍 DRIVER {step_log['driver_number']}: Executing second sequence...")
-        
-        # Open new tab for second sequence
-        driver.execute_script("window.open('');")
-        second_tab = driver.window_handles[-1]
-        driver.switch_to.window(second_tab)
-        
-        # Navigate again
-        driver.get(listing_url)
-        
-        # Look for buy button again
-        try:
-            buy_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]'))
-            )
-            buy_button.click()
-            print(f"✅ DRIVER {step_log['driver_number']}: Second buy button clicked")
-            
-            # Check for "Processing payment" message
-            try:
-                processing_element = WebDriverWait(driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, 
-                        "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']"))
-                )
-                
-                if processing_element:
-                    print(f'🎉 DRIVER {step_log["driver_number"]}: SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
-                    step_log['success'] = True
-                    
-            except:
-                print(f"🔍 DRIVER {step_log['driver_number']}: Processing payment message not found")
-                
-        except:
-            print(f"⚠️ DRIVER {step_log['driver_number']}: Second buy button not found")
-        
-        # Close second tab
-        driver.close()
-        if len(driver.window_handles) > 0:
-            driver.switch_to.window(driver.window_handles[0])
-            
-    except Exception as e:
-        print(f"❌ DRIVER {step_log['driver_number']}: Second sequence error: {e}")
+    return execute_vm_second_sequence_with_javascript_first(driver, listing_url, step_log)
+
+
+# Additional selector sets needed for the vm_try_selectors function
+VM_SELECTOR_SETS = {
+    'processing_payment': [
+        "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
+        "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
+        "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format' and contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+        "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+        "//*[contains(text(), 'Processing payment')]"
+    ]
+}
 
 def clear_browser_data_universal(vm_ip_address, config):
     """
@@ -2134,67 +2180,21 @@ def setup_driver_universal(vm_ip_address, config):
         
         return None
 
-class HIDKeyboard:
+def find_buy_button_with_shadow_dom(driver):
     """
-    True OS-level keyboard input using Windows SendInput API
-    Generates hardware-level events indistinguishable from real keyboard
+    Enhanced buy now button finder - JavaScript click first approach
+    Finds button and immediately clicks with JavaScript for reliability
     """
+    print("🔍 SHADOW DOM: Starting buy button search with JavaScript-first approach...")
     
-    # Windows API constants
-    INPUT_KEYBOARD = 1
-    KEYEVENTF_KEYUP = 0x0002
-    KEYEVENTF_UNICODE = 0x0004
+    # Method 1: Find button and immediately click with JavaScript
+    print("⚡ JAVASCRIPT-FIRST: Finding and clicking buy button with JavaScript...")
+    buy_selectors = [
+        'button[data-testid="item-buy-button"]',
+        'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+        '//button[@data-testid="item-buy-button"]',
+        '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+        '//span[text()="Buy now"]/parent::button'
+    ]
     
-    # Virtual Key Codes for common keys
-    VK_CODES = {
-        '0': 0x30, '1': 0x31, '2': 0x32, '3': 0x33, '4': 0x34,
-        '5': 0x35, '6': 0x36, '7': 0x37, '8': 0x38, '9': 0x39,
-        'right': 0x27,  # Right arrow key
-        'left': 0x25,   # Left arrow key
-        'tab': 0x09,    # Tab key
-        'enter': 0x0D,  # Enter key
-        'space': 0x20,  # Space key
-        'backspace': 0x08  # Backspace key
-    }
-    
-    def __init__(self):
-        """Initialize the HID keyboard with Windows API structures"""
-        self.user32 = ctypes.windll.user32
-        self.kernel32 = ctypes.windll.kernel32
-        
-        # Define Windows structures
-        class KEYBDINPUT(ctypes.Structure):
-            _fields_ = [
-                ("wVk", ctypes.wintypes.WORD),
-                ("wScan", ctypes.wintypes.WORD),
-                ("dwFlags", ctypes.wintypes.DWORD),
-                ("time", ctypes.wintypes.DWORD),
-                ("dwExtraInfo", ctypes.POINTER(ctypes.wintypes.ULONG))
-            ]
-        
-        class HARDWAREINPUT(ctypes.Structure):
-            _fields_ = [
-                ("uMsg", ctypes.wintypes.DWORD),
-                ("wParamL", ctypes.wintypes.WORD),
-                ("wParamH", ctypes.wintypes.WORD)
-            ]
-        
-        class MOUSEINPUT(ctypes.Structure):
-            _fields_ = [
-                ("dx", ctypes.wintypes.LONG),
-                ("dy", ctypes.wintypes.LONG),
-                ("mouseData", ctypes.wintypes.DWORD),
-                ("dwFlags", ctypes.wintypes.DWORD),
-                ("time", ctypes.wintypes.DWORD),
-                ("dwExtraInfo", ctypes.POINTER(ctypes.wintypes.ULONG))
-            ]
-        
-        class INPUT_UNION(ctypes.Union):
-            _fields_ = [
-                ("ki", KEYBDINPUT),
-                ("mi", MOUSEINPUT),
-                ("hi", HARDWAREINPUT)
-            ]
-        
-        class INPUT(ctypes.Structure):
-            _fields_ = [
+    for selector in buy_selectors:
