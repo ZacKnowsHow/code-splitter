@@ -1,4 +1,292 @@
 # Continuation from line 2201
+                    })
+                all_listings_json = json.dumps(listings_data)
+                if print_debug:
+                    print(f"DEBUG: Created JSON for {len(listings_data)} listings")
+            except Exception as json_error:
+                print(f"ERROR creating listings JSON: {json_error}")
+                all_listings_json = "[]"
+
+        # Convert current images to base64 for web display
+        image_html = ""
+        if current_listing_images:
+            image_html = "<div class='image-container'>"
+            try:
+                for img in current_listing_images:
+                    buffered = io.BytesIO()
+                    img.save(buffered, format="PNG")
+                    img_str = base64.b64encode(buffered.getvalue()).decode()
+                    image_html += f'''
+                    <div class="image-wrapper">
+                        <img src="data:image/png;base64,{img_str}" alt="Listing Image">
+                    </div>
+                    '''
+                image_html += "</div>"
+            except Exception as img_error:
+                print(f"Error processing current images: {img_error}")
+                image_html = "<p>Error loading images</p>"
+        else:
+            image_html = "<p>No images available</p>"
+
+        # Return the complete HTML with NEW top bar layout and stopwatch functionality
+        return f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <link rel="apple-touch-icon" href="/static/icon.png">
+            <link rel="icon" type="image/png" href="/static/icon.png">
+            <meta name="apple-mobile-web-app-capable" content="yes">
+            <meta name="apple-mobile-web-app-status-bar-style" content="black">
+            <meta name="apple-mobile-web-app-title" content="Marketplace Scanner">
+            <title>Marketplace Scanner</title>
+            <style>
+                * {{
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                }}
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+                    background-color: #f0f0f0;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 100vh;
+                    margin: 0;
+                    padding: 0;
+                    line-height: 1.6;
+                    touch-action: manipulation;
+                    overscroll-behavior-y: none;
+                }}
+                .container {{
+                    background-color: white;
+                    padding: 25px;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                    text-align: center;
+                    width: 100%;
+                    max-width: 375px;
+                    margin: 0 auto;
+                    position: relative;
+                    height: calc(100vh - 10px);
+                    overflow-y: auto;
+                }}
+                
+                /* NEW: Top bar styles */
+                .top-bar {{
+                    display: flex;
+                    gap: 5px;
+                    margin-bottom: 15px;
+                    justify-content: space-between;
+                }}
+                
+                .top-bar-item {{
+                    flex: 1;
+                    padding: 8px 4px;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    color: white;
+                    text-align: center;
+                    min-height: 40px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }}
+                
+                .refresh-button {{
+                    background-color: #4CAF50;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    border: none;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                
+                .refresh-button:hover {{
+                    background-color: #45a049;
+                    transform: translateY(-1px);
+                }}
+                
+                .refresh-button:active {{
+                    transform: translateY(0);
+                }}
+                
+                .listing-counter {{
+                    background-color: #2196F3;
+                }}
+                
+                .stopwatch-display {{
+                    background-color: #FF9800;
+                    font-family: monospace;
+                }}
+                
+                .custom-button {{
+                    width: 100%;
+                    padding: 12px;
+                    color: white;
+                    border: none;
+                    border-radius: 10px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }}
+                .custom-button:hover {{
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                .custom-button:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                .section-box, .financial-row, .details-row {{
+                    border: 1px solid black;
+                    border-radius: 5px;
+                    margin-bottom: -1px;
+                }}
+                .section-box {{
+                    padding: 10px;
+                }}
+                .financial-row, .details-row {{
+                    display: flex;
+                    justify-content: space-between;
+                }}
+                .financial-item, .details-item {{
+                    flex: 1;
+                    padding: 10px;
+                    border-right: 1px solid black;
+                    font-weight: bold;
+                    font-size: 19px;
+                }}
+                .financial-item:last-child, .details-item:last-child {{
+                    border-right: none;
+                }}
+                .content-title {{
+                    color: rgb(173, 13, 144);
+                    font-weight: bold;
+                    font-size: 1.6em;
+                }}
+                .content-price {{
+                    color: rgb(19, 133, 194);
+                    font-weight: bold;
+                }}
+                .content-description {{
+                    color: #006400;
+                    font-weight: bold;
+                }}
+                .content-profit {{
+                    color: rgb(186, 14, 14);
+                    font-weight: bold;
+                }}
+                .content-join-date {{
+                    color: #4169E1;
+                    font-weight: bold;
+                }}
+                .content-detected-items {{
+                    color: #8B008B;
+                    font-weight: bold;
+                }}
+                .image-container {{
+                    display: flex;
+                    flex-wrap: wrap;
+                    justify-content: center;
+                    align-items: center;
+                    gap: 10px;
+                    max-height: 335px;
+                    overflow-y: auto;
+                    padding: 10px;
+                    background-color: #f9f9f9;
+                    border: 1px solid black;
+                    border-radius: 10px;
+                    margin-bottom: 10px;
+                }}
+                .image-wrapper {{
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    max-width: 100%;
+                    max-height: 200px;
+                    overflow: hidden;
+                }}
+                .image-wrapper img {{
+                    max-width: 100%;
+                    max-height: 100%;
+                    object-fit: contain;
+                }}
+                .listing-url {{
+                    font-size: 10px;
+                    word-break: break-all;
+                    border: 1px solid black;
+                    border-radius: 5px;
+                    padding: 5px;
+                    margin-top: 10px;
+                    font-weight: bold;
+                }}
+                .single-button-container {{
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                    margin: 15px 0;
+                }}
+                .open-listing-button {{
+                    background-color: #28a745;
+                    font-size: 18px;
+                    padding: 15px;
+                }}
+                
+                /* Buy decision buttons */
+                .buy-decision-container {{
+                    display: flex;
+                    gap: 10px;
+                    margin: 15px 0;
+                }}
+                .buy-yes-button {{
+                    background-color: #28a745;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                .buy-yes-button:hover {{
+                    background-color: #218838;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                .buy-yes-button:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                .buy-no-button {{
+                    background-color: #dc3545;
+                    flex: 1;
+                    padding: 15px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;
+                }}
+                .buy-no-button:hover {{
+                    background-color: #c82333;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                }}
+                .buy-no-button:active {{
                     transform: translateY(0);
                     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 }}
@@ -1911,291 +2199,3 @@ class VintedScraper:
                     log_step(f"navigation_error_{nav_attempt+1}", False, str(nav_error))
                     if nav_attempt < 2:  # Not the last attempt
                         time.sleep(1)
-                        continue
-
-            if not navigation_success:
-                log_step("navigation_final_failure", False, "All navigation attempts failed")
-                try:
-                    driver.close()
-                    if len(driver.window_handles) > 0:
-                        driver.switch_to.window(driver.window_handles[0])
-                except:
-                    pass
-                log_final_result()
-                return
-
-            # BUY BUTTON DETECTION - Look for Buy now button with multiple selectors
-            buy_button, buy_selector = try_selectors_fast_fail(
-                driver, 'buy_button', operation='click', timeout=10, click_method='all'
-            )
-            
-            if not buy_button:
-                log_step("buy_button_not_found", False, "Item likely sold or unavailable")
-                try:
-                    driver.close()
-                    if len(driver.window_handles) > 0:
-                        driver.switch_to.window(driver.window_handles[0])
-                except:
-                    pass
-                log_final_result()
-                return
-
-            log_step("buy_button_clicked", True, f"Used: {buy_selector[:30]}...")
-            process_log['critical_operations'].append("buy_button_clicked")
-
-            # PURCHASE FLOW BRANCHING - Different logic based on actually_purchase_listing
-            if actually_purchase_listing:
-                log_step("purchase_mode_enabled", True, "Starting actual purchase process")
-                
-                # SHIPPING SELECTION - Click "Ship to home" first if available
-                ship_home_element, ship_home_selector = try_selectors_fast_fail(
-                    driver, 'ship_to_home', operation='click', timeout=15, click_method='all'
-                )
-                
-                if ship_home_element:
-                    log_step("ship_to_home_clicked", True)
-                    time.sleep(2)  # Brief wait as requested
-                else:
-                    log_step("ship_to_home_not_found", False, "Continuing without shipping selection")
-                
-                # PAY BUTTON DETECTION - Look for pay button
-                pay_button, pay_selector = try_selectors_fast_fail(
-                    driver, 'pay_button', operation='find', timeout=15
-                )
-                
-                if not pay_button:
-                    log_step("pay_button_not_found", False, "Payment interface not available")
-                    try:
-                        driver.close()
-                        if len(driver.window_handles) > 0:
-                            driver.switch_to.window(driver.window_handles[0])
-                    except:
-                        pass
-                    log_final_result()
-                    return
-
-                log_step("pay_button_found", True)
-                process_log['critical_operations'].append("pay_button_found")
-
-                # PURCHASE LOOP - Attempt purchase with error handling
-                purchase_successful = False
-                max_attempts = 250
-                attempt = 0
-                
-                while not purchase_successful and attempt < max_attempts:
-                    attempt += 1
-                    elapsed_time = time.time() - start_time
-                    
-                    # Check timeout
-                    if elapsed_time >= bookmark_stopwatch_length:
-                        log_step("purchase_timeout", False, f"Timeout after {elapsed_time:.1f}s")
-                        break
-                    
-                    if print_debug:
-                        print(f"💳 DRIVER {driver_num}: Purchase attempt {attempt}")
-                    
-                    # CLICK PAY BUTTON
-                    pay_clicked = False
-                    for click_method in ['standard', 'javascript']:
-                        try:
-                            # Re-find pay button for each attempt (DOM may change)
-                            current_pay_button = driver.find_element(By.CSS_SELECTOR, 
-                                'button[data-testid="single-checkout-order-summary-purchase-button"]'
-                            )
-                            
-                            if click_method == 'standard':
-                                current_pay_button.click()
-                            else:
-                                driver.execute_script("arguments[0].click();", current_pay_button)
-                            
-                            log_step(f"pay_click_attempt_{attempt}_{click_method}", True)
-                            pay_clicked = True
-                            break
-                            
-                        except Exception as click_error:
-                            log_step(f"pay_click_attempt_{attempt}_{click_method}", False, str(click_error))
-                            continue
-                    
-                    if not pay_clicked:
-                        log_step(f"pay_click_failed_attempt_{attempt}", False, "All click methods failed")
-                        break
-                    
-                    # CHECK FOR ERROR OR SUCCESS
-                    # First check for quick error (appears fast)
-                    error_found = False
-                    error_element, error_selector = try_selectors_fast_fail(
-                        driver, 'error_modal', operation='find', timeout=10
-                    )
-                    
-                    if error_element:
-                        log_step(f"payment_error_detected_attempt_{attempt}", True, f"Using: {error_selector[:30]}...")
-                        error_found = True
-                        
-                        # Wait before clicking OK
-                        if print_debug:
-                            print(f"⏳ DRIVER {driver_num}: Waiting {buying_driver_click_pay_wait_time}s before clicking OK")
-                        time.sleep(buying_driver_click_pay_wait_time)
-                        
-                        # CLICK OK BUTTON
-                        ok_element, ok_selector = try_selectors_fast_fail(
-                            driver, 'ok_button', operation='click', timeout=5, click_method='all'
-                        )
-                        
-                        if ok_element:
-                            log_step(f"ok_button_clicked_attempt_{attempt}", True)
-                        else:
-                            log_step(f"ok_button_not_found_attempt_{attempt}", False, "Could not dismiss error")
-                        
-                        # Wait before retry
-                        time.sleep(buying_driver_click_pay_wait_time)
-                        continue
-                    
-                    # If no error, check for success (takes longer)
-                    remaining_time = bookmark_stopwatch_length - (time.time() - start_time)
-                    if remaining_time <= 0:
-                        log_step("success_check_timeout", False, "No time remaining for success check")
-                        break
-                    
-                    success_timeout = min(15, remaining_time)
-                    success_element, success_selector = try_selectors_fast_fail(
-                        driver, 'success_message', operation='find', timeout=success_timeout
-                    )
-                    
-                    if success_element:
-                        log_step("purchase_successful", True, f"Using: {success_selector[:30]}...")
-                        purchase_successful = True
-                        process_log['success'] = True
-                        process_log['critical_operations'].append("purchase_completed")
-                        
-                        # Send notification
-                        notification_title = "Vinted Purchase Successful"
-                        notification_message = f"Successfully purchased: {url}"
-                        
-                        try:
-                            self.send_pushover_notification(
-                                notification_title,
-                                notification_message,
-                                'aks3to8guqjye193w7ajnydk9jaxh5',
-                                'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
-                            )
-                            log_step("success_notification_sent", True)
-                        except Exception as notification_error:
-                            log_step("success_notification_failed", False, str(notification_error))
-                        
-                        break
-                    else:
-                        log_step(f"success_not_found_attempt_{attempt}", False, f"Timeout after {success_timeout}s")
-                        break
-                
-                # Final purchase result
-                total_elapsed = time.time() - start_time
-                if purchase_successful:
-                    log_step("purchase_flow_completed", True, f"Success after {attempt} attempts in {total_elapsed:.2f}s")
-                else:
-                    log_step("purchase_flow_failed", False, f"Failed after {attempt} attempts in {total_elapsed:.2f}s")
-
-            else:
-                log_step("legacy_shipping_mode", True, "Using original shipping alternation logic")
-                
-                # LEGACY SHIPPING FLOW - Original alternating click logic
-                try:
-                    pickup_element, pickup_selector = try_selectors_fast_fail(
-                        driver, 'ship_to_pickup', operation='find', timeout=10
-                    )
-                    
-                    if pickup_element:
-                        log_step("shipping_page_loaded", True)
-                        first_click_time = time.time()
-                        
-                        log_step("alternating_clicks_started", True, f"Duration: {bookmark_stopwatch_length}s")
-                        
-                        while True:
-                            if time.time() - first_click_time >= bookmark_stopwatch_length:
-                                log_step("alternating_clicks_timeout", True, "Time limit reached")
-                                break
-                            
-                            # Click pickup point
-                            pickup_clicked, _ = try_selectors_fast_fail(
-                                driver, 'ship_to_pickup', operation='click', timeout=2, click_method='standard'
-                            )
-                            
-                            if pickup_clicked:
-                                log_step("pickup_point_clicked", True)
-                            else:
-                                log_step("pickup_point_click_failed", False, "Could not click pickup point")
-                            
-                            time.sleep(buying_driver_click_pay_wait_time)
-                            
-                            if time.time() - first_click_time >= bookmark_stopwatch_length:
-                                break
-                            
-                            # Click ship to home
-                            home_clicked, _ = try_selectors_fast_fail(
-                                driver, 'ship_to_home', operation='click', timeout=2, click_method='standard'
-                            )
-                            
-                            if home_clicked:
-                                log_step("ship_to_home_clicked", True)
-                            else:
-                                log_step("ship_to_home_click_failed", False, "Could not click ship to home")
-                            
-                            time.sleep(buying_driver_click_pay_wait_time)
-                        
-                        log_step("legacy_shipping_completed", True)
-                        process_log['success'] = True
-                        
-                    else:
-                        log_step("shipping_page_not_loaded", False, "Could not find shipping options")
-                        
-                except Exception as shipping_error:
-                    log_step("legacy_shipping_error", False, str(shipping_error))
-
-        except Exception as critical_error:
-            log_step("critical_processing_error", False, str(critical_error))
-            import traceback
-            if print_debug:
-                print(f"🔥 DRIVER {driver_num}: Critical error traceback:")
-                traceback.print_exc()
-
-        finally:
-            # CLEANUP - Always clean up tab and release driver
-            cleanup_start = time.time()
-            
-            try:
-                # Close processing tab
-                driver.close()
-                log_step("processing_tab_closed", True)
-                
-                # Return to main tab
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-                    log_step("returned_to_main_tab", True)
-                
-            except Exception as cleanup_error:
-                log_step("cleanup_error", False, str(cleanup_error))
-            
-            # Calculate final timing
-            total_time = time.time() - start_time
-            cleanup_time = time.time() - cleanup_start
-            
-            log_step("processing_completed", True, f"Total: {total_time:.2f}s, Cleanup: {cleanup_time:.2f}s")
-            
-            # Log comprehensive results
-            log_final_result()
-            
-            # ALWAYS release the driver
-            self.release_driver(driver_num)
-            log_step("driver_released", True)
-
-
-    # Supporting helper function for better timeout management
-    def calculate_dynamic_timeout(base_timeout, elapsed_time, max_total_time):
-        """
-        Calculate dynamic timeout based on elapsed time and maximum allowed time
-        """
-        remaining_time = max_total_time - elapsed_time
-        return min(base_timeout, max(1, remaining_time * 0.5))  # Use half of remaining time, minimum 1s
-    def cleanup_processed_images(self, processed_images):
-
-        for img in processed_images:
-            try:
