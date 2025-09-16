@@ -1,4 +1,627 @@
-# Continuation from line 6601
+# Continuation from line 4401
+                img.close()
+                del img
+            except:
+                pass
+        processed_images.clear()
+        import gc
+        gc.collect()  # Force garbage collection
+        
+    def cleanup_all_buying_drivers(self):
+        """
+        FIXED: Clean up all buying drivers when program exits
+        """
+        print("🧹 CLEANUP: Closing all buying drivers")
+        
+        with self.driver_lock:
+            for driver_num in range(1, 6):
+                if self.buying_drivers[driver_num] is not None:
+                    try:
+                        print(f"🗑️ CLEANUP: Closing buying driver {driver_num}")
+                        self.buying_drivers[driver_num].quit()
+                        time.sleep(0.2)  # Brief pause between closures
+                        print(f"✅ CLEANUP: Closed buying driver {driver_num}")
+                    except Exception as e:
+                        print(f"⚠️ CLEANUP: Error closing driver {driver_num}: {e}")
+                    finally:
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'not_created'
+        
+        print("✅ CLEANUP: All buying drivers closed")
+
+    def check_all_drivers_health(self):
+        """
+        Check the health of all active drivers and recreate dead ones
+        Call this periodically if needed
+        """
+        with self.driver_lock:
+            for driver_num in range(1, 6):
+                if self.buying_drivers[driver_num] is not None and self.driver_status[driver_num] != 'busy':
+                    if self.is_driver_dead(driver_num):
+                        print(f"💀 HEALTH: Driver {driver_num} is dead, marking for recreation")
+                        try:
+                            self.buying_drivers[driver_num].quit()
+                        except:
+                            pass
+                        self.buying_drivers[driver_num] = None
+                        self.driver_status[driver_num] = 'not_created'
+
+
+    def vinted_button_clicked_enhanced(self, url):
+        """
+        MODIFIED: Enhanced button click handler that immediately opens buying driver on "yes"
+        """
+        print(f"🔘 VINTED BUTTON: Processing {url}")
+        
+        # Check if already clicked to prevent duplicates
+        if url in self.clicked_yes_listings:
+            print(f"🔄 VINTED BUTTON: Listing {url} already processed, ignoring")
+            return
+        
+        # Mark as clicked immediately to prevent race conditions
+        self.clicked_yes_listings.add(url)
+        
+        # MODIFIED: Immediately start buying process when user clicks yes
+        print(f"🚀 IMMEDIATE: Starting buying process for {url}")
+        
+        # Get available driver
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            driver_num, driver = self.get_available_driver()
+            
+            if driver is not None:
+                # Successfully got a driver, process in separate thread
+                processing_thread = threading.Thread(
+                    target=self.process_single_listing_with_driver_modified,
+                    args=(url, driver_num, driver)
+                )
+                processing_thread.daemon = True
+                processing_thread.start()
+                return
+            
+            # No driver available, wait and retry
+            retry_count += 1
+            print(f"❌ RETRY {retry_count}/{max_retries}: All drivers busy, waiting 2 seconds...")
+            time.sleep(2)
+        
+        # If we get here, all retries failed
+        print(f"❌ FAILED: Could not get available driver after {max_retries} retries")
+        self.clicked_yes_listings.discard(url)
+
+
+    def process_vinted_button_queue(self):
+        """
+        ULTRA-FAST queue processor using persistent driver with tabs
+        """
+        self.vinted_processing_active.set()
+        
+        # Ensure persistent driver is ready
+        if not self.setup_persistent_buying_driver():
+            print("❌ QUEUE: Cannot process - persistent driver setup failed")
+            self.vinted_processing_active.clear()
+            return
+        
+        print("🚀 QUEUE: Starting ultra-fast processing...")
+        
+        while not self.vinted_button_queue.empty():
+            try:
+                url = self.vinted_button_queue.get_nowait()
+                self.handle_single_vinted_button_request_fast(url)
+                self.vinted_button_queue.task_done()
+            except queue.Empty:
+                break
+            except Exception as e:
+                print(f"❌ QUEUE: Error processing request: {e}")
+                continue
+        
+        print("✅ QUEUE: All requests processed!")
+        self.vinted_processing_active.clear()
+
+    def handle_single_vinted_button_request_fast(self, url):
+        """
+        ULTRA-FAST single request handler with button clicking functionality
+        FIXED: Updated Buy now button selectors and added fallback methods
+        """
+        import time
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.common.exceptions import TimeoutException, NoSuchElementException
+        
+        start_time = time.time()
+        
+        try:
+            # Verify driver is still alive
+            self.persistent_buying_driver.current_url
+    
+
+            print(f"🔥 FAST: Processing {url}")
+            
+            # Open new tab
+            self.persistent_buying_driver.execute_script("window.open('');")
+            new_tab = self.persistent_buying_driver.window_handles[-1]
+            self.persistent_buying_driver.switch_to.window(new_tab)
+            
+            # Navigate to URL
+            self.persistent_buying_driver.get(url)
+            
+            # Wait for page to load
+            print("⏱️ FAST: Waiting for page to load...")
+            time.sleep(2)
+            
+            # FIXED: Updated Buy now button selectors
+            print("🔘 FAST: Looking for Buy now button...")
+            
+            # Try multiple selectors based on the HTML you provided
+            buy_selectors = [
+                # Your exact HTML structure
+                'button[data-testid="item-buy-button"]',
+                # Alternative selectors that match the class structure
+                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+                'button.web_ui__Button__button[data-testid="item-buy-button"]',
+                # Broader selectors as fallbacks
+                'button[data-testid="item-buy-button"] span.web_ui__Button__label',
+                'button:has(span.web_ui__Button__label:contains("Buy now"))',
+                'button .web_ui__Button__label:contains("Buy now")',
+                # XPath selectors for more precise matching
+                '//button[@data-testid="item-buy-button"]',
+                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+                '//span[text()="Buy now"]/ancestor::button'
+            ]
+            
+            buy_button = None
+            used_selector = None
+            
+            for selector in buy_selectors:
+                try:
+                    print(f"🔍 FAST: Trying selector: {selector}")
+                    
+                    if selector.startswith('//'):
+                        # XPath selector
+                        buy_button = WebDriverWait(self.persistent_buying_driver, 2).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        # CSS selector
+                        buy_button = WebDriverWait(self.persistent_buying_driver, 2).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        )
+                    
+                    used_selector = selector
+                    print(f"✅ FAST: Found Buy now button with selector: {selector}")
+                    break
+                    
+                except TimeoutException:
+                    print(f"❌ FAST: Selector failed: {selector}")
+                    continue
+                except Exception as e:
+                    print(f"❌ FAST: Selector error: {selector} - {e}")
+                    continue
+            
+            if buy_button:
+                try:
+                    # Try multiple click methods
+                    print(f"🔘 FAST: Attempting to click Buy now button...")
+                    
+                    # Method 1: Standard click
+                    try:
+                        buy_button.click()
+                        print("✅ FAST: Standard click successful")
+                    except Exception as e:
+                        print(f"❌ FAST: Standard click failed: {e}")
+                        
+                        # Method 2: JavaScript click
+                        try:
+                            self.persistent_buying_driver.execute_script("arguments[0].click();", buy_button)
+                            print("✅ FAST: JavaScript click successful")
+                        except Exception as e:
+                            print(f"❌ FAST: JavaScript click failed: {e}")
+                            
+                            # Method 3: ActionChains click
+                            try:
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                ActionChains(self.persistent_buying_driver).move_to_element(buy_button).click().perform()
+                                print("✅ FAST: ActionChains click successful")
+                            except Exception as e:
+                                print(f"❌ FAST: ActionChains click failed: {e}")
+                                raise Exception("All click methods failed")
+                    
+                    # Wait for next page to load - look for "Ship to pick-up point"
+                    print("🔍 FAST: Waiting for shipping page to load...")
+                    try:
+                        pickup_point_header = WebDriverWait(self.persistent_buying_driver, 10).until(
+                            EC.presence_of_element_located((By.XPATH, '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'))
+                        )
+                        print("✅ FAST: Shipping page loaded")
+                        
+                        # Record the time when the first click happens
+                        first_click_time = time.time()
+                        
+                        # Start the alternating clicking loop
+                        print("🔄 FAST: Starting alternating click sequence...")
+                        
+                        while True:
+                            # Check if bookmark_stopwatch_length time has elapsed
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
+                                break
+                            
+                            # Click "Ship to pick-up point"
+                            try:
+                                pickup_point = self.persistent_buying_driver.find_element(
+                                    By.XPATH, 
+                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
+                                )
+                                pickup_point.click()
+                                print("📦 FAST: Clicked 'Ship to pick-up point'")
+                            except (NoSuchElementException, Exception) as e:
+                                print(f"⚠️ FAST: Could not click 'Ship to pick-up point': {e}")
+                            
+                            # Wait the specified time
+                            time.sleep(buying_driver_click_pay_wait_time)
+                            
+                            # Check time again before next click
+                            if time.time() - first_click_time >= bookmark_stopwatch_length:
+                                print(f"⏰ FAST: {bookmark_stopwatch_length} seconds elapsed, stopping clicks")
+                                break
+                            
+                            # Click "Ship to home"
+                            try:
+                                ship_to_home = self.persistent_buying_driver.find_element(
+                                    By.XPATH, 
+                                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
+                                )
+                                ship_to_home.click()
+                                print("🏠 FAST: Clicked 'Ship to home'")
+                            except (NoSuchElementException, Exception) as e:
+                                print(f"⚠️ FAST: Could not click 'Ship to home': {e}")
+                            
+                            # Wait the specified time
+                            time.sleep(buying_driver_click_pay_wait_time)
+                    
+                    except TimeoutException:
+                        print("⚠️ FAST: Timeout waiting for shipping page to load")
+                    except Exception as e:
+                        print(f"❌ FAST: Error during shipping page interaction: {e}")
+                except Exception as click_e:
+                    print(f"❌ FAST: Error clicking Buy now button: {click_e}")
+            else:
+                print("⚠️ FAST: Buy now button not found with any selector")
+                # DEBUGGING: Print page source snippet to help diagnose
+                try:
+                    page_source = self.persistent_buying_driver.page_source
+                    if 'Buy now' in page_source:
+                        print("🔍 FAST: 'Buy now' text found in page source")
+                        # Find the button element in page source
+                        import re
+                        button_pattern = r'<button[^>]*Buy now[^>]*</button>'
+                        matches = re.findall(button_pattern, page_source, re.IGNORECASE | re.DOTALL)
+                        for i, match in enumerate(matches[:3]):  # Show first 3 matches
+                            print(f"🔍 FAST: Button HTML {i+1}: {match[:200]}...")
+                    else:
+                        print("❌ FAST: 'Buy now' text not found in page source")
+                        
+                        # Check if page loaded properly
+                        if 'vinted' in self.persistent_buying_driver.current_url:
+                            print("✅ FAST: On Vinted page")
+                            print(f"🔍 FAST: Current URL: {self.persistent_buying_driver.current_url}")
+                            print(f"🔍 FAST: Page title: {self.persistent_buying_driver.title}")
+                        else:
+                            print("❌ FAST: Not on Vinted page")
+                            
+                except Exception as debug_e:
+                    print(f"❌ FAST: Debug info collection failed: {debug_e}")
+            
+            # Close the tab
+            self.persistent_buying_driver.close()
+            
+            # Switch back to main tab
+            self.persistent_buying_driver.switch_to.window(self.main_tab_handle)
+            
+            elapsed = time.time() - start_time
+            print(f"✅ FAST: Completed in {elapsed:.2f} seconds")
+            
+        except Exception as e:
+            print(f"❌ FAST: Error processing {url}: {e}")
+            
+            # Try to recover by switching back to main tab
+            try:
+                if self.main_tab_handle in self.persistent_buying_driver.window_handles:
+                    self.persistent_buying_driver.switch_to.window(self.main_tab_handle)
+            except:
+                pass
+
+    def cleanup_persistent_buying_driver(self):
+        """
+        Clean up the persistent buying driver when program exits
+        """
+        if self.persistent_buying_driver is not None:
+            try:
+                self.persistent_buying_driver.quit()
+                print("🔒 CLEANUP: Persistent buying driver closed")
+            except:
+                pass
+            finally:
+                self.persistent_buying_driver = None
+                self.main_tab_handle = None
+    
+    def setup_driver(self):
+        """
+        Enhanced Chrome driver setup with better stability and crash prevention
+        """
+        chrome_opts = Options()
+        
+        # Basic preferences
+        prefs = {
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.default_content_setting_values.popups": 0,
+            "download.prompt_for_download": False,
+        }
+        options = Options()
+        options.add_experimental_option("prefs", prefs)
+        #options.add_argument("--headless")
+
+
+        options.add_argument("--max_old_space_size=4096")  # Prevent memory crashes
+        options.add_argument("--disable-background-timer-throttling")
+        options.add_argument("--disable-renderer-backgrounding")
+        options.add_argument("--disable-backgrounding-occluded-windows")
+        options.add_argument("--disable-ipc-flooding-protection")
+        options.add_argument("--memory-pressure-off")  # Critical for long-running
+        options.add_argument("--no-sandbox")
+        options.add_argument("--window-size=800,600")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--remote-debugging-port=0")
+        options.add_argument("--log-level=3")
+        options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+        options.add_argument(f"--profile-directory=Default")
+        try:
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull  # Suppress driver logs
+            )
+            
+            # Add service arguments for additional stability
+            service_args = [
+                '--verbose=false',
+                '--silent',
+                '--log-level=3'
+            ]
+            
+            print("🚀 Starting Chrome driver with enhanced stability settings...")
+            driver = webdriver.Chrome(service=service, options=options)
+            
+            # Set timeouts
+            driver.implicitly_wait(10)
+            driver.set_page_load_timeout(30)
+            driver.set_script_timeout(30)
+            
+            print("✅ Chrome driver initialized successfully")
+            return driver
+            
+        except Exception as e:
+            print(f"❌ CRITICAL: Chrome driver failed to start: {e}")
+            print("Troubleshooting steps:")
+            print("1. Ensure all Chrome instances are closed")
+            print("2. Check Chrome and ChromeDriver versions")
+            print("3. Verify user data directory permissions")
+            print("4. Try restarting the system")
+            
+            # Try fallback options
+            print("⏳ Attempting fallback configuration...")
+            
+            # Fallback: Remove problematic arguments
+            fallback_opts = Options()
+            fallback_opts.add_experimental_option("prefs", prefs)
+            #fallback_opts.add_argument("--headless")
+            fallback_opts.add_argument("--no-sandbox")
+            fallback_opts.add_argument("--disable-dev-shm-usage")
+            fallback_opts.add_argument("--disable-gpu")
+            fallback_opts.add_argument("--remote-debugging-port=0")
+            fallback_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+            fallback_opts.add_argument(f"--profile-directory=Default")
+            #profile 2 = pc
+            #default = laptop
+            
+            try:
+                fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
+                print("✅ Fallback Chrome driver started successfully")
+                return fallback_driver
+            except Exception as fallback_error:
+                print(f"❌ Fallback also failed: {fallback_error}")
+                raise Exception(f"Could not start Chrome driver: {e}")
+            
+
+    def setup_buying_driver(self, driver_num):
+        """
+        FIXED: Setup a specific buying driver with better error handling and unique directories
+        """
+        try:
+            print(f"🚗 SETUP: Creating buying driver {driver_num}")
+            
+            # Ensure ChromeDriver is cached
+            if not hasattr(self, '_cached_chromedriver_path'):
+                self._cached_chromedriver_path = ChromeDriverManager().install()
+            
+            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
+            
+            chrome_opts = Options()
+            
+            # CRITICAL FIX: Each driver gets its own UNIQUE directory to prevent conflicts
+            user_data_dir = f"C:\\VintedBuyer{driver_num}"  # Add timestamp for uniqueness
+            chrome_opts.add_argument(f"--user-data-dir={user_data_dir}")
+            chrome_opts.add_argument("--profile-directory=Default")
+            
+            # FIXED: Better stability options
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--disable-extensions")
+            chrome_opts.add_argument("--disable-plugins")
+            chrome_opts.add_argument("--disable-images")  # Speed optimization
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_argument("--disable-web-security")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+            chrome_opts.add_experimental_option('useAutomationExtension', False)
+            
+            # Create the driver
+            driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # FIXED: Set appropriate timeouts for buying process
+            driver.implicitly_wait(2)
+            driver.set_page_load_timeout(15)  # Increased for stability
+            driver.set_script_timeout(10)
+            
+            # CRITICAL FIX: Navigate to vinted.co.uk and WAIT for it to fully load
+            print(f"🏠 NAVIGATE: Driver {driver_num} going to vinted.co.uk")
+            driver.get("https://www.vinted.co.uk")
+            
+            # Wait for page to load completely before marking as ready
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                print(f"✅ SUCCESS: Buying driver {driver_num} fully loaded and ready")
+            except TimeoutException:
+                print(f"⚠️ WARNING: Driver {driver_num} loaded but page may not be fully ready")
+            
+            return driver
+            
+        except Exception as e:
+            print(f"❌ ERROR: Failed to create buying driver {driver_num}: {e}")
+            return None
+            
+
+    def extract_vinted_price(self, text):
+        """
+        Enhanced price extraction for Vinted that handles various price formats
+        """
+        debug_function_call("extract_vinted_price")
+        import re  # FIXED: Import re at function level
+        
+        if not text:
+            return 0.0
+        
+        # Remove currency symbols and extra text, extract number
+        cleaned_text = re.sub(r'[^\d.,]', '', str(text))
+        if not cleaned_text:
+            return 0.0
+            
+        # Handle comma as decimal separator (European format)
+        if ',' in cleaned_text and '.' not in cleaned_text:
+            cleaned_text = cleaned_text.replace(',', '.')
+        elif ',' in cleaned_text and '.' in cleaned_text:
+            # Assume comma is thousands separator
+            cleaned_text = cleaned_text.replace(',', '')
+        
+        try:
+            return float(cleaned_text)
+        except ValueError:
+            return 0.0
+        
+    def detect_console_keywords_vinted(self, listing_title, listing_description):
+        """
+        Detect console keywords in Vinted title and description (ported from Facebook)
+        """
+        listing_title_lower = listing_title.lower()
+        listing_description_lower = listing_description.lower()
+        
+        console_keywords = {
+            'switch console': 'switch',
+            'swith console': 'switch',
+            'switc console': 'switch',
+            'swich console': 'switch',
+            'oled console': 'oled',
+            'lite console': 'lite'
+        }
+        
+        # Check if title contains console keywords
+        title_contains_console = any(keyword in listing_title_lower for keyword in console_keywords.keys())
+        
+        # Check if description contains console keywords and title contains relevant terms
+        desc_contains_console = any(
+            keyword in listing_description_lower and
+            any(term in listing_title_lower for term in ['nintendo switch', 'oled', 'lite'])
+            for keyword in console_keywords.keys()
+        )
+        
+        detected_console = None
+        if title_contains_console or desc_contains_console:
+            for keyword, console_type in console_keywords.items():
+                if keyword in listing_title_lower or keyword in listing_description_lower:
+                    detected_console = console_type
+                    break
+        
+        return detected_console
+
+    def detect_anonymous_games_vinted(self, listing_title, listing_description):
+        """
+        Detect anonymous games count from title and description (ported from Facebook)
+        """
+        debug_function_call("detect_anonymous_games_vinted")
+        import re  # FIXED: Import re at function level
+
+        def extract_games_number(text):
+            # Prioritize specific game type matches first
+            matches = (
+                re.findall(r'(\d+)\s*(switch|nintendo)\s*games', text.lower()) + # Switch/Nintendo specific
+                re.findall(r'(\d+)\s*games', text.lower()) # Generic games
+            )
+            # Convert matches to integers and find the maximum
+            numeric_matches = [int(match[0]) if isinstance(match, tuple) else int(match) for match in matches]
+            return max(numeric_matches) if numeric_matches else 0
+        
+        title_games = extract_games_number(listing_title)
+        desc_games = extract_games_number(listing_description)
+        return max(title_games, desc_games)
+
+    def detect_sd_card_vinted(self, listing_title, listing_description):
+        """
+        Detect SD card presence in title or description
+        """
+        sd_card_keywords = {'sd card', 'sdcard', 'sd', 'card', 'memory card', 'memorycard', 'micro sd', 'microsd',
+                        'memory card', 'memorycard', 'sandisk', '128gb', '256gb', 'game'}
+        
+        title_lower = listing_title.lower()
+        desc_lower = listing_description.lower()
+        
+        return any(keyword in title_lower or keyword in desc_lower for keyword in sd_card_keywords)
+
+    def handle_mutually_exclusive_items_vinted(self, detected_objects, confidences):
+        """
+        Handle mutually exclusive items for Vinted (ported from Facebook)
+        """
+        mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
+        
+        # Find the item with highest confidence
+        selected_item = max(confidences.items(), key=lambda x: x[1])[0] if any(confidences.values()) else None
+        
+        if selected_item:
+            # Set the selected item to 1 and all others to 0
+            for item in mutually_exclusive_items:
+                detected_objects[item] = 1 if item == selected_item else 0
+                
+            # Handle accessory incompatibilities
+            if selected_item in ['oled', 'oled_in_tv', 'oled_box']:
+                detected_objects['tv_black'] = 0
+            elif selected_item in ['switch', 'switch_in_tv', 'switch_box']:
+                detected_objects['tv_white'] = 0
+                
+            if selected_item in ['lite', 'lite_box', 'switch_box', 'oled_box']:
+                detected_objects['comfort_h'] = 0
+                
+            if selected_item in ['switch_in_tv', 'switch_box']:
+                detected_objects['tv_black'] = 0
+                
+            if selected_item in ['oled_in_tv', 'oled_box']:
+                detected_objects['tv_white'] = 0
+        
         return detected_objects
 
     def handle_oled_title_conversion_vinted(self, detected_objects, listing_title, listing_description):
@@ -368,26 +991,26 @@
         elif bookmark_listings and VINTED_SHOW_ALL_LISTINGS:
             should_bookmark = True
             
-        if should_bookmark:
-            # NEW: Use the 5-driver cycling system instead of old bookmark method
-            print(f"🔖 5-DRIVER SYSTEM: Adding to bookmark queue: {url}")
-            
-            # Extract username from details
-            username = details.get("username", None)
-            if not username or username == "Username not found":
-                username = None
-                print("🔖 USERNAME: Not available for this listing")
-            
-            # Add to the 5-driver bookmark queue
-            self.add_to_bookmark_queue(url, username)
-            
-            # For the rest of the logic, assume bookmark will succeed
-            # (the 5-driver system will handle the actual success/failure)
-            bookmark_success = True
-            print("✅ Added to 5-driver bookmark queue")
-            
-            # Start bookmark stopwatch (existing logic)
-            self.start_bookmark_stopwatch(url)
+            if should_bookmark:
+                # CHANGED: Use threaded bookmark execution
+                print(f"🔖 THREADED BOOKMARK: {url}")
+                
+                # Extract username from details
+                username = details.get("username", None)
+                if not username or username == "Username not found":
+                    username = None
+                    print("🔖 USERNAME: Not available for this listing")
+                
+                # Start bookmark in separate thread - no need to wait for completion
+                bookmark_success = self.bookmark_driver_threaded(url, username)
+                
+                # For the rest of the logic, assume bookmark will succeed
+                # (the thread will handle the actual success/failure)
+                if bookmark_success:
+                    print("✅ Bookmark thread started successfully")
+                    
+                    # Start bookmark stopwatch (existing logic)
+                    self.start_bookmark_stopwatch(url)
 
         # NEW: Generate exact UK time when creating listing info 
         from datetime import datetime
@@ -1074,10 +1697,9 @@
         
         return True
 
-    def search_vinted_with_refresh_enhanced(self, driver, search_query):
+    def search_vinted_with_refresh(self, driver, search_query):
         """
         Enhanced search_vinted method with refresh and rescan functionality
-        UPDATED: Now includes scraping pause support for 5-driver bookmark system
         UPDATED: Now restarts the main driver every 250 cycles to prevent freezing
         """
         global suitable_listings, current_listing_index
@@ -1136,22 +1758,6 @@
 
         # Main scanning loop with refresh functionality AND driver restart
         while True:
-            # NEW: Check if scraping should be paused for bookmarking
-# NEW: Check if scraping should be paused for bookmarking AND wait for bookmark drivers
-            print("🔍 SCRAPE: Checking if scraping is allowed...")
-            self.scraping_paused.wait()  # This blocks if scraping is paused
-
-            # ADDITIONAL: Wait for at least one bookmark driver to be ready
-            print("🔖 SCRAPE: Waiting for bookmark drivers to be ready...")
-            while True:
-                ready_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
-                if ready_count > 0:
-                    break
-                print(f"⏳ SCRAPE: {ready_count}/5 bookmark drivers ready, waiting...")
-                time.sleep(1)
-
-            print(f"✅ SCRAPE: {ready_count}/5 bookmark drivers ready - scraping allowed, continuing...")
-            
             print(f"\n{'='*60}")
             print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
             print(f"🔄 Cycles since last driver restart: {cycles_since_restart}")
@@ -1229,12 +1835,6 @@
                 print(f"📄 Processing page {page} with {len(urls)} listings")
 
                 for idx, url in enumerate(urls, start=1):
-                    # NEW: Check if scraping is paused before processing each listing
-                    if not self.scraping_paused.is_set():
-                        print("⏸️ SCRAPE: Paused mid-processing, waiting...")
-                        self.scraping_paused.wait()
-                        print("▶️ SCRAPE: Resumed mid-processing")
-                    
                     cycle_listing_counter += 1
                     
                     print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
@@ -1256,6 +1856,7 @@
                         break
 
                     overall_listing_counter += 1
+
 
                     # Process the listing (using current_driver instead of driver)
                     current_driver.execute_script("window.open();")
@@ -1408,601 +2009,6 @@
             except:
                 return False
         return False
-
-    def _perform_vinted_login_simple(self, driver, config, driver_name):
-        """
-        SIMPLIFIED: Login without additional cookie clearing (already done in _prepare_driver)
-        """
-        try:
-            print(f"🔐 LOGIN: Starting login process for {driver_name}")
-            
-            # Click Sign up | Log in button
-            signup_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
-            )
-            signup_button.click()
-            print(f"🔐 LOGIN: Clicked login button for {driver_name}")
-            
-            time.sleep(random.uniform(1, 2))
-            
-            if config['google_login']:
-                print(f"🔐 LOGIN: Using Google login for {driver_name}")
-                # Click Continue with Google
-                google_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
-                )
-                google_button.click()
-                print(f"✅ LOGIN: Google login initiated for {driver_name}")
-                
-            else:
-                print(f"🔐 LOGIN: Using email login for {driver_name}")
-                
-                # Click "Log in" text
-                login_text = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//span[contains(@class, 'web_ui__Text__underline') and text()='Log in']"))
-                )
-                login_text.click()
-                time.sleep(random.uniform(0.5, 1))
-                
-                # Click "email" text
-                email_text = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//span[contains(@class, 'web_ui__Text__underline') and text()='email']"))
-                )
-                email_text.click()
-                time.sleep(random.uniform(0.5, 1))
-                
-                # Click Continue button
-                continue_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[@type='submit']//span[text()='Continue']"))
-                )
-                continue_button.click()
-                print(f"✅ LOGIN: Email login initiated for {driver_name}")
-            
-            # Wait for login to complete
-            time.sleep(random.uniform(3, 5))
-            print(f"✅ LOGIN: Login process completed for {driver_name}")
-            return True
-            
-        except Exception as login_error:
-            print(f"❌ LOGIN ERROR: {driver_name} login failed: {login_error}")
-            return False
-
-    def _execute_enhanced_bookmark(self, driver, listing_url, username, driver_index):
-        """Execute the bookmark process using the cycling driver"""
-        driver_name = self.bookmark_driver_configs[driver_index]['driver_name']
-        
-        print(f"🔖 EXEC: Starting bookmark execution with {driver_name}")
-        
-        try:
-            # Store the main tab
-            main_tab = driver.current_window_handle
-            
-            # Execute the VM bookmarking logic (adapted for cycling system)
-            success = self._execute_vm_bookmark_enhanced_cycling(driver, main_tab, listing_url, username, driver_name)
-            
-            return success
-            
-        except Exception as exec_error:
-            print(f"❌ EXEC ERROR: {driver_name} execution failed: {exec_error}")
-            return False
-
-    def _enhanced_execute_vm_first_buy_sequence_cycling(self, driver, driver_name):
-        """Execute first buy sequence adapted for cycling system"""
-        print(f"🔖 {driver_name}: Starting first sequence...")
-        
-        # Find buy button
-        buy_button = self._find_buy_button_cycling(driver, driver_name)
-        if buy_button is None:
-            return False
-        
-        # Use force click method
-        if not self._click_buy_button_force_method_cycling(driver, buy_button, driver_name):
-            return False
-        
-        # Wait for pay button
-        pay_button = self._wait_for_pay_button_cycling(driver, driver_name, timeout=8)
-        if not pay_button:
-            return False
-        
-        # Handle shipping options
-        pay_button = self._handle_vm_shipping_options_cycling(driver, pay_button, driver_name)
-        if not pay_button:
-            return False
-        
-        # Execute critical pay sequence
-        return self._execute_critical_pay_sequence_cycling(driver, pay_button, driver_name)
-
-    def _find_buy_button_cycling(self, driver, driver_name, timeout=5):
-        """Find buy button with cycling system logging"""
-        print(f"🔍 {driver_name}: Finding buy button...")
-        
-        shadow_dom_search_script = """
-        function findBuyButtonUltraFast() {
-            try {
-                const btn = document.querySelector('button[data-testid="item-buy-button"]');
-                if (btn) {
-                    btn.setAttribute('data-vinted-found', 'primary');
-                    return { found: true, method: 'primary_testid' };
-                }
-            } catch (e) {}
-            
-            try {
-                const btn = document.querySelector('button[data-testid*="buy"]');
-                if (btn) {
-                    btn.setAttribute('data-vinted-found', 'fallback1');
-                    return { found: true, method: 'fallback1_testid' };
-                }
-            } catch (e) {}
-            
-            const buttons = document.querySelectorAll('button');
-            for (let i = 0; i < Math.min(buttons.length, 10); i++) {
-                const btn = buttons[i];
-                const testId = btn.getAttribute('data-testid') || '';
-                const text = (btn.textContent || '').toLowerCase();
-                
-                if (testId.includes('buy') || text.includes('buy now') || text.includes('buy')) {
-                    btn.setAttribute('data-vinted-found', 'fallback2');
-                    return { found: true, method: 'fallback2_scan' };
-                }
-            }
-            
-            return { found: false };
-        }
-        return findBuyButtonUltraFast();
-        """
-        
-        try:
-            search_result = driver.execute_script(shadow_dom_search_script)
-            
-            if search_result.get('found'):
-                print(f"✅ {driver_name}: Buy button found")
-                buy_button = driver.find_element(By.CSS_SELECTOR, '[data-vinted-found]')
-                return buy_button
-            else:
-                print(f"❌ {driver_name}: No buy button found")
-                return None
-                
-        except Exception as e:
-            print(f"❌ {driver_name}: Search failed: {e}")
-            return None
-
-    def _click_buy_button_force_method_cycling(self, driver, buy_button, driver_name):
-        """Click buy button with force method for cycling system"""
-        print(f"🔄 {driver_name}: Using force click method...")
-        
-        try:
-            # Re-find the buy button to avoid stale element
-            fresh_buy_button = driver.find_element(By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]')
-            driver.execute_script("arguments[0].click();", fresh_buy_button)
-            print(f"✅ {driver_name}: Buy button clicked")
-            return True
-        
-        except Exception as click_error:
-            print(f"❌ {driver_name}: Force click failed: {click_error}")
-            return False
-
-    def _wait_for_pay_button_cycling(self, driver, driver_name, timeout=15):
-        """Wait for pay button with cycling system logging"""
-        print(f"💳 {driver_name}: Waiting for pay button (max {timeout}s)...")
-        
-        start_time = time.time()
-        check_interval = 0.2
-        
-        while time.time() - start_time < timeout:
-            try:
-                pay_button = driver.find_element(By.CSS_SELECTOR, 
-                    'button[data-testid="single-checkout-order-summary-purchase-button"]')
-                
-                elapsed = time.time() - start_time
-                print(f"✅ {driver_name}: Pay button found after {elapsed:.2f}s")
-                return pay_button
-                
-            except:
-                pass
-            
-            time.sleep(check_interval)
-        
-        print(f"❌ {driver_name}: Pay button timeout after {timeout}s")
-        return None
-
-    def _handle_vm_shipping_options_cycling(self, driver, pay_button, driver_name):
-        """Handle shipping options for cycling system"""
-        print(f"🚢 {driver_name}: Checking shipping options...")
-        
-        try:
-            # Look for pickup option
-            try:
-                pickup_element = driver.find_element(
-                    By.XPATH, 
-                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to pick-up point"]'
-                )
-                
-                # Check if pickup is selected
-                try:
-                    pickup_selected = driver.find_element(
-                        By.XPATH, 
-                        '//div[@data-testid="delivery-option-pickup" and @aria-checked="true"]'
-                    )
-                    
-                    # If pickup selected, check for "Choose a pick-up point"
-                    try:
-                        choose_pickup = driver.find_element(
-                            By.XPATH,
-                            '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Choose a pick-up point"]'
-                        )
-                        
-                        print(f"⚠️ {driver_name}: Switching to Ship to home")
-                        
-                        # Click Ship to home
-                        ship_home = driver.find_element(
-                            By.XPATH,
-                            '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
-                        )
-                        ship_home.click()
-                        time.sleep(2)
-                        
-                        # Re-find pay button
-                        new_pay_button = self._wait_for_pay_button_cycling(driver, driver_name, timeout=5)
-                        if new_pay_button:
-                            print(f"✅ {driver_name}: Pay button re-found after shipping change")
-                            return new_pay_button
-                            
-                    except:
-                        # No "Choose pickup" message - pickup is ready
-                        pass
-                        
-                except:
-                    # Ship to home already selected
-                    pass
-                    
-            except:
-                # No shipping options page
-                pass
-            
-            print(f"✅ {driver_name}: Shipping options handled")
-            return pay_button
-            
-        except Exception as shipping_error:
-            print(f"❌ {driver_name}: Shipping error: {shipping_error}")
-            return pay_button
-
-    def _execute_critical_pay_sequence_cycling(self, driver, pay_button, driver_name):
-        """Execute critical 0.25s pay sequence for cycling system"""
-        try:
-            print(f"💳 {driver_name}: Executing critical pay sequence...")
-            
-            # Click pay button
-            pay_button.click()
-            print(f"✅ {driver_name}: Pay button clicked")
-            
-            # CRITICAL: Exact 0.25 second wait
-            time.sleep(0.25)
-            
-            # CRITICAL: Close tab immediately
-            driver.close()
-            
-            # Return to main tab
-            if len(driver.window_handles) > 0:
-                driver.switch_to.window(driver.window_handles[0])
-                print(f"✅ {driver_name}: Returned to main tab")
-            
-            print(f"🎉 {driver_name}: Critical sequence completed successfully")
-            return True
-            
-        except Exception as e:
-            print(f"❌ {driver_name}: Critical sequence failed: {e}")
-            return False
-
-    def _background_purchase_monitoring_with_cleanup(self, driver, listing_url, username, driver_name):
-        """
-        FIXED: Run Purchase unsuccessful monitoring with proper cleanup when done
-        """
-        print(f"🔍 {driver_name}: Background monitoring started (up to 25 minutes)")
-        
-        try:
-            # Call the existing monitoring function
-            self._monitor_purchase_unsuccessful_cycling(driver, listing_url, driver_name)
-            
-        except Exception as monitoring_error:
-            print(f"❌ {driver_name}: Monitoring error: {monitoring_error}")
-        
-        finally:
-            # CRITICAL: Clear monitoring flag and clean up when monitoring completes
-            print(f"🧹 {driver_name}: Monitoring completed - performing cleanup")
-            
-            # Clear monitoring flag
-            self.current_driver_monitoring_active = False
-            
-            # Clean up monitoring tab and driver
-            try:
-                driver.close()  # Close monitoring tab
-                print(f"✅ {driver_name}: Monitoring tab closed")
-            except Exception as tab_error:
-                print(f"⚠️ {driver_name}: Error closing monitoring tab: {tab_error}")
-            
-            # The driver itself will be cleaned up by the cycling system
-            print(f"🔄 {driver_name}: Monitoring cleanup completed")
-
-    def _check_processing_payment_cycling(self, driver, driver_name):
-        """Check for processing payment message"""
-        processing_selectors = [
-            "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
-            "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
-            "//*[contains(text(), 'Processing payment')]"
-        ]
-        
-        for selector in processing_selectors:
-            try:
-                element = WebDriverWait(driver, 3).until(
-                    EC.presence_of_element_located((By.XPATH, selector))
-                )
-                print(f"✅ {driver_name}: Processing payment found!")
-                return True
-            except TimeoutException:
-                continue
-        
-        return False
-
-    def _monitor_purchase_unsuccessful_cycling(self, driver, listing_url, driver_name):
-        """Monitor for Purchase unsuccessful and trigger buying drivers"""
-        print(f"🔍 {driver_name}: Starting Purchase unsuccessful monitoring...")
-        
-        monitoring_start_time = time.time()
-        max_wait_time = 25 * 60  # 25 minutes
-        
-        unsuccessful_selectors = [
-            "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-            "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
-            "//*[text()='Purchase unsuccessful']"
-        ]
-        
-        global purchase_unsuccessful_detected_urls
-        
-        try:
-            while True:
-                elapsed_time = time.time() - monitoring_start_time
-                
-                if elapsed_time >= max_wait_time:
-                    print(f"⏰ {driver_name}: Monitoring timeout after {max_wait_time/60:.0f} minutes")
-                    break
-                
-                # Check if driver is still alive
-                try:
-                    driver.current_url
-                except:
-                    print(f"💀 {driver_name}: Driver died during monitoring")
-                    break
-                
-                # Look for "Purchase unsuccessful"
-                for selector in unsuccessful_selectors:
-                    try:
-                        element = WebDriverWait(driver, 1).until(
-                            EC.presence_of_element_located((By.XPATH, selector))
-                        )
-                        
-                        total_elapsed = time.time() - monitoring_start_time
-                        print(f"🎯 {driver_name}: Purchase unsuccessful detected after {total_elapsed/60:.2f} minutes!")
-                        
-                        # Signal all waiting buying drivers
-                        for url, entry in purchase_unsuccessful_detected_urls.items():
-                            if entry.get('waiting', True):
-                                print(f"🚀 {driver_name}: Triggering buying driver for {url[:50]}...")
-                                entry['waiting'] = False
-                        
-                        return  # Exit monitoring
-                        
-                    except TimeoutException:
-                        continue
-                
-                time.sleep(0.5)  # Check every 500ms
-        
-        except Exception as monitoring_error:
-            print(f"❌ {driver_name}: Monitoring error: {monitoring_error}")
-
-    def _cleanup_current_driver(self):
-        """Clean up the current bookmark driver"""
-        current_index = self.current_bookmark_driver_index
-        
-        if current_index in self.bookmark_drivers:
-            try:
-                driver = self.bookmark_drivers[current_index]
-                driver_name = self.bookmark_driver_configs[current_index]['driver_name']
-                
-                print(f"🗑️ CLEANUP: Closing {driver_name}")
-                driver.quit()
-                
-                del self.bookmark_drivers[current_index]
-                self.bookmark_driver_status[current_index] = 'not_created'
-                
-                print(f"✅ CLEANUP: {driver_name} cleaned up")
-                
-            except Exception as cleanup_error:
-                print(f"⚠️ CLEANUP: Error cleaning up driver {current_index + 1}: {cleanup_error}")
-
-    def add_to_bookmark_queue(self, listing_url, username=None):
-        """Add a listing to the bookmark queue (replaces your existing bookmark calls)"""
-        print(f"➕ QUEUE: Adding {listing_url[:50]}... to bookmark queue")
-        
-        # Add to queue - the processor will handle it
-        self.bookmark_queue.put((listing_url, username))
-        
-        print(f"📊 QUEUE: {self.bookmark_queue.qsize()} items in bookmark queue")
-
-    def _advance_to_next_driver(self):
-        """
-        FIXED: Advance to the next driver in the cycle with proper sequential ordering
-        """
-        old_index = self.current_bookmark_driver_index
-        
-        # CRITICAL FIX: Ensure we always increment sequentially
-        self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
-        
-        old_name = self.bookmark_driver_configs[old_index]['driver_name']
-        new_name = self.bookmark_driver_configs[self.current_bookmark_driver_index]['driver_name']
-        
-        print(f"🔄 ADVANCE: Cycled from {old_name} (index {old_index}) to {new_name} (index {self.current_bookmark_driver_index})")
-
-
-    def _execute_vm_second_sequence_cycling(self, driver, listing_url, username, driver_name):
-        """
-        FIXED: Execute second sequence and start monitoring - prepare next driver AFTER monitoring starts
-        """
-        print(f"🔖 {driver_name}: Starting second sequence...")
-        
-        try:
-            # Open second tab
-            driver.execute_script("window.open('');")
-            second_tab = driver.window_handles[-1]
-            driver.switch_to.window(second_tab)
-            
-            # Navigate to listing again
-            driver.get(listing_url)
-            WebDriverWait(driver, 5).until(
-                lambda d: d.execute_script("return document.readyState") == "complete"
-            )
-            print(f"✅ {driver_name}: Second tab loaded")
-            
-            # Click buy button on second tab
-            try:
-                buy_button = driver.find_element(By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]')
-                driver.execute_script("arguments[0].click();", buy_button)
-                print(f"✅ {driver_name}: Second buy button clicked")
-            except Exception as buy_error:
-                print(f"❌ {driver_name}: Second buy button failed: {buy_error}")
-                return False
-            
-            # Look for 'Processing payment' message
-            processing_found = self._check_processing_payment_cycling(driver, driver_name)
-            
-            if processing_found:
-                print(f"🎉 {driver_name}: Processing payment found - BOOKMARK COMPLETE!")
-                print(f"🔍 {driver_name}: Starting monitoring phase...")
-                
-                # CRITICAL: Set monitoring flag BEFORE starting monitoring
-                self.current_driver_monitoring_active = True
-                
-                # FIXED: Prepare the next driver in sequence AFTER monitoring starts
-                with self.bookmark_system_lock:
-                    # Store current driver index before advancing
-                    current_driver_index = self.current_bookmark_driver_index
-                    
-                    # Advance to next driver
-                    self._advance_to_next_driver()
-                    
-                    # FIXED: Prepare the driver we just advanced to (the next in sequence)
-                    next_driver_index = self.current_bookmark_driver_index
-                    if self.bookmark_driver_status[next_driver_index] == 'not_created':
-                        self._prepare_next_driver_async(next_driver_index)
-                        print(f"🔧 TIMING: Preparing next driver {next_driver_index + 1} while {current_driver_index + 1} monitors")
-                
-                # Start monitoring in a separate thread (this will take up to 25 minutes)  
-                monitoring_thread = threading.Thread(
-                    target=self._background_purchase_monitoring_with_cleanup,
-                    args=(driver, listing_url, username, driver_name),
-                    name=f"Monitor-{driver_name}",
-                    daemon=True
-                )
-                monitoring_thread.start()
-                
-                print(f"✅ {driver_name}: Background monitoring started - bookmark process complete")
-                return True
-            else:
-                print(f"⚠️ {driver_name}: No processing payment found - bookmark may have failed")
-                return False
-                
-        except Exception as second_sequence_error:
-            print(f"❌ {driver_name}: Second sequence error: {second_sequence_error}")
-            return False
-
-
-    def debug_driver_status(self):
-        """
-        Debug helper to show current driver status
-        """
-        print("=" * 50)
-        print("DRIVER STATUS DEBUG")
-        print("=" * 50)
-        print(f"Current driver index: {self.current_bookmark_driver_index} (Driver {self.current_bookmark_driver_index + 1})")
-        
-        for i in range(5):
-            driver_name = self.bookmark_driver_configs[i]['driver_name']
-            status = self.bookmark_driver_status.get(i, 'unknown')
-            in_drivers = i in self.bookmark_drivers
-            
-            marker = ">> " if i == self.current_bookmark_driver_index else "   "
-            print(f"{marker}Driver {i+1} ({driver_name}): {status} (exists: {in_drivers})")
-        
-        ready_count = sum(1 for status in self.bookmark_driver_status.values() if status == 'ready')
-        print(f"Total ready drivers: {ready_count}/5")
-        print("=" * 50)
-
-    def cleanup_all_bookmark_drivers(self):
-        """Clean up all bookmark drivers when program exits"""
-        print("🧹 CLEANUP: Stopping all bookmark drivers...")
-        
-        with self.bookmark_system_lock:
-            for driver_index in range(5):
-                if driver_index in self.bookmark_drivers:
-                    try:
-                        driver_name = self.bookmark_driver_configs[driver_index]['driver_name']
-                        print(f"🗑️ CLEANUP: Closing {driver_name}")
-                        
-                        self.bookmark_drivers[driver_index].quit()
-                        del self.bookmark_drivers[driver_index]
-                        
-                        print(f"✅ CLEANUP: {driver_name} closed")
-                    except Exception as e:
-                        print(f"⚠️ CLEANUP: Error closing driver {driver_index + 1}: {e}")
-            
-            # Clear statuses
-            for i in range(5):
-                self.bookmark_driver_status[i] = 'not_created'
-        
-        print("✅ CLEANUP: All bookmark drivers cleaned up")
-
-    def _execute_vm_bookmark_enhanced_cycling(self, driver, main_tab, listing_url, username, driver_name):
-        """
-        FIXED: Execute VM bookmark process with proper timing for next driver preparation
-        """
-        print(f"🚀 {driver_name}: Starting bookmark for {listing_url[:50]}...")
-        
-        try:
-            # Open new tab for bookmarking
-            driver.execute_script("window.open('');")
-            bookmark_tab = driver.window_handles[-1]
-            driver.switch_to.window(bookmark_tab)
-            
-            # Navigate to listing
-            driver.get(listing_url)
-            WebDriverWait(driver, 5).until(
-                lambda d: d.execute_script("return document.readyState") == "complete"
-            )
-            
-            print(f"✅ {driver_name}: Navigated to listing")
-            time.sleep(0.5)
-            
-            # Execute first sequence (the critical 0.25s sequence)
-            first_success = self._enhanced_execute_vm_first_buy_sequence_cycling(driver, driver_name)
-            
-            if not first_success:
-                print(f"❌ {driver_name}: First sequence failed")
-                return False
-            
-            print(f"✅ {driver_name}: First sequence completed (0.25s + close)")
-            
-            # FIXED: Execute second sequence - this will handle next driver preparation timing
-            second_success = self._execute_vm_second_sequence_cycling(driver, listing_url, username, driver_name)
-            
-            if second_success:
-                print(f"🎉 {driver_name}: Bookmark completed successfully")
-                return True
-            else:
-                print(f"❌ {driver_name}: Second sequence failed")
-                return False
-                
-        except Exception as e:
-            print(f"❌ {driver_name}: Bookmark error - {e}")
-            return False
 
     def _execute_bookmark_sequences_with_monitoring(self, current_driver, listing_url, username, step_log):
         """Execute bookmark sequences with Purchase unsuccessful monitoring"""
@@ -2193,9 +2199,3 @@
                     # Click "Ship to home"
                     try:
                         ship_home_element = current_driver.find_element(
-                            By.XPATH,
-                            '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
-                        )
-                        ship_home_element.click()
-                        print("🏠 SWITCHED: Successfully clicked 'Ship to home'")
-                        self._log_step(step_log, "switched_to_ship_home", True)
