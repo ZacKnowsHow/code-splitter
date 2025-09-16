@@ -1,4 +1,455 @@
 # Continuation from line 2201
+                ("type", ctypes.wintypes.DWORD),
+                ("ii", INPUT_UNION)
+            ]
+        
+        # Store structure classes for use
+        self.KEYBDINPUT = KEYBDINPUT
+        self.INPUT = INPUT
+        self.INPUT_UNION = INPUT_UNION
+        
+        print("✅ HID Keyboard initialized with Windows SendInput API")
+    
+    def send_key_press(self, key, hold_time=None):
+        """
+        Send a single key press event (key down + key up)
+        
+        Args:
+            key (str): The key to press ('0'-'9', 'right', 'left', etc.)
+            hold_time (float): Time to hold key down in seconds (optional)
+        
+        Returns:
+            bool: True if successful, False if failed
+        """
+        if key not in self.VK_CODES:
+            print(f"❌ HID: Unknown key '{key}'")
+            return False
+        
+        vk_code = self.VK_CODES[key]
+        
+        try:
+            # Create key down event
+            key_input_down = self.INPUT()
+            key_input_down.type = self.INPUT_KEYBOARD
+            key_input_down.ii.ki = self.KEYBDINPUT()
+            key_input_down.ii.ki.wVk = vk_code
+            key_input_down.ii.ki.wScan = 0
+            key_input_down.ii.ki.dwFlags = 0  # Key down
+            key_input_down.ii.ki.time = 0
+            key_input_down.ii.ki.dwExtraInfo = None
+            
+            # Create key up event
+            key_input_up = self.INPUT()
+            key_input_up.type = self.INPUT_KEYBOARD
+            key_input_up.ii.ki = self.KEYBDINPUT()
+            key_input_up.ii.ki.wVk = vk_code
+            key_input_up.ii.ki.wScan = 0
+            key_input_up.ii.ki.dwFlags = self.KEYEVENTF_KEYUP  # Key up
+            key_input_up.ii.ki.time = 0
+            key_input_up.ii.ki.dwExtraInfo = None
+            
+            # Send key down event
+            result_down = self.user32.SendInput(
+                1,  # Number of inputs
+                ctypes.pointer(key_input_down),
+                ctypes.sizeof(self.INPUT)
+            )
+            
+            if result_down == 0:
+                error_code = self.kernel32.GetLastError()
+                print(f"❌ HID: SendInput key down failed, error code: {error_code}")
+                return False
+            
+            # Hold the key if specified
+            if hold_time:
+                time.sleep(hold_time)
+            else:
+                # Default brief hold time for realistic key press
+                time.sleep(random.uniform(0.02, 0.08))
+            
+            # Send key up event
+            result_up = self.user32.SendInput(
+                1,  # Number of inputs
+                ctypes.pointer(key_input_up),
+                ctypes.sizeof(self.INPUT)
+            )
+            
+            if result_up == 0:
+                error_code = self.kernel32.GetLastError()
+                print(f"❌ HID: SendInput key up failed, error code: {error_code}")
+                return False
+            
+            print(f"✅ HID: Successfully sent key '{key}' (VK: {vk_code:02X})")
+            return True
+            
+        except Exception as e:
+            print(f"❌ HID: Exception sending key '{key}': {e}")
+            return False
+    
+    def send_unicode_char(self, char):
+        """
+        Send a Unicode character directly (alternative method)
+        
+        Args:
+            char (str): Single Unicode character to send
+        
+        Returns:
+            bool: True if successful, False if failed
+        """
+        try:
+            unicode_value = ord(char)
+            
+            # Create Unicode input event
+            unicode_input = self.INPUT()
+            unicode_input.type = self.INPUT_KEYBOARD
+            unicode_input.ii.ki = self.KEYBDINPUT()
+            unicode_input.ii.ki.wVk = 0  # Must be 0 for Unicode
+            unicode_input.ii.ki.wScan = unicode_value
+            unicode_input.ii.ki.dwFlags = self.KEYEVENTF_UNICODE
+            unicode_input.ii.ki.time = 0
+            unicode_input.ii.ki.dwExtraInfo = None
+            
+            result = self.user32.SendInput(
+                1,
+                ctypes.pointer(unicode_input),
+                ctypes.sizeof(self.INPUT)
+            )
+            
+            if result == 0:
+                error_code = self.kernel32.GetLastError()
+                print(f"❌ HID: Unicode input failed for '{char}', error code: {error_code}")
+                return False
+            
+            print(f"✅ HID: Successfully sent Unicode char '{char}' (U+{unicode_value:04X})")
+            return True
+            
+        except Exception as e:
+            print(f"❌ HID: Exception sending Unicode '{char}': {e}")
+            return False
+    
+    def type_sequence(self, sequence, delay_between_keys=None):
+        """
+        Type a sequence of characters with realistic timing
+        
+        Args:
+            sequence (str): String of characters to type
+            delay_between_keys (float): Delay between keystrokes (optional)
+        
+        Returns:
+            bool: True if all keys sent successfully
+        """
+        success_count = 0
+        
+        for i, char in enumerate(sequence):
+            print(f"🔤 HID: Typing character {i+1}/{len(sequence)}: '{char}'")
+            
+            # Add realistic pre-keystroke delay
+            if i > 0:  # No delay before first character
+                delay = delay_between_keys if delay_between_keys else random.uniform(0.1, 0.3)
+                time.sleep(delay)
+            
+            # Try virtual key code method first (more reliable)
+            if char in self.VK_CODES:
+                success = self.send_key_press(char)
+            else:
+                # Fallback to Unicode method
+                success = self.send_unicode_char(char)
+            
+            if success:
+                success_count += 1
+            else:
+                print(f"❌ HID: Failed to send character '{char}' at position {i}")
+        
+        success_rate = (success_count / len(sequence)) * 100
+        print(f"📊 HID: Typing complete - {success_count}/{len(sequence)} characters sent ({success_rate:.1f}% success)")
+        
+        return success_count == len(sequence)
+    
+    def send_navigation_key(self, direction):
+        """
+        Send navigation keys (arrow keys, tab, enter, etc.)
+        
+        Args:
+            direction (str): 'right', 'left', 'tab', 'enter', 'space', 'backspace'
+        
+        Returns:
+            bool: True if successful
+        """
+        if direction not in self.VK_CODES:
+            print(f"❌ HID: Unknown navigation key '{direction}'")
+            return False
+        
+        return self.send_key_press(direction)
+
+
+class AudioNumberDetector:
+    def __init__(self, driver=None):
+        self.driver = driver
+        if not HAS_PYAUDIO:
+            print("ERROR: pyaudiowpatch not available - audio detection will not work")
+            return
+            
+        self.recognizer = sr.Recognizer()
+        
+        # Enhanced recognizer settings
+        self.recognizer.energy_threshold = 200
+        self.recognizer.dynamic_energy_threshold = True
+        self.recognizer.pause_threshold = 0.5
+        self.recognizer.phrase_threshold = 0.2
+        self.recognizer.non_speaking_duration = 0.3
+        
+        self.is_running = False
+        
+        # Enhanced audio settings for better quality
+        self.CHUNK = 2048
+        self.FORMAT = pyaudio.paInt16
+        self.CHANNELS = 2
+        self.RATE = 44100
+        
+        self.p = pyaudio.PyAudio()
+        self.audio_queue = queue.Queue()
+        
+        # Audio processing parameters
+        self.buffer_duration = 40
+        self.overlap_duration = 2
+        
+        # Number collection
+        self.collected_numbers = []
+        self.target_count = 6
+        self.numbers_lock = threading.Lock()
+        self.complete_sequence = ""
+        
+        print(f"Buffer duration: {self.buffer_duration}s, Overlap: {self.overlap_duration}s")
+        print(f"Will stop after collecting {self.target_count} numbers in sequence")
+
+    def get_default_speakers(self):
+        """Get the default speakers/output device for loopback capture"""
+        try:
+            wasapi_info = self.p.get_host_api_info_by_type(pyaudio.paWASAPI)
+            default_speakers = self.p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
+            
+            if not default_speakers["isLoopbackDevice"]:
+                for loopback in self.p.get_loopback_device_info_generator():
+                    if default_speakers["name"] in loopback["name"]:
+                        default_speakers = loopback
+                        break
+            
+            print(f"Found system audio device: {default_speakers['name']}")
+            return default_speakers
+            
+        except Exception as e:
+            print(f"Error finding speakers: {e}")
+            return None
+    
+    def extract_numbers_sequence(self, text):
+        """Extract numbers from text in the correct sequence"""
+        word_to_num = {
+            'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
+            'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13',
+            'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17',
+            'eighteen': '18', 'nineteen': '19', 'twenty': '20', 'thirty': '30',
+            'forty': '40', 'fifty': '50', 'sixty': '60', 'seventy': '70',
+            'eighty': '80', 'ninety': '90', 'hundred': '100'
+        }
+        
+        words = text.lower().replace(',', '').replace('.', '').split()
+        numbers = []
+        
+        for word in words:
+            if word in word_to_num:
+                numbers.append(word_to_num[word])
+            elif word.isdigit():
+                numbers.append(word)
+            elif re.match(r'^\d+$', word):
+                for digit in word:
+                    numbers.append(digit)
+        
+        digit_matches = re.findall(r'\b\d\b', text)
+        all_numbers = numbers + digit_matches
+        
+        # Remove the duplicate filtering - keep all numbers in sequence
+        valid_numbers = []
+        for num in all_numbers:
+            if num.isdigit() and len(num) == 1:
+                valid_numbers.append(num)
+        
+        return valid_numbers
+    
+    def find_complete_sequence(self, text):
+        """Try to find a complete 6-digit sequence"""
+        text_clean = re.sub(r'[^\w\s]', ' ', text.lower())
+        numbers = self.extract_numbers_sequence(text)
+        
+        if len(numbers) == 6:
+            return ''.join(numbers)
+        
+        sequence_patterns = [r'(\w+)\s+(\w+)\s+(\w+)\s+(\w+)\s+(\w+)\s+(\w+)']
+        
+        word_to_num = {
+            'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
+        }
+        
+        for pattern in sequence_patterns:
+            matches = re.findall(pattern, text_clean)
+            for match in matches:
+                sequence = []
+                for word in match:
+                    if word in word_to_num:
+                        sequence.append(word_to_num[word])
+                    elif word.isdigit() and len(word) == 1:
+                        sequence.append(word)
+                
+                if len(sequence) == 6:
+                    return ''.join(sequence)
+        
+        return None
+
+    def input_captcha_solution(self, sequence):
+        """Input the 6-digit sequence into the captcha form using trusted events"""
+        if not self.driver or not sequence or len(sequence) != 6:
+            print("Cannot input solution: missing driver or invalid sequence")
+            return False
+        
+        print(f"Starting to input captcha solution: {sequence}")
+        
+        try:
+            # Navigate to the correct iframe (same as before)
+            self.driver.switch_to.default_content()
+            
+            iframe_selectors = [
+                "iframe[src*='captcha']",
+                "iframe[src*='datadome']",
+                "iframe[id*='datadome']",
+                "iframe[class*='datadome']",
+                "iframe[title*='captcha']",
+                "iframe[title*='DataDome']"
+            ]
+            
+            iframe_found = False
+            for selector in iframe_selectors:
+                try:
+                    iframe = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    print(f"Found main iframe with selector: {selector}")
+                    self.driver.switch_to.frame(iframe)
+                    iframe_found = True
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not iframe_found:
+                print("Could not find captcha iframe for input")
+                return False
+            
+            # Find input fields
+            input_selectors = [
+                "input.audio-captcha-inputs",
+                "input[class*='audio-captcha-inputs']",
+                "input[data-index='1']",
+                "input[maxlength='1'][inputmode='numeric']",
+                "input[data-form-type='other'][maxlength='1']"
+            ]
+            
+            input_found = False
+            first_input = None
+            
+            for selector in input_selectors:
+                try:
+                    first_input = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    print(f"Found first input field with selector: {selector}")
+                    input_found = True
+                    break
+                except TimeoutException:
+                    continue
+            
+            # Check nested iframes if not found
+            if not input_found:
+                print("Input fields not found in current iframe, checking nested iframes...")
+                
+                try:
+                    nested_iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
+                    print(f"Found {len(nested_iframes)} nested iframes")
+                    
+                    for i, nested_iframe in enumerate(nested_iframes):
+                        try:
+                            print(f"Trying nested iframe {i}...")
+                            self.driver.switch_to.frame(nested_iframe)
+                            
+                            for selector in input_selectors:
+                                try:
+                                    first_input = WebDriverWait(self.driver, 3).until(
+                                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                                    )
+                                    print(f"Found first input field in nested iframe {i} with selector: {selector}")
+                                    input_found = True
+                                    break
+                                except:
+                                    continue
+                            
+                            if input_found:
+                                break
+                            
+                            self.driver.switch_to.parent_frame()
+                            
+                        except Exception as e:
+                            print(f"Error with nested iframe {i}: {e}")
+                            try:
+                                self.driver.switch_to.parent_frame()
+                            except:
+                                self.driver.switch_to.default_content()
+                                for sel in iframe_selectors:
+                                    try:
+                                        iframe = self.driver.find_element(By.CSS_SELECTOR, sel)
+                                        self.driver.switch_to.frame(iframe)
+                                        break
+                                    except:
+                                        continue
+                            continue
+                
+                except Exception as e:
+                    print(f"Error searching nested iframes for inputs: {e}")
+            
+            if not input_found or not first_input:
+                print("Could not find input fields")
+                self.driver.switch_to.default_content()
+                return False
+            
+            print("Starting to input digits using native Selenium methods...")
+            
+            # Click on the first input field
+            time.sleep(random.uniform(0.5, 1.0))
+            
+            # Scroll into view
+            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", first_input)
+            time.sleep(random.uniform(0.3, 0.6))
+
+            action = ActionChains(self.driver)
+
+
+            # Click with ActionChains (this generates trusted events)
+
+
+            offset_x = random.randint(-2, 2)
+            offset_y = random.randint(-2, 2)
+
+            action.move_to_element_with_offset(first_input, offset_x, offset_y)
+            time.sleep(random.uniform(0.2, 0.4))
+            action.move_to_element(first_input)
+            time.sleep(random.uniform(0.1, 0.3))
+            action.click().perform()
+            
+            print("Clicked on first input field")
+
+
+            # Input each digit using send_keys (generates TRUSTED events)
+            # Input each digit using PyAutoGUI
+            for i, digit in enumerate(sequence):
+                print(f"Inputting digit {i+1}: {digit}")
                 
                 if digit == '1':
                     time.sleep(2.3)
@@ -1748,454 +2199,3 @@ class VintedScraper:
                 self.driver_status[driver_num] = 'not_created'  # Allow it to be reused
                 print(f"🔄 KEPT ALIVE: Persistent buying driver (driver 1) marked as available")
             else:
-                # For drivers 2-5, close them after use
-                if self.buying_drivers[driver_num] is not None:
-                    try:
-                        print(f"🗑️ CLOSING: Buying driver {driver_num}")
-                        self.buying_drivers[driver_num].quit()
-                        
-                        # Wait a moment for cleanup
-                        time.sleep(0.5)
-                        
-                        self.buying_drivers[driver_num] = None
-                        self.driver_status[driver_num] = 'not_created'
-                        print(f"✅ CLOSED: Buying driver {driver_num}")
-                    except Exception as e:
-                        print(f"⚠️ WARNING: Error closing driver {driver_num}: {e}")
-                        self.buying_drivers[driver_num] = None
-                        self.driver_status[driver_num] = 'not_created'
-
-    def start_bookmark_stopwatch(self, listing_url):
-        """
-        Start a stopwatch for a successfully bookmarked listing
-        MODIFIED: Now tracks bookmark start time for wait_for_bookmark_stopwatch_to_buy functionality
-        """
-        print(f"⏱️ STOPWATCH: Starting timer for {listing_url}")
-        
-        # NEW: Track the start time for this listing
-        if not hasattr(self, 'bookmark_start_times'):
-            self.bookmark_start_times = {}
-        
-        # Record when the bookmark timer started
-        self.bookmark_start_times[listing_url] = time.time()
-        print(f"⏱️ RECORDED: Bookmark start time for {listing_url}")
-        
-        def stopwatch_timer():
-            time.sleep(bookmark_stopwatch_length)
-            print(f'LISTING {listing_url} HAS BEEN BOOKMARKED FOR {bookmark_stopwatch_length} SECONDS!')
-            
-            # Clean up the timer reference
-            if listing_url in self.bookmark_timers:
-                del self.bookmark_timers[listing_url]
-                
-            # Clean up the start time reference
-            if hasattr(self, 'bookmark_start_times') and listing_url in self.bookmark_start_times:
-                del self.bookmark_start_times[listing_url]
-        
-        # Start the timer thread
-        timer_thread = threading.Thread(target=stopwatch_timer)
-        timer_thread.daemon = True
-        timer_thread.start()
-        
-        # Store reference to track active timers
-        self.bookmark_timers[listing_url] = timer_thread
-
-    def cleanup_bookmark_timers(self):
-        """
-        Clean up any remaining bookmark timers when shutting down
-        """
-        print(f"🧹 CLEANUP: Stopping {len(self.bookmark_timers)} active bookmark timers")
-        self.bookmark_timers.clear()  # Timer threads are daemon threads, so they'll stop automatically
-
-    def run_pygame_window(self):
-        global LOCK_POSITION, current_listing_index, suitable_listings
-        screen, clock = self.initialize_pygame_window()
-        rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
-            pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
-            pygame.Rect(0, 180, 240, 180), pygame.Rect(240, 180, 240, 180), pygame.Rect(480, 180, 320, 180),
-            pygame.Rect(0, 360, 240, 240), pygame.Rect(240, 360, 240, 120), pygame.Rect(240, 480, 240, 120),
-            pygame.Rect(480, 360, 160, 240), pygame.Rect(640, 360, 160, 240)
-        ]
-        fonts = {
-            'number': pygame.font.Font(None, 24),
-            'price': pygame.font.Font(None, 36),
-            'title': pygame.font.Font(None, 40),
-            'description': pygame.font.Font(None, 28),
-            'join_date': pygame.font.Font(None, 28),
-            'revenue': pygame.font.Font(None, 36),
-            'profit': pygame.font.Font(None, 36),
-            'items': pygame.font.Font(None, 30),
-            'click': pygame.font.Font(None, 28),
-            'suitability': pygame.font.Font(None, 28),
-            'reviews': pygame.font.Font(None, 28),
-            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
-        }
-        dragging = False
-        resizing = False
-        drag_rect = None
-        drag_offset = (0, 0)
-        resize_edge = None
-
-        running = True
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                    running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_l:
-                        LOCK_POSITION = not LOCK_POSITION
-                    elif event.key == pygame.K_RIGHT:
-                        if suitable_listings:
-                            current_listing_index = (current_listing_index + 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
-                    elif event.key == pygame.K_LEFT:
-                        if suitable_listings:
-                            current_listing_index = (current_listing_index - 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:  # Left mouse button
-                        # Check if rectangle 4 was clicked
-                        if rectangles[3].collidepoint(event.pos):
-                            if suitable_listings and 0 <= current_listing_index < len(suitable_listings):
-                                current_url = suitable_listings[current_listing_index].get('url')
-                                if current_url:
-                                    try:
-                                        import webbrowser
-                                        webbrowser.open(current_url)
-                                    except Exception as e:
-                                        print(f"Failed to open URL: {e}")
-                        elif not LOCK_POSITION:
-                            for i, rect in enumerate(rectangles):
-                                if rect.collidepoint(event.pos):
-                                    if event.pos[0] > rect.right - 10 and event.pos[1] > rect.bottom - 10:
-                                        resizing = True
-                                        drag_rect = i
-                                        resize_edge = 'bottom-right'
-                                    else:
-                                        dragging = True
-                                        drag_rect = i
-                                        drag_offset = (rect.x - event.pos[0], rect.y - event.pos[1])
-                                    break
-                elif event.type == pygame.MOUSEBUTTONUP:
-                    if event.button == 1:
-                        dragging = False
-                        resizing = False
-                        drag_rect = None
-            
-            # Handle dragging and resizing
-            if dragging and drag_rect is not None:
-                rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
-                rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
-            elif resizing and drag_rect is not None:
-                if resize_edge == 'bottom-right':
-                    width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
-                    height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
-                    rectangles[drag_rect].size = (width, height)
-            
-            screen.fill((204, 210, 255))
-            for i, rect in enumerate(rectangles):
-                pygame.draw.rect(screen, (0, 0, 0), rect, 2)
-                number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
-                number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
-                screen.blit(number_text, number_rect)
-
-                if i == 2:  # Rectangle 3 (index 2) - Title
-                    self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
-                elif i == 1:  # Rectangle 2 (index 1) - Price
-                    self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
-                elif i == 7:  # Rectangle 8 (index 7) - Description
-                    self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
-                elif i == 8:  # Rectangle 9 (index 8) - CHANGED: Now shows exact time instead of upload date
-                    time_label = "Appended:"
-                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
-                elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
-                    self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
-                elif i == 9:  # Rectangle 10 (index 9) - Profit
-                    self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
-                elif i == 0:  # Rectangle 1 (index 0) - Detected Items
-                    self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
-                elif i == 10:  # Rectangle 11 (index 10) - Images
-                    self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
-                elif i == 3:  # Rectangle 4 (index 3) - Click to open
-                    click_text = "CLICK TO OPEN LISTING IN CHROME"
-                    self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
-                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
-                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
-                elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
-                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
-
-            screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
-
-            if suitable_listings:
-                listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
-                screen.blit(listing_counter, (10, 40))
-
-            pygame.display.flip()
-            clock.tick(30)
-
-        self.save_rectangle_config(rectangles)
-        pygame.quit()
-        
-    def base64_encode_image(self, img):
-        """Convert PIL Image to base64 string, resizing if necessary"""
-        # Resize image while maintaining aspect ratio
-        max_size = (200, 200)
-        img.thumbnail(max_size, Image.LANCZOS)
-        
-        # Convert to base64
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode()
-
-    def render_images(self, screen, images, rect, bounding_boxes):
-        if not images:
-            return
-
-        num_images = len(images)
-        if num_images == 1:
-            grid_size = 1
-        elif 2 <= num_images <= 4:
-            grid_size = 2
-        else:
-            grid_size = 3
-
-        cell_width = rect.width // grid_size
-        cell_height = rect.height // grid_size
-
-        for i, img in enumerate(images):
-            if i >= grid_size * grid_size:
-                break
-            row = i // grid_size
-            col = i % grid_size
-            img = img.resize((cell_width, cell_height))
-            img_surface = pygame.image.fromstring(img.tobytes(), img.size, img.mode)
-            screen.blit(img_surface, (rect.left + col * cell_width, rect.top + row * cell_height))
-
-        # Display suitability reason
-        if FAILURE_REASON_LISTED:
-            font = pygame.font.Font(None, 24)
-            suitability_text = font.render(current_suitability, True, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
-            screen.blit(suitability_text, (rect.left + 10, rect.bottom - 30))
-
-    def initialize_pygame_window(self):
-        pygame.init()
-        screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
-        pygame.display.set_caption("Facebook Marketplace Scanner")
-        return screen, pygame.time.Clock()
-
-    def load_rectangle_config(self):
-        return json.load(open(CONFIG_FILE, 'r')) if os.path.exists(CONFIG_FILE) else None
-
-    def save_rectangle_config(self, rectangles):
-        json.dump([(rect.x, rect.y, rect.width, rect.height) for rect in rectangles], open(CONFIG_FILE, 'w'))
-        
-    def render_text_in_rect(self, screen, font, text, rect, color):
-        words = text.split()
-        lines = []
-        current_line = []
-        for word in words:
-            test_line = ' '.join(current_line + [word])
-            test_width, _ = font.size(test_line)
-            if test_width <= rect.width - 10:
-                current_line.append(word)
-            else:
-                if current_line:
-                    lines.append(' '.join(current_line))
-                    current_line = [word]
-                else:
-                    lines.append(word)
-        if current_line:
-            lines.append(' '.join(current_line))
-
-        total_height = sum(font.size(line)[1] for line in lines)
-        if total_height > rect.height:
-            scale_factor = rect.height / total_height
-            new_font_size = max(1, int(font.get_height() * scale_factor))
-            try:
-                font = pygame.font.Font(None, new_font_size)  # Use default font
-            except pygame.error:
-                print(f"Error creating font with size {new_font_size}")
-                return  # Skip rendering if font creation fail
-
-        y = rect.top + 5
-        for line in lines:
-            try:
-                text_surface = font.render(line, True, color)
-                text_rect = text_surface.get_rect(centerx=rect.centerx, top=y)
-                screen.blit(text_surface, text_rect)
-                y += font.get_linesize()
-            except pygame.error as e:
-                print(f"Error rendering text: {e}")
-                continue  # Skip this line if rendering fails
-
-    def extract_price(self, text):
-        import re
-        """
-        Extracts a float from a string like '£4.50' or '4.50 GBP'
-        Returns 0.0 if nothing is found or text is None
-        """
-        if not text:
-            return 0.0
-        match = re.search(r"[\d,.]+", text)
-        if match:
-            return float(match.group(0).replace(",", ""))
-        return 0.0
-    
-    def render_multiline_text(self, screen, font, text, rect, color):
-        # Convert dictionary to formatted string if need
-        if isinstance(text, dict):
-            text_lines = []
-            for key, value in text.items():
-                text_lines.append(f"{key}: {value}")
-            text = '\n'.join(text_lines)
-        
-        # Rest of the existing function remains the same
-        words = text.split()
-        lines = []
-        current_line = []
-        for word in words:
-            test_line = ' '.join(current_line + [word])
-            test_width, _ = font.size(test_line)
-            if test_width <= rect.width - 20:
-                current_line.append(word)
-            else:
-                if current_line:
-                    lines.append(' '.join(current_line))
-                    current_line = [word]
-                else:
-                    lines.append(word)
-        if current_line:
-            lines.append(' '.join(current_line))
-
-        total_height = sum(font.size(line)[1] for line in lines)
-        if total_height > rect.height:
-            scale_factor = rect.height / total_height
-            new_font_size = max(1, int(font.get_height() * scale_factor))
-            try:
-                font = pygame.font.Font(None, new_font_size)  # Use default font
-            except pygame.error:
-                print(f"Error creating font with size {new_font_size}")
-                return  # Skip rendering if font creation fails
-
-        y_offset = rect.top + 10
-        for line in lines:
-            try:
-                text_surface = font.render(line, True, color)
-                text_rect = text_surface.get_rect(centerx=rect.centerx, top=y_offset)
-                screen.blit(text_surface, text_rect)
-                y_offset += font.get_linesize()
-                if y_offset + font.get_linesize() > rect.bottom - 10:
-                    break
-            except pygame.error as e:
-                print(f"Error rendering text: {e}")
-                continue  # Skip this line if rendering fails
-        
-
-
-    def bookmark_stopwatch_wrapper(self, func_name, tab_open_func, *args, **kwargs):
-        """
-        Wrapper function that times bookmark operations from tab open to ctrl+w
-        """
-        import time
-        
-        # Start timing when tab is opened
-        start_time = time.time()
-        print(f"⏱️ STOPWATCH START: {func_name} - Tab opening...")
-        
-        try:
-            # Execute the tab opening and bookmark operation
-            result = tab_open_func(*args, **kwargs)
-            
-            # Stop timing immediately after the 0.25s wait and ctrl+w
-            end_time = time.time()
-            elapsed = end_time - start_time
-            
-            print(f"⏱️ STOPWATCH END: {func_name} completed in {elapsed:.3f} seconds")
-            return result
-            
-        except Exception as e:
-            end_time = time.time()
-            elapsed = end_time - start_time
-            print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
-            raise
-    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
-        global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
-        global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
-        global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
-
-        # Close and clear existing images
-        if 'current_listing_images' in globals():
-            for img in current_listing_images:
-                try:
-                    img.close()  # Explicitly close the image
-                except Exception as e:
-                    print(f"Error closing image: {str(e)}")
-            current_listing_images.clear()
-
-        if processed_images:
-            for img in processed_images:
-                try:
-                    img_copy = img.copy()  # Create a fresh copy
-                    current_listing_images.append(img_copy)
-                except Exception as e:
-                    print(f"Error copying image: {str(e)}")
-        
-        # Store bounding boxes with more robust handling
-        current_bounding_boxes = {
-            'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
-            'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
-        }
-
-        # Handle detected_items for Box 1 - show raw detected objects with counts
-        if isinstance(detected_items, dict):
-            # Format as "item_name: count" for items with count > 0
-            formatted_detected_items = {}
-            for item, count in detected_items.items():
-                try:
-                    count_int = int(count) if isinstance(count, str) else count
-                    if count_int > 0:
-                        formatted_detected_items[item] = str(count_int)
-                except (ValueError, TypeError):
-                    continue
-            
-            if not formatted_detected_items:
-                formatted_detected_items = {"no_items": "No items detected"}
-        else:
-            formatted_detected_items = {"no_items": "No items detected"}
-
-        # FIXED: Use the join_date parameter directly instead of generating new timestamp
-        # The join_date parameter now contains the stored timestamp from when item was processed
-        stored_append_time = join_date if join_date else "No timestamp"
-
-        # Explicitly set the global variables
-        current_detected_items = formatted_detected_items
-        current_listing_title = title[:50] + '...' if len(title) > 50 else title
-        current_listing_description = description[:200] + '...' if len(description) > 200 else description if description else "No description"
-        current_listing_join_date = stored_append_time  # FIXED: Use stored timestamp, not current time
-        current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
-        current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
-        current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
-        current_listing_url = url
-        current_suitability = suitability if suitability else "Suitability unknown"
-        current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
-
-    def handle_post_payment_logic(self, driver, driver_num, url):
-        """
-        Handle the logic after payment is clicked - check for success/errors
-        """
-        print(f"💳 DRIVER {driver_num}: Handling post-payment logic...")
-        
-        max_attempts = 250
-        attempt = 0
-        purchase_successful = False
-        
-        while not purchase_successful and attempt < max_attempts:
-            attempt += 1
-            
-            if attempt % 10 == 0:  # Print progress every 10 attempts
-                print(f"💳 DRIVER {driver_num}: Payment attempt {attempt}/{max_attempts}")
-            
-            # Check for error first (appears quickly)
-            try:
-                error_element = WebDriverWait(driver, 2).until(
-                    EC.presence_of_element_located((By.XPATH, 

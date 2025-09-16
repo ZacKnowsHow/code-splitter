@@ -1,4 +1,455 @@
 # Continuation from line 6601
+        global suitable_listings, current_listing_index, recent_listings
+
+        # Extract username from details
+        username = details.get("username", None)
+
+        if not username or username == "Username not found":
+            username = None
+            print("🔖 USERNAME: Not available for this listing")
+
+        # Extract and validate price from the main price field
+        price_text = details.get("price", "0")
+        listing_price = self.extract_vinted_price(price_text)
+        postage = self.extract_price(details.get("postage", "0"))
+        total_price = listing_price + postage
+
+        # Get seller reviews
+        seller_reviews = details.get("seller_reviews", "No reviews yet")
+        if print_debug:    
+            print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
+
+        # Create basic listing info for suitability checking
+        listing_info = {
+            "title": details.get("title", "").lower(),
+            "description": details.get("description", "").lower(),
+            "price": total_price,
+            "seller_reviews": seller_reviews,
+            "url": url
+        }
+
+        # Check basic suitability (but don't exit early if VINTED_SHOW_ALL_LISTINGS is True)
+        suitability_result = self.check_vinted_listing_suitability(listing_info)
+        if print_debug:    
+            print(f"DEBUG: Suitability result: '{suitability_result}'")
+
+        # Apply console keyword detection to detected objects
+        detected_console = self.detect_console_keywords_vinted(
+            details.get("title", ""),
+            details.get("description", "")
+        )
+        if detected_console:
+            # Set the detected console to 1 and ensure other mutually exclusive items are 0
+            mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
+            for item in mutually_exclusive_items:
+                detected_objects[item] = 1 if item == detected_console else 0
+
+        # Apply OLED title conversion
+        detected_objects = self.handle_oled_title_conversion_vinted(
+            detected_objects,
+            details.get("title", ""),
+            details.get("description", "")
+        )
+
+        # Calculate revenue with enhanced logic
+        total_revenue, expected_profit, profit_percentage, display_objects = self.calculate_vinted_revenue(
+            detected_objects, total_price, details.get("title", ""), details.get("description", "")
+        )
+
+        # Check profit suitability
+        profit_suitability = self.check_vinted_profit_suitability(total_price, profit_percentage)
+
+        # Game count suitability check (same as Facebook) - but don't return early if showing all
+        game_classes = [
+            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
+            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
+            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
+            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
+            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
+            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
+            'sword_p', 'tears_z', 'violet_p'
+        ]
+        game_count = sum(detected_objects.get(game, 0) for game in game_classes)
+        non_game_classes = [cls for cls in detected_objects.keys() if cls not in game_classes and detected_objects.get(cls, 0) > 0]
+
+        # Build comprehensive suitability reason
+        unsuitability_reasons = []
+
+        # Add basic suitability issues
+        if "Unsuitable" in suitability_result:
+            unsuitability_reasons.append(suitability_result.replace("Unsuitable: ", ""))
+
+        # Add game count issue
+        if 1 <= game_count <= 2 and not non_game_classes:
+            unsuitability_reasons.append("1-2 games with no additional non-game items")
+
+        # Add profit suitability issue
+        if not profit_suitability:
+            unsuitability_reasons.append(f"Profit £{expected_profit:.2f} ({profit_percentage:.2f}%) not suitable for price range")
+
+        # Determine final suitability
+        if unsuitability_reasons:
+            suitability_reason = "Unsuitable:\n---- " + "\n---- ".join(unsuitability_reasons)
+            is_suitable = False
+        else:
+            suitability_reason = f"Suitable: Profit £{expected_profit:.2f} ({profit_percentage:.2f}%)"
+            is_suitable = True
+
+        if print_debug:    
+            print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
+
+        # 🔖 MODIFIED BOOKMARK FUNCTIONALITY WITH SUCCESS TRACKING
+        bookmark_success = False
+        should_bookmark = False
+        
+        if bookmark_listings and is_suitable:
+            should_bookmark = True
+        elif bookmark_listings and VINTED_SHOW_ALL_LISTINGS:
+            should_bookmark = True
+            
+            if should_bookmark:
+                # CHANGED: Use threaded bookmark execution
+                print(f"🔖 THREADED BOOKMARK: {url}")
+                
+                # Extract username from details
+                username = details.get("username", None)
+                if not username or username == "Username not found":
+                    username = None
+                    print("🔖 USERNAME: Not available for this listing")
+                
+                # Start bookmark in separate thread - no need to wait for completion
+                bookmark_success = self.bookmark_driver_threaded(url, username)
+                
+                # For the rest of the logic, assume bookmark will succeed
+                # (the thread will handle the actual success/failure)
+                if bookmark_success:
+                    print("✅ Bookmark thread started successfully")
+                    
+                    # Start bookmark stopwatch (existing logic)
+                    self.start_bookmark_stopwatch(url)
+
+        # NEW: Generate exact UK time when creating listing info 
+        from datetime import datetime
+        import pytz
+        
+        uk_tz = pytz.timezone('Europe/London')
+        append_time = datetime.now(uk_tz)
+        exact_append_time = append_time.strftime("%H:%M:%S.%f")[:-3]  # Format: HH:MM:SS.mmm
+        
+        # Create final listing info with exact append time
+        final_listing_info = {
+            'title': details.get("title", "No title"),
+            'description': details.get("description", "No description"),
+            'join_date': exact_append_time,  # CHANGED: Use exact UK time instead of upload date
+            'price': str(total_price),
+            'expected_revenue': total_revenue,
+            'profit': expected_profit,
+            'detected_items': detected_objects, # Raw detected objects for box 1
+            'processed_images': processed_images,
+            'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
+            'url': url,
+            'suitability': suitability_reason,
+            'seller_reviews': seller_reviews
+        }
+
+        # SEPARATE logic for pygame and website
+        should_add_to_website = False
+        should_add_to_pygame = False
+        should_send_notification = False
+
+        # Website logic (current behavior - only successful bookmarks when bookmark_listings=True and VINTED_SHOW_ALL_LISTINGS=False)
+        if bookmark_listings and not VINTED_SHOW_ALL_LISTINGS:
+            # When bookmark_listings is ON and VINTED_SHOW_ALL_LISTINGS is OFF:
+            # Only add/notify if bookmark was successful
+            if bookmark_success:
+                should_add_to_website = True
+                should_send_notification = True
+                print("✅ Adding to website because bookmark was successful")
+            else:
+                print("❌ Not adding to website because bookmark was not successful")
+        else:
+            # Original logic for other combinations
+            if is_suitable or VINTED_SHOW_ALL_LISTINGS:
+                should_add_to_website = True
+                should_send_notification = True
+
+        # NEW: Pygame logic (always show suitable listings + bookmark failure info)
+        if VINTED_SHOW_ALL_LISTINGS:
+            should_add_to_pygame = True
+        elif is_suitable:  # Show all suitable listings regardless of bookmark success
+            should_add_to_pygame = True
+
+        # Modify suitability_reason for pygame if bookmark failed
+        pygame_suitability_reason = suitability_reason
+        if should_add_to_pygame and bookmark_listings and is_suitable and not bookmark_success:
+            pygame_suitability_reason = suitability_reason + "\n⚠️ BOOKMARK FAILED"
+        
+        if is_suitable and should_send_fail_bookmark_notification and not should_add_to_website:
+            notification_title = f"Listing Failed Bookmark: £{total_price:.2f}"
+            notification_message = (
+                f"Title: {details.get('title', 'No title')}\n"
+                f"Price: £{total_price:.2f}\n"
+                f"Expected Profit: £{expected_profit:.2f}\n"
+                f"Profit %: {profit_percentage:.2f}%\n"
+            )
+            
+            # Use the Pushover tokens exactly as Facebook does
+            if send_notification:
+                self.send_pushover_notification(
+                    notification_title,
+                    notification_message,
+                    'aks3to8guqjye193w7ajnydk9jaxh5',
+                    'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                )
+
+        # Add to website (existing logic)
+        if should_add_to_website:
+            # Send Pushover notification
+            if should_send_notification:
+                notification_title = f"New Vinted Listing: £{total_price:.2f}"
+                notification_message = (
+                    f"Title: {details.get('title', 'No title')}\n"
+                    f"Price: £{total_price:.2f}\n"
+                    f"Expected Profit: £{expected_profit:.2f}\n"
+                    f"Profit %: {profit_percentage:.2f}%\n"
+                )
+                
+                # Use the Pushover tokens exactly as Facebook does
+                if send_notification:
+                    self.send_pushover_notification(
+                        notification_title,
+                        notification_message,
+                        'aks3to8guqjye193w7ajnydk9jaxh5',
+                        'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
+                    )
+
+            # Add to recent_listings for website navigation
+            recent_listings['listings'].append(final_listing_info)
+            # Always set to the last (most recent) listing for website display
+            recent_listings['current_index'] = len(recent_listings['listings']) - 1
+
+        # Add to pygame (NEW separate logic)
+        if should_add_to_pygame:
+            # Create pygame-specific listing info with modified suitability
+            pygame_listing_info = final_listing_info.copy()
+            pygame_listing_info['suitability'] = pygame_suitability_reason
+            
+            suitable_listings.append(pygame_listing_info)
+            current_listing_index = len(suitable_listings) - 1
+            
+            # UPDATED: Print exact append time when adding to pygame
+            print(f"⏰ APPENDED TO PYGAME: {exact_append_time} UK time")
+            self.update_listing_details(**pygame_listing_info)
+
+            if is_suitable and not bookmark_success and bookmark_listings:
+                print(f"✅ Added suitable listing to pygame with bookmark failure notice: £{total_price:.2f}")
+            elif is_suitable:
+                print(f"✅ Added suitable listing to pygame: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
+            else:
+                print(f"➕ Added unsuitable listing to pygame (SHOW_ALL mode): £{total_price:.2f}")
+
+        if not should_add_to_pygame:
+            print(f"❌ Listing not added to pygame: {suitability_reason}")
+
+
+    def check_vinted_profit_suitability(self, listing_price, profit_percentage):
+        if 10 <= listing_price < 16:
+            return 100 <= profit_percentage <= 600 #50
+        elif 16 <= listing_price < 25:
+            return 65 <= profit_percentage <= 400 #50
+        elif 25 <= listing_price < 50:
+            return 37.5 <= profit_percentage <= 550 #35
+        elif 50 <= listing_price < 100:
+            return 35 <= profit_percentage <= 500 #32.5
+        elif listing_price >= 100:
+            return 30 <= profit_percentage <= 450 # 30
+        else:
+            return False
+            
+    def calculate_vinted_revenue(self, detected_objects, listing_price, title, description=""):
+        """
+        Enhanced revenue calculation with all Facebook logic
+        """
+        debug_function_call("calculate_vinted_revenue")
+        import re  # FIXED: Import re at function level
+        
+        # List of game-related classes
+        game_classes = [
+            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
+            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
+            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
+            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
+            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
+            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
+            'sword_p', 'tears_z', 'violet_p'
+        ]
+
+        # Get all prices
+        all_prices = self.fetch_all_prices()
+
+        # Count detected games
+        detected_games_count = sum(detected_objects.get(game, 0) for game in game_classes)
+
+        # Detect anonymous games from title and description
+        text_games_count = self.detect_anonymous_games_vinted(title, description)
+
+        # Calculate miscellaneous games
+        misc_games_count = max(0, text_games_count - detected_games_count)
+        misc_games_revenue = misc_games_count * 5 # Using same price as Facebook
+
+        # Handle box adjustments (same as Facebook)
+        adjustments = {
+            'oled_box': ['switch', 'comfort_h', 'tv_white'],
+            'switch_box': ['switch', 'comfort_h', 'tv_black'],
+            'lite_box': ['lite']
+        }
+
+        for box, items in adjustments.items():
+            box_count = detected_objects.get(box, 0)
+            for item in items:
+                detected_objects[item] = max(0, detected_objects.get(item, 0) - box_count)
+
+        # Remove switch_screen if present
+        detected_objects.pop('switch_screen', None)
+
+        # Detect SD card and add revenue
+        total_revenue = misc_games_revenue
+
+        # Calculate revenue from detected objects
+        for item, count in detected_objects.items():
+            if isinstance(count, str):
+                count_match = re.match(r'(\d+)', count)
+                count = int(count_match.group(1)) if count_match else 0
+
+            if count > 0 and item in all_prices:
+                item_price = all_prices[item]
+                if item == 'controller' and 'pro' in title.lower():
+                    item_price += 7.50
+                
+                item_revenue = item_price * count
+                total_revenue += item_revenue
+
+        expected_profit = total_revenue - listing_price
+        profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
+
+        print(f"Listing Price: £{listing_price:.2f}")
+        print(f"Total Expected Revenue: £{total_revenue:.2f}")
+        print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
+
+        # CRITICAL FIX: Filter out zero-count items for display (matching Facebook behavior)
+        display_objects = {k: v for k, v in detected_objects.items() if v > 0}
+
+        # Add miscellaneous games to display if present
+        if misc_games_count > 0:
+            display_objects['misc_games'] = misc_games_count
+
+        return total_revenue, expected_profit, profit_percentage, display_objects
+
+    def perform_detection_on_listing_images(self, model, listing_dir):
+        """
+        Enhanced object detection with all Facebook exceptions and logic
+        PLUS Vinted-specific post-scan game deduplication
+        NEW: Price threshold filtering for Nintendo Switch related items
+        """
+        if not os.path.isdir(listing_dir):
+            return {}, []
+
+        detected_objects = {class_name: [] for class_name in CLASS_NAMES}
+        processed_images = []
+        confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
+
+        image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
+        if not image_files:
+            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
+
+        for image_file in image_files:
+            image_path = os.path.join(listing_dir, image_file)
+            try:
+                img = cv2.imread(image_path)
+                if img is None:
+                    continue
+
+                # Track detections for this image
+                image_detections = {class_name: 0 for class_name in CLASS_NAMES}
+                results = model(img, verbose=False)
+                
+                for result in results:
+                    for box in result.boxes.cpu().numpy():
+                        class_id = int(box.cls[0])
+                        confidence = box.conf[0]
+                        
+                        if class_id < len(CLASS_NAMES):
+                            class_name = CLASS_NAMES[class_id]
+                            min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
+                            
+                            if confidence >= min_confidence:
+                                if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
+                                    confidences[class_name] = max(confidences[class_name], confidence)
+                                else:
+                                    image_detections[class_name] += 1
+                                
+                                # Draw bounding box
+                                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
+
+                # Update overall detected objects with max from this image
+                for class_name, count in image_detections.items():
+                    detected_objects[class_name].append(count)
+
+                # Convert to PIL Image for pygame compatibility
+                processed_images.append(Image.fromarray(cv2.cvtColor(
+                    cv2.copyMakeBorder(img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0]),
+                    cv2.COLOR_BGR2RGB)))
+
+            except Exception as e:
+                print(f"Error processing image {image_path}: {str(e)}")
+                continue
+
+        # Convert lists to max values
+        final_detected_objects = {class_name: max(counts) if counts else 0 for class_name, counts in detected_objects.items()}
+        
+        # Handle mutually exclusive items
+        final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
+        
+        # VINTED-SPECIFIC POST-SCAN GAME DEDUPLICATION
+        # Define game classes that should be capped at 1 per listing
+        vinted_game_classes = [
+            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
+            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
+            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
+            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
+            'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
+            'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
+            'sword_p', 'tears_z', 'violet_p'
+        ]
+        
+        # Cap each game type to maximum 1 per listing for Vinted
+        games_before_cap = {}
+        for game_class in vinted_game_classes:
+            if final_detected_objects.get(game_class, 0) > 1:
+                games_before_cap[game_class] = final_detected_objects[game_class]
+                final_detected_objects[game_class] = 1
+        
+        # Log the capping if any games were capped
+        if games_before_cap:
+            print("🎮 VINTED GAME DEDUPLICATION APPLIED:")
+            for game, original_count in games_before_cap.items():
+                print(f"  • {game}: {original_count} → 1")
+        
+        # NEW: PRICE THRESHOLD FILTERING FOR NINTENDO SWITCH ITEMS
+        try:
+            # Get the current listing price stored during scraping
+            listing_price = getattr(self, 'current_listing_price_float', 0.0)
+            
+            # If the listing price is below the threshold, remove Nintendo Switch detections
+            if listing_price > 0 and listing_price < PRICE_THRESHOLD:
+                filtered_classes = []
+                for switch_class in NINTENDO_SWITCH_CLASSES:
+                    if final_detected_objects.get(switch_class, 0) > 0:
+                        filtered_classes.append(switch_class)
+                        final_detected_objects[switch_class] = 0
                 
                 if filtered_classes:
                     print(f"🚫 PRICE FILTER: Removed Nintendo Switch detections due to low price (£{listing_price:.2f} < £{PRICE_THRESHOLD:.2f})")
@@ -1748,454 +2199,3 @@
             try:
                 # Wait for page to load
                 WebDriverWait(driver, 20).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-                )
-            except TimeoutException:
-                print("0 listings (page load timeout)")
-                refresh_cycle += 1
-                time.sleep(5)
-                continue
-            
-            # Get listing URLs from current page
-            els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
-            urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
-            
-            if not urls:
-                print("0 listings (no URLs found)")
-                refresh_cycle += 1
-                time.sleep(5)
-                continue
-            
-            # Count new URLs that haven't been seen before
-            new_urls = []
-            for url in urls:
-                listing_id = self.extract_vinted_listing_id(url)
-                if listing_id:
-                    # Check if we've already saved this ID
-                    try:
-                        with open(VINTED_SCANNED_IDS_FILE, 'r') as f:
-                            existing_ids = f.read().splitlines()
-                        
-                        if listing_id not in existing_ids:
-                            new_urls.append(url)
-                            # Save the listing ID
-                            with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
-                                f.write(f"{listing_id}\n")
-                    except FileNotFoundError:
-                        # File doesn't exist yet, all URLs are new
-                        new_urls.append(url)
-                        with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
-                            f.write(f"{listing_id}\n")
-            
-            # Print the count of new listings found
-            print(f"{len(new_urls)} listings")
-            
-            # Refresh the page and continue
-            driver.refresh()
-            refresh_cycle += 1
-            
-            # Small delay to prevent overwhelming the server
-            time.sleep(2)
-
-
-    def test_suitable_urls_mode(self, driver):
-        """
-        Simple function to cycle through TEST_SUITABLE_URLS and display each on pygame
-        Only uses the scraping driver, no buying or bookmarking drivers
-        Forces ALL listings to be added to pygame regardless of suitability
-        """
-        global suitable_listings, current_listing_index, VINTED_SHOW_ALL_LISTINGS, bookmark_listings
-        
-        print("🧪 TEST_WHETHER_SUITABLE = True - Starting test suitable URLs mode")
-        
-        # Temporarily override settings to force all listings to show
-        original_show_all = VINTED_SHOW_ALL_LISTINGS
-        original_bookmark = bookmark_listings
-        VINTED_SHOW_ALL_LISTINGS = True  # Force show all listings
-        bookmark_listings = False  # Disable bookmarking
-        
-        # Clear previous results
-        suitable_listings.clear()
-        current_listing_index = 0
-        
-        # Load YOLO Model
-        print("🧠 Loading object detection model...")
-        if torch.cuda.is_available():
-            model = YOLO(MODEL_WEIGHTS).cuda()
-            print("✅ YOLO model loaded on GPU")
-        else:
-            model = YOLO(MODEL_WEIGHTS).cpu()
-            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
-        
-        # Process each URL in TEST_SUITABLE_URLS
-        for idx, url in enumerate(TEST_SUITABLE_URLS, 1):
-            print(f"\n🔍 Processing test URL {idx}/{len(TEST_SUITABLE_URLS)}")
-            print(f"🔗 URL: {url}")
-            
-            try:
-                # Open new tab
-                driver.execute_script("window.open();")
-                driver.switch_to.window(driver.window_handles[-1])
-                driver.get(url)
-                
-                # Scrape details
-                details = self.scrape_item_details(driver)
-                
-                # Download images
-                listing_dir = os.path.join(DOWNLOAD_ROOT, f"test_listing_{idx}")
-                image_paths = self.download_images_for_listing(driver, listing_dir)
-                
-                # Perform object detection
-                detected_objects = {}
-                processed_images = []
-                if model and image_paths:
-                    detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
-                
-                # Process for pygame display (no booking logic, force show all)
-                self.process_vinted_listing(details, detected_objects, processed_images, idx, url)
-                
-                print(f"✅ Processed test URL {idx} - added to pygame")
-                
-            except Exception as e:
-                print(f"❌ Error processing test URL {idx}: {e}")
-            
-            finally:
-                # Close tab and return to main
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-        
-        # Restore original settings
-        VINTED_SHOW_ALL_LISTINGS = original_show_all
-        bookmark_listings = original_bookmark
-        
-        print(f"✅ Test mode complete - processed {len(TEST_SUITABLE_URLS)} URLs, all added to pygame")
-
-
-
-    # Add this new method to your VintedScraper class:
-    def _simulate_buying_process_for_test(self, driver, driver_num, url):
-        """
-        Simulate the buying process for test mode when no actual listing is available
-        This tests the buy button clicking logic without requiring a real purchasable item
-        """
-        print(f"🧪 SIMULATION: Starting simulated buying process for driver {driver_num}")
-        
-        try:
-            # Open new tab
-            driver.execute_script("window.open('');")
-            new_tab = driver.window_handles[-1]
-            driver.switch_to.window(new_tab)
-            print(f"✅ SIMULATION: New tab opened")
-            
-            # Navigate to URL
-            driver.get(url)
-            print(f"✅ SIMULATION: Navigated to {url}")
-            
-            # Wait for page to load
-            WebDriverWait(driver, 8).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            print(f"✅ SIMULATION: Page loaded")
-            
-            # Look for buy button (even if not clickable)
-            buy_selectors = [
-                'button[data-testid="item-buy-button"]',
-                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
-                '//button[@data-testid="item-buy-button"]',
-                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]'
-            ]
-            
-            buy_button_found = False
-            for selector in buy_selectors:
-                try:
-                    if selector.startswith('//'):
-                        buy_button = driver.find_element(By.XPATH, selector)
-                    else:
-                        buy_button = driver.find_element(By.CSS_SELECTOR, selector)
-                    
-                    print(f"✅ SIMULATION: Found buy button with selector: {selector}")
-                    buy_button_found = True
-                    
-                    # Try to click it (even if it fails, that's expected)
-                    try:
-                        buy_button.click()
-                        print(f"✅ SIMULATION: Buy button clicked successfully")
-                    except Exception as click_error:
-                        print(f"⚠️ SIMULATION: Buy button click failed (expected): {click_error}")
-                    
-                    break
-                    
-                except NoSuchElementException:
-                    continue
-            
-            if not buy_button_found:
-                print(f"⚠️ SIMULATION: No buy button found (item may be sold/removed)")
-                print(f"🧪 SIMULATION: Simulating buy button click anyway for test purposes...")
-            
-            # Simulate waiting for checkout page (even if it doesn't load)
-            print(f"🧪 SIMULATION: Waiting for checkout page simulation...")
-            time.sleep(2)
-            
-            # Look for pay button (simulate the buying logic)
-            pay_selectors = [
-                'button[data-testid="single-checkout-order-summary-purchase-button"]',
-                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
-            ]
-            
-            pay_button_found = False
-            for selector in pay_selectors:
-                try:
-                    pay_button = driver.find_element(By.CSS_SELECTOR, selector)
-                    print(f"✅ SIMULATION: Found pay button with selector: {selector}")
-                    pay_button_found = True
-                    
-                    # Simulate clicking pay button multiple times (the actual buying logic)
-                    for attempt in range(3):
-                        print(f"🧪 SIMULATION: Simulated pay button click attempt {attempt + 1}")
-                        try:
-                            pay_button.click()
-                            print(f"✅ SIMULATION: Pay button click attempt {attempt + 1} simulated")
-                        except Exception as pay_click_error:
-                            print(f"⚠️ SIMULATION: Pay button click {attempt + 1} failed (expected): {pay_click_error}")
-                        
-                        # Simulate the wait time between clicks
-                        time.sleep(buying_driver_click_pay_wait_time)
-                        
-                    break
-                    
-                except NoSuchElementException:
-                    continue
-            
-            if not pay_button_found:
-                print(f"⚠️ SIMULATION: No pay button found (checkout page didn't load)")
-                print(f"🧪 SIMULATION: This is expected behavior for test URLs without actual items")
-            
-            # Simulate completion
-            print(f"✅ SIMULATION: Buying process simulation completed")
-            print(f"🧪 SIMULATION: In real scenario, this would continue until purchase success/failure")
-            
-        except Exception as simulation_error:
-            print(f"❌ SIMULATION ERROR: {simulation_error}")
-        
-        finally:
-            # Clean up the tab
-            try:
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-                print(f"✅ SIMULATION: Cleanup completed")
-            except Exception as cleanup_error:
-                print(f"⚠️ SIMULATION CLEANUP: {cleanup_error}")
-            
-            # Release the driver
-            self.release_driver(driver_num)
-            print(f"✅ SIMULATION: Driver {driver_num} released")
-
-
-    def run(self):
-        global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
-        global current_listing_description, current_listing_join_date, current_detected_items, current_profit
-        global current_listing_images, current_listing_url, current_suitability, current_expected_revenue
-        
-        # NEW: Check for TEST_WHETHER_SUITABLE mode
-        if TEST_WHETHER_SUITABLE:
-            print("🧪 TEST_WHETHER_SUITABLE = True - Starting test suitable URLs mode")
-            
-            # Initialize ALL global variables including current_seller_reviews
-            suitable_listings = []
-            current_listing_index = 0
-            recent_listings = {'listings': [], 'current_index': 0}
-            
-            # Initialize all current listing variables INCLUDING current_seller_reviews
-            current_listing_title = "No title"
-            current_listing_description = "No description" 
-            current_listing_join_date = "No join date"
-            current_listing_price = "0"
-            current_expected_revenue = "0"
-            current_profit = "0"
-            current_detected_items = "None"
-            current_listing_images = []
-            current_listing_url = ""
-            current_suitability = "Suitability unknown"
-            current_seller_reviews = "No reviews yet"  # FIX: Initialize this variable
-            
-            # Initialize pygame display with default values
-            self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
-            
-            # Setup driver with headless mode to reduce WebGL errors
-            driver = self.setup_driver()
-            
-            try:
-                # Start pygame FIRST so it's ready to display results
-                print("🎮 Starting pygame window...")
-                pygame_thread = threading.Thread(target=self.run_pygame_window)
-                pygame_thread.daemon = True
-                pygame_thread.start()
-                
-                # Give pygame time to initialize
-                time.sleep(2)
-                
-                # Process the test URLs
-                self.test_suitable_urls_mode(driver)
-                
-                # Keep pygame running to display results
-                print("🎮 Pygame running - use arrow keys to navigate, ESC to exit")
-                pygame_thread.join()  # Wait for pygame to finish
-                
-            except KeyboardInterrupt:
-                print("\n🛑 Test mode stopped by user")
-            finally:
-                driver.quit()
-                pygame.quit()
-                print("✅ Driver closed, exiting")
-                sys.exit(0)
-
-        # NEW: Check for TEST_NUMBER_OF_LISTINGS mode
-        if TEST_NUMBER_OF_LISTINGS:
-            print("🧪 TEST_NUMBER_OF_LISTINGS = True - Starting URL collection mode")
-            
-            # Skip all the complex initialization, just setup basic driver
-            driver = self.setup_driver()
-            
-            try:
-                self.test_url_collection_mode(driver, SEARCH_QUERY)
-            except KeyboardInterrupt:
-                print("\n🛑 URL collection stopped by user")
-            finally:
-                driver.quit()
-                print("✅ Driver closed, exiting")
-                sys.exit(0)
-        
-        # NEW: TEST_BOOKMARK_BUYING_FUNCTIONALITY implementation
-        if TEST_BOOKMARK_BUYING_FUNCTIONALITY:
-            print("🔖💳 TEST_BOOKMARK_BUYING_FUNCTIONALITY ENABLED")
-            print(f"🔗 URL: {TEST_BOOKMARK_BUYING_URL}")
-                    
-            # Start Flask app in separate thread.
-            flask_thread = threading.Thread(target=self.run_flask_app)
-            flask_thread.daemon = True
-            flask_thread.start()
-            
-            # Skip all driver initialization, pygame, flask, etc.
-            # Only run bookmark + buying process on the test URL
-            try:
-                print("🔖 STEP 1: Starting bookmark process...")
-                
-                # First, run the bookmark function
-                # Extract username from the URL if possible or use a test username
-                test_username = "test_user"  # You might want to make this configurable
-                
-                bookmark_success = self.bookmark_driver(TEST_BOOKMARK_BUYING_URL, test_username)
-                
-                if bookmark_success:
-                    if wait_for_bookmark_stopwatch_to_buy:
-                        print("✅ BOOKMARK: Successfully bookmarked the item")
-                        print(f"⏱️ WAITING: Waiting {bookmark_stopwatch_length} seconds for bookmark timer...")
-                        
-                        # Wait for the full bookmark stopwatch duration
-                        time.sleep(bookmark_stopwatch_length)
-                        
-                        print("✅ WAIT COMPLETE: Bookmark timer finished, starting buying process...")
-                        
-                    # Now start the buying process using process_single_listing_with_driver
-                    driver_num, driver = self.get_available_driver()
-                    
-                    if driver is not None:
-                        print(f"✅ BUYING: Got driver {driver_num}")
-                        print("💳 STARTING: Buying process...")
-                        
-                        # MODIFIED: Use a simulation method when actual buying isn't possible
-                        try:
-                            self.process_single_listing_with_driver(TEST_BOOKMARK_BUYING_URL, driver_num, driver)
-                        except Exception as buying_error:
-                            print(f"⚠️ BUYING: Normal buying process failed: {buying_error}")
-                            print("🧪 BUYING: Switching to test simulation mode...")
-                            
-                            # Simulate the buying process steps for testing
-                            self._simulate_buying_process_for_test(driver, driver_num, TEST_BOOKMARK_BUYING_URL)
-                        
-                        print("✅ TEST COMPLETE: Bookmark + Buying process finished")
-                    else:
-                        print("❌ BUYING ERROR: Could not get available driver")
-                        
-                else:
-                    print("❌ BOOKMARK FAILED: Could not bookmark the item, skipping buying process")
-                    
-            except Exception as e:
-                print(f"❌ TEST ERROR: {e}")
-                import traceback
-                traceback.print_exc()
-            finally:
-                # Clean up all drivers
-                self.cleanup_all_buying_drivers()
-                self.cleanup_persistent_buying_driver()
-                self.cleanup_persistent_bookmark_driver()
-            
-            # Exit immediately after test
-            print("🔖💳 TEST_BOOKMARK_BUYING_FUNCTIONALITY COMPLETE - EXITING")
-            sys.exit(0)
-                
-        if BOOKMARK_TEST_MODE:
-            print("🧪 BOOKMARK TEST MODE ENABLED")
-            print(f"🔗 URL: {BOOKMARK_TEST_URL}")
-            print(f"👤 USERNAME: {BOOKMARK_TEST_USERNAME}")
-            
-            # Initialize all required global variables for proper operation
-            suitable_listings = []
-            current_listing_index = 0
-            recent_listings = {'listings': [], 'current_index': 0}
-            
-            # Initialize all current listing variables
-            current_listing_title = "No title"
-            current_listing_description = "No description"
-            current_listing_join_date = "No join date"
-            current_listing_price = "0"
-            current_expected_revenue = "0"
-            current_profit = "0"
-            current_detected_items = "None"
-            current_listing_images = []
-            current_listing_url = ""
-            current_suitability = "Suitability unknown"
-            current_seller_reviews = "No reviews yet"
-            
-            try:
-                # Start the bookmark process
-                success = self.bookmark_driver(BOOKMARK_TEST_URL, BOOKMARK_TEST_USERNAME)
-                
-                if success:
-                    print("✅ BOOKMARK TEST SUCCESSFUL")
-                    
-                    # STAY ALIVE and wait for monitoring to complete
-                    print("⏳ STAYING ALIVE: Waiting for monitoring thread to complete...")
-                    
-                    # Wait for the monitoring thread to finish
-                    while self.monitoring_threads_active.is_set():
-                        time.sleep(1)
-                        print("🔍 MONITORING: Still active, waiting...")
-                    
-                    print("✅ MONITORING: Complete - all threads finished")
-                    
-                else:
-                    print("❌ BOOKMARK TEST FAILED")
-                
-            except KeyboardInterrupt:
-                print("\n🛑 BOOKMARK TEST: Stopped by user")
-                # Force cleanup if user interrupts
-                self.cleanup_all_cycling_bookmark_drivers()
-            
-            except Exception as e:
-                print(f"❌ BOOKMARK TEST ERROR: {e}")
-                import traceback
-                traceback.print_exc()
-            
-            finally:
-                # Final cleanup
-                print("🧹 FINAL CLEANUP: Closing any remaining drivers...")
-                self.cleanup_all_cycling_bookmark_drivers()
-                self.cleanup_all_buying_drivers()
-                self.cleanup_persistent_buying_driver()
-                self.cleanup_persistent_bookmark_driver()
-            
-            # Only exit after monitoring is truly complete
-            print("🧪 BOOKMARK TEST MODE COMPLETE - EXITING")
