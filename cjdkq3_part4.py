@@ -1501,5 +1501,5 @@ if __name__ == "__main__":
     else:
         print("VM_DRIVER_USE = False - Running main Vinted scraper")
         scraper = VintedScraper()
-        globals()['vinted_scraper_instance'] = scraper
+        globals()['vinted_scraper_instance'] = scraper#
         scraper.run()
