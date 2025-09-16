@@ -69,6 +69,14 @@ import ctypes
 VM_DRIVER_USE = True
 google_login = True
 
+VM_BOOKMARK_URLS = [
+    "https://www.vinted.co.uk/items/7096578621-stardew-valley-nintendo-switch-game?homepage_session_id=34ca33e1-5065-404b-a8e6-30418b0fdf45",
+    "https://www.vinted.co.uk/items/7098226379-mario-rabbids-kingdom-battle-nintendo-switch?homepage_session_id=194e7299-4ee7-4d6c-b536-392431d64a47", 
+    "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
+    "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
+    "https://www.vinted.co.uk/items/7097706534-just-dance-2022-nintendo-switch-game-cartridge?homepage_session_id=6c527539-91d8-4297-8e48-f96581b761d3"
+]
+
 # tests whether the listing is suitable for buying based on URL rather than scanning
 TEST_WHETHER_SUITABLE = False
 TEST_SUITABLE_URLS = [
@@ -1241,8 +1249,9 @@ def move_to_element_naturally(driver, element):
     time.sleep(random.uniform(0.2, 0.5))
     return action
 
+# 2. Modified main_vm_driver function (replace your existing main_vm_driver function)
 def main_vm_driver():
-    """Main VM driver function - Enhanced to run 5 drivers sequentially"""
+    """Main VM driver function - Enhanced to run 5 drivers sequentially with URL bookmarking"""
     # VM IP address - change this to your VM's IP
     vm_ip_address = "192.168.56.101"
     
@@ -1255,12 +1264,17 @@ def main_vm_driver():
         {"user_data_dir": "C:\\VintedScraper_Default5_Bookmark", "profile": "Profile 18", "port": 9228}
     ]
     
-    # Run all 5 drivers sequentially
+    print(f"\n🔖 BOOKMARKING: Will bookmark {len(VM_BOOKMARK_URLS)} URLs across 5 drivers:")
+    for i, url in enumerate(VM_BOOKMARK_URLS, 1):
+        print(f"  Driver {i}: {url}")
+    
+    # Run all 5 drivers sequentially with URL bookmarking
     for i, config in enumerate(driver_configs, 1):
         print(f"\n{'='*60}")
         print(f"STARTING DRIVER {i}/5")
         print(f"User Data: {config['user_data_dir']}")
         print(f"Profile: {config['profile']}")
+        print(f"Assigned URL: {VM_BOOKMARK_URLS[i-1]}")
         print(f"{'='*60}")
         
         # Clear browser data for this driver
@@ -1372,7 +1386,21 @@ def main_vm_driver():
 
             if result == "no_captcha":
                 print("No captcha present - login successful!")
-                print(f"Driver {i} script completed successfully without needing captcha solving.")
+                print(f"Driver {i} login completed successfully.")
+                
+                # NEW: LOGIN SUCCESSFUL - NOW BOOKMARK THE ASSIGNED URL
+                assigned_url = VM_BOOKMARK_URLS[i-1]  # Get URL for this driver (0-indexed)
+                print(f"\n🔖 BOOKMARKING: Driver {i} starting bookmark process for:")
+                print(f"🔗 URL: {assigned_url}")
+                
+                # Execute bookmark using existing logic
+                bookmark_success = execute_vm_bookmark_process(driver, assigned_url, i)
+                
+                if bookmark_success:
+                    print(f"✅ BOOKMARKING: Driver {i} successfully bookmarked URL!")
+                else:
+                    print(f"❌ BOOKMARKING: Driver {i} failed to bookmark URL")
+                
             elif result == True:
                 print("Audio captcha button clicked successfully!")
                 print("="*60)
@@ -1383,6 +1411,19 @@ def main_vm_driver():
                 if HAS_PYAUDIO:
                     detector = AudioNumberDetector(driver=driver)
                     detector.start_listening()
+                    
+                    # After captcha is solved, proceed with bookmarking
+                    print(f"\n🔖 BOOKMARKING: Driver {i} captcha solved, starting bookmark process...")
+                    assigned_url = VM_BOOKMARK_URLS[i-1]
+                    print(f"🔗 URL: {assigned_url}")
+                    
+                    bookmark_success = execute_vm_bookmark_process(driver, assigned_url, i)
+                    
+                    if bookmark_success:
+                        print(f"✅ BOOKMARKING: Driver {i} successfully bookmarked URL!")
+                    else:
+                        print(f"❌ BOOKMARKING: Driver {i} failed to bookmark URL")
+                        
                 else:
                     print("ERROR: Cannot start audio detection - pyaudiowpatch not available")
             else:
@@ -1417,7 +1458,417 @@ def main_vm_driver():
     
     print("\n" + "="*60)
     print("ALL 5 DRIVERS COMPLETED SUCCESSFULLY")
+    print("URL BOOKMARKING PROCESS COMPLETE")
     print("="*60)
+
+# 3. New function to execute bookmark process for VM drivers
+def execute_vm_bookmark_process(driver, url, driver_number):
+    """
+    Execute the bookmark process for a VM driver using existing bookmark logic
+    """
+    try:
+        print(f"🔖 DRIVER {driver_number}: Starting bookmark execution...")
+        
+        # Extract username from the URL if possible (simplified for VM use)
+        # You might want to enhance this to actually scrape the username
+        username = f"vm_user_{driver_number}"  # Placeholder - could be enhanced
+        
+        # Use the existing bookmark logic structure
+        step_log = {
+            'start_time': time.time(),
+            'driver_number': driver_number,
+            'steps_completed': [],
+            'failures': [],
+            'success': False,
+            'critical_sequence_completed': False,
+            'actual_url': url
+        }
+        
+        # Execute the main bookmark sequences using existing logic
+        success = execute_vm_bookmark_sequences(driver, url, username, step_log)
+        
+        if success:
+            step_log['success'] = True
+            print(f"✅ DRIVER {driver_number}: Bookmark process completed successfully")
+        else:
+            print(f"❌ DRIVER {driver_number}: Bookmark process failed")
+        
+        # Log final results
+        total_time = time.time() - step_log['start_time']
+        print(f"📊 DRIVER {driver_number} BOOKMARK ANALYSIS:")
+        print(f"⏱️  Total time: {total_time:.2f}s")
+        print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
+        print(f"❌ Failures: {len(step_log['failures'])}")
+        print(f"🎯 Critical sequence: {'YES' if step_log['critical_sequence_completed'] else 'NO'}")
+        print(f"🏆 Overall success: {'YES' if step_log['success'] else 'NO'}")
+        
+        return success
+        
+    except Exception as e:
+        print(f"❌ DRIVER {driver_number}: Bookmark execution error: {e}")
+        return False
+
+# 4. VM-specific bookmark sequences (adapted from existing VintedScraper methods)
+def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
+    """
+    Execute bookmark sequences for VM drivers using existing bookmark logic
+    """
+    try:
+        # Create new tab and navigate (using existing logic)
+        print(f"🔖 DRIVER {step_log['driver_number']}: Creating new tab...")
+        stopwatch_start = time.time()
+        driver.execute_script("window.open('');")
+        new_tab = driver.window_handles[-1]
+        driver.switch_to.window(new_tab)
+        
+        # Navigate to listing
+        print(f"🔖 DRIVER {step_log['driver_number']}: Navigating to listing...")
+        driver.get(listing_url)
+        
+        # Execute first buy sequence (critical for bookmarking)
+        success = execute_vm_first_buy_sequence(driver, step_log)
+        
+        if success:
+            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence completed")
+            
+            # Execute second sequence with monitoring (if needed)
+            execute_vm_second_sequence(driver, listing_url, step_log)
+            
+            return True
+        else:
+            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence failed")
+            return False
+            
+    except Exception as e:
+        print(f"❌ DRIVER {step_log['driver_number']}: Sequence execution error: {e}")
+        return False
+    finally:
+        # Always switch back to main tab
+        try:
+            if len(driver.window_handles) > 1:
+                driver.close()  # Close bookmark tab
+                driver.switch_to.window(driver.window_handles[0])  # Return to main tab
+        except:
+            pass
+
+# 5. VM-specific first buy sequence (using EXACT main program logic)
+def execute_vm_first_buy_sequence(driver, step_log):
+    """
+    Execute first buy sequence for VM driver using EXACT same logic as main program
+    """
+    try:
+        # Find and click first buy button using EXACT main program logic
+        print(f"🔖 DRIVER {step_log['driver_number']}: Looking for Buy now button...")
+        
+        buy_button, buy_selector = vm_try_selectors(
+            driver, 
+            'buy_button', 
+            operation='click', 
+            timeout=10, 
+            click_method='all',
+            step_log=step_log
+        )
+        
+        if not buy_button:
+            print(f"❌ DRIVER {step_log['driver_number']}: Buy button not found - item likely sold")
+            return False
+        
+        print(f"✅ DRIVER {step_log['driver_number']}: Buy button clicked using: {buy_selector[:30]}...")
+        step_log['steps_completed'].append(f"buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
+        
+        # Wait for pay button to appear using EXACT main program logic
+        print(f"💳 DRIVER {step_log['driver_number']}: Waiting for pay button...")
+        
+        pay_button, pay_selector = vm_try_selectors(
+            driver,
+            'pay_button',
+            operation='find',
+            timeout=15,
+            step_log=step_log
+        )
+        
+        if not pay_button:
+            print(f"❌ DRIVER {step_log['driver_number']}: Pay button not found")
+            return False
+        
+        print(f"✅ DRIVER {step_log['driver_number']}: Pay button found using: {pay_selector[:30]}...")
+        step_log['steps_completed'].append(f"pay_button_found - {time.time() - step_log['start_time']:.2f}s")
+        
+        # Handle shipping options (same as main scraper)
+        handle_vm_shipping_options(driver, step_log)
+        
+        # Execute critical pay sequence (same timing as main scraper)
+        return execute_vm_critical_pay_sequence(driver, pay_button, step_log)
+        
+    except Exception as e:
+        print(f"❌ DRIVER {step_log['driver_number']}: First buy sequence error: {e}")
+        return False
+
+# NEW: Add the EXACT selector system from main program
+def vm_try_selectors(driver, selector_set_name, operation='find', timeout=5, click_method='standard', step_log=None):
+    """
+    EXACT same selector logic as main program's _try_selectors method
+    """
+    # EXACT same selector sets as main program
+    SELECTOR_SETS = {
+        'buy_button': [
+            'button[data-testid="item-buy-button"]',
+            'button[data-testid="item-buy-button"].web_ui__Button__primary',
+            'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+            'button.web_ui__Button__button[data-testid="item-buy-button"]',
+            '//button[@data-testid="item-buy-button"]',
+            '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+            '//span[text()="Buy now"]/parent::button',
+            'button[class*="web_ui__Button"][class*="primary"]',
+            '//button[contains(@class, "web_ui__Button")]//span[contains(text(), "Buy")]'
+        ],
+        'pay_button': [
+            'button[data-testid="single-checkout-order-summary-purchase-button"]',
+            'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
+            '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
+            'button.web_ui__Button__primary[data-testid*="purchase"]',
+            '//button[contains(@data-testid, "purchase-button")]',
+            '//button[contains(@class, "web_ui__Button__primary")]',
+            'button[class*="web_ui__Button"][class*="primary"][data-testid*="purchase"]'
+        ]
+    }
+    
+    selectors = SELECTOR_SETS.get(selector_set_name, [])
+    if not selectors:
+        if step_log:
+            vm_log_step(step_log, f"no_selectors_{selector_set_name}", False, "No selectors defined")
+        return None, None
+    
+    for i, selector in enumerate(selectors):
+        try:
+            if step_log and print_debug:
+                print(f"🔍 DRIVER {step_log['driver_number']}: Trying selector {i+1}/{len(selectors)} for {selector_set_name}")
+            
+            # Use appropriate locator strategy (EXACT same as main program)
+            if selector.startswith('//'):
+                if operation == 'click':
+                    element = WebDriverWait(driver, timeout).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                else:
+                    element = WebDriverWait(driver, timeout).until(
+                        EC.presence_of_element_located((By.XPATH, selector))
+                    )
+            else:
+                if operation == 'click':
+                    element = WebDriverWait(driver, timeout).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                    )
+                else:
+                    element = WebDriverWait(driver, timeout).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+            
+            # If we need to click, use EXACT same click methods as main program
+            if operation == 'click':
+                click_methods = ['standard', 'javascript', 'actionchains'] if click_method == 'all' else [click_method]
+                
+                for method in click_methods:
+                    try:
+                        if method == 'standard':
+                            element.click()
+                        elif method == 'javascript':
+                            driver.execute_script("arguments[0].click();", element)
+                        elif method == 'actionchains':
+                            from selenium.webdriver.common.action_chains import ActionChains
+                            ActionChains(driver).move_to_element(element).click().perform()
+                        
+                        if step_log:
+                            vm_log_step(step_log, f"click_{selector_set_name}_{method}", True)
+                        break
+                    except Exception as click_error:
+                        if step_log:
+                            vm_log_step(step_log, f"click_{selector_set_name}_{method}_attempt", False, str(click_error))
+                        continue
+                else:
+                    continue  # All click methods failed, try next selector
+            
+            if step_log:
+                vm_log_step(step_log, f"selector_{selector_set_name}_success", True, f"Used #{i+1}: {selector[:30]}...")
+            return element, selector
+            
+        except TimeoutException:
+            if step_log:
+                vm_log_step(step_log, f"selector_{selector_set_name}_{i+1}_timeout", False, f"Timeout after {timeout}s")
+            continue
+        except Exception as e:
+            if step_log:
+                vm_log_step(step_log, f"selector_{selector_set_name}_{i+1}_error", False, str(e)[:100])
+            continue
+    
+    if step_log:
+        vm_log_step(step_log, f"all_selectors_{selector_set_name}_failed", False, f"All {len(selectors)} selectors failed")
+    return None, None
+
+# NEW: Add the EXACT logging function from main program
+def vm_log_step(step_log, step_name, success=True, error_msg=None):
+    """EXACT same logging logic as main program's _log_step method"""
+    if success:
+        step_log['steps_completed'].append(f"{step_name} - {time.time() - step_log['start_time']:.2f}s")
+        print(f"✅ DRIVER {step_log['driver_number']}: {step_name}")
+    else:
+        step_log['failures'].append(f"{step_name}: {error_msg} - {time.time() - step_log['start_time']:.2f}s")
+        print(f"❌ DRIVER {step_log['driver_number']}: {step_name} - {error_msg}")
+
+# 6. VM-specific shipping options handler
+def handle_vm_shipping_options(driver, step_log):
+    """
+    Handle shipping options for VM driver (adapted from main scraper)
+    """
+    try:
+        print(f"🚢 DRIVER {step_log['driver_number']}: Checking shipping options...")
+        
+        # Check if "Ship to pick-up point" is selected
+        try:
+            pickup_element = driver.find_element(
+                By.XPATH, 
+                '//div[@data-testid="delivery-option-pickup" and @aria-checked="true"]'
+            )
+            print(f"📦 DRIVER {step_log['driver_number']}: Pickup point selected")
+            
+            # Check for "Choose a pick-up point" message
+            try:
+                choose_pickup = driver.find_element(
+                    By.XPATH,
+                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Choose a pick-up point"]'
+                )
+                
+                print(f"🏠 DRIVER {step_log['driver_number']}: Switching to Ship to home...")
+                
+                # Click "Ship to home"
+                ship_home = driver.find_element(
+                    By.XPATH,
+                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
+                )
+                ship_home.click()
+                
+                # Wait 0.3 seconds as in main scraper
+                time.sleep(0.3)
+                print(f"✅ DRIVER {step_log['driver_number']}: Switched to Ship to home")
+                
+            except:
+                print(f"✅ DRIVER {step_log['driver_number']}: Pickup point ready")
+                
+        except:
+            print(f"✅ DRIVER {step_log['driver_number']}: Ship to home already selected")
+            
+    except Exception as e:
+        print(f"⚠️ DRIVER {step_log['driver_number']}: Shipping options error: {e}")
+
+# 7. VM-specific critical pay sequence (EXACT same timing as main scraper)
+def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
+    """
+    Execute critical pay sequence with EXACT same timing as main scraper
+    """
+    try:
+        print(f"💳 DRIVER {step_log['driver_number']}: Executing critical pay sequence...")
+        
+        # Click pay button using multiple methods (same as main scraper)
+        pay_clicked = False
+        
+        # Method 1: Direct click
+        try:
+            pay_button.click()
+            pay_clicked = True
+            print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (direct)")
+        except:
+            # Method 2: JavaScript click
+            try:
+                driver.execute_script("arguments[0].click();", pay_button)
+                pay_clicked = True
+                print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (JavaScript)")
+            except:
+                # Method 3: Force enable and click
+                try:
+                    driver.execute_script("""
+                        arguments[0].disabled = false;
+                        arguments[0].click();
+                    """, pay_button)
+                    pay_clicked = True
+                    print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (force)")
+                except Exception as final_error:
+                    print(f"❌ DRIVER {step_log['driver_number']}: All pay click methods failed")
+                    return False
+        
+        if pay_clicked:
+            # CRITICAL: Exact 0.25 second wait (same as main scraper)
+            print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Waiting exactly 0.25 seconds...")
+            time.sleep(0.25)
+            
+            # CRITICAL: Immediate tab close (same as main scraper)
+            print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Closing tab immediately...")
+            driver.close()
+            
+            step_log['critical_sequence_completed'] = True
+            
+            # Switch back to main tab
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+            
+            elapsed = time.time() - step_log['start_time']
+            print(f"⏱️ DRIVER {step_log['driver_number']}: Critical sequence completed in {elapsed:.3f} seconds")
+            
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"❌ DRIVER {step_log['driver_number']}: Critical pay sequence error: {e}")
+        return False
+
+# 8. VM-specific second sequence (for completeness - monitors for success)
+def execute_vm_second_sequence(driver, listing_url, step_log):
+    """
+    Execute second sequence for VM driver (monitors for processing payment)
+    """
+    try:
+        print(f"🔍 DRIVER {step_log['driver_number']}: Executing second sequence...")
+        
+        # Open new tab for second sequence
+        driver.execute_script("window.open('');")
+        second_tab = driver.window_handles[-1]
+        driver.switch_to.window(second_tab)
+        
+        # Navigate again
+        driver.get(listing_url)
+        
+        # Look for buy button again
+        try:
+            buy_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]'))
+            )
+            buy_button.click()
+            print(f"✅ DRIVER {step_log['driver_number']}: Second buy button clicked")
+            
+            # Check for "Processing payment" message
+            try:
+                processing_element = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']"))
+                )
+                
+                if processing_element:
+                    print(f'🎉 DRIVER {step_log["driver_number"]}: SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+                    step_log['success'] = True
+                    
+            except:
+                print(f"🔍 DRIVER {step_log['driver_number']}: Processing payment message not found")
+                
+        except:
+            print(f"⚠️ DRIVER {step_log['driver_number']}: Second buy button not found")
+        
+        # Close second tab
+        driver.close()
+        if len(driver.window_handles) > 0:
+            driver.switch_to.window(driver.window_handles[0])
+            
+    except Exception as e:
+        print(f"❌ DRIVER {step_log['driver_number']}: Second sequence error: {e}")
 
 def clear_browser_data_universal(vm_ip_address, config):
     """
@@ -1747,454 +2198,3 @@ class HIDKeyboard:
         
         class INPUT(ctypes.Structure):
             _fields_ = [
-                ("type", ctypes.wintypes.DWORD),
-                ("ii", INPUT_UNION)
-            ]
-        
-        # Store structure classes for use
-        self.KEYBDINPUT = KEYBDINPUT
-        self.INPUT = INPUT
-        self.INPUT_UNION = INPUT_UNION
-        
-        print("✅ HID Keyboard initialized with Windows SendInput API")
-    
-    def send_key_press(self, key, hold_time=None):
-        """
-        Send a single key press event (key down + key up)
-        
-        Args:
-            key (str): The key to press ('0'-'9', 'right', 'left', etc.)
-            hold_time (float): Time to hold key down in seconds (optional)
-        
-        Returns:
-            bool: True if successful, False if failed
-        """
-        if key not in self.VK_CODES:
-            print(f"❌ HID: Unknown key '{key}'")
-            return False
-        
-        vk_code = self.VK_CODES[key]
-        
-        try:
-            # Create key down event
-            key_input_down = self.INPUT()
-            key_input_down.type = self.INPUT_KEYBOARD
-            key_input_down.ii.ki = self.KEYBDINPUT()
-            key_input_down.ii.ki.wVk = vk_code
-            key_input_down.ii.ki.wScan = 0
-            key_input_down.ii.ki.dwFlags = 0  # Key down
-            key_input_down.ii.ki.time = 0
-            key_input_down.ii.ki.dwExtraInfo = None
-            
-            # Create key up event
-            key_input_up = self.INPUT()
-            key_input_up.type = self.INPUT_KEYBOARD
-            key_input_up.ii.ki = self.KEYBDINPUT()
-            key_input_up.ii.ki.wVk = vk_code
-            key_input_up.ii.ki.wScan = 0
-            key_input_up.ii.ki.dwFlags = self.KEYEVENTF_KEYUP  # Key up
-            key_input_up.ii.ki.time = 0
-            key_input_up.ii.ki.dwExtraInfo = None
-            
-            # Send key down event
-            result_down = self.user32.SendInput(
-                1,  # Number of inputs
-                ctypes.pointer(key_input_down),
-                ctypes.sizeof(self.INPUT)
-            )
-            
-            if result_down == 0:
-                error_code = self.kernel32.GetLastError()
-                print(f"❌ HID: SendInput key down failed, error code: {error_code}")
-                return False
-            
-            # Hold the key if specified
-            if hold_time:
-                time.sleep(hold_time)
-            else:
-                # Default brief hold time for realistic key press
-                time.sleep(random.uniform(0.02, 0.08))
-            
-            # Send key up event
-            result_up = self.user32.SendInput(
-                1,  # Number of inputs
-                ctypes.pointer(key_input_up),
-                ctypes.sizeof(self.INPUT)
-            )
-            
-            if result_up == 0:
-                error_code = self.kernel32.GetLastError()
-                print(f"❌ HID: SendInput key up failed, error code: {error_code}")
-                return False
-            
-            print(f"✅ HID: Successfully sent key '{key}' (VK: {vk_code:02X})")
-            return True
-            
-        except Exception as e:
-            print(f"❌ HID: Exception sending key '{key}': {e}")
-            return False
-    
-    def send_unicode_char(self, char):
-        """
-        Send a Unicode character directly (alternative method)
-        
-        Args:
-            char (str): Single Unicode character to send
-        
-        Returns:
-            bool: True if successful, False if failed
-        """
-        try:
-            unicode_value = ord(char)
-            
-            # Create Unicode input event
-            unicode_input = self.INPUT()
-            unicode_input.type = self.INPUT_KEYBOARD
-            unicode_input.ii.ki = self.KEYBDINPUT()
-            unicode_input.ii.ki.wVk = 0  # Must be 0 for Unicode
-            unicode_input.ii.ki.wScan = unicode_value
-            unicode_input.ii.ki.dwFlags = self.KEYEVENTF_UNICODE
-            unicode_input.ii.ki.time = 0
-            unicode_input.ii.ki.dwExtraInfo = None
-            
-            result = self.user32.SendInput(
-                1,
-                ctypes.pointer(unicode_input),
-                ctypes.sizeof(self.INPUT)
-            )
-            
-            if result == 0:
-                error_code = self.kernel32.GetLastError()
-                print(f"❌ HID: Unicode input failed for '{char}', error code: {error_code}")
-                return False
-            
-            print(f"✅ HID: Successfully sent Unicode char '{char}' (U+{unicode_value:04X})")
-            return True
-            
-        except Exception as e:
-            print(f"❌ HID: Exception sending Unicode '{char}': {e}")
-            return False
-    
-    def type_sequence(self, sequence, delay_between_keys=None):
-        """
-        Type a sequence of characters with realistic timing
-        
-        Args:
-            sequence (str): String of characters to type
-            delay_between_keys (float): Delay between keystrokes (optional)
-        
-        Returns:
-            bool: True if all keys sent successfully
-        """
-        success_count = 0
-        
-        for i, char in enumerate(sequence):
-            print(f"🔤 HID: Typing character {i+1}/{len(sequence)}: '{char}'")
-            
-            # Add realistic pre-keystroke delay
-            if i > 0:  # No delay before first character
-                delay = delay_between_keys if delay_between_keys else random.uniform(0.1, 0.3)
-                time.sleep(delay)
-            
-            # Try virtual key code method first (more reliable)
-            if char in self.VK_CODES:
-                success = self.send_key_press(char)
-            else:
-                # Fallback to Unicode method
-                success = self.send_unicode_char(char)
-            
-            if success:
-                success_count += 1
-            else:
-                print(f"❌ HID: Failed to send character '{char}' at position {i}")
-        
-        success_rate = (success_count / len(sequence)) * 100
-        print(f"📊 HID: Typing complete - {success_count}/{len(sequence)} characters sent ({success_rate:.1f}% success)")
-        
-        return success_count == len(sequence)
-    
-    def send_navigation_key(self, direction):
-        """
-        Send navigation keys (arrow keys, tab, enter, etc.)
-        
-        Args:
-            direction (str): 'right', 'left', 'tab', 'enter', 'space', 'backspace'
-        
-        Returns:
-            bool: True if successful
-        """
-        if direction not in self.VK_CODES:
-            print(f"❌ HID: Unknown navigation key '{direction}'")
-            return False
-        
-        return self.send_key_press(direction)
-
-
-class AudioNumberDetector:
-    def __init__(self, driver=None):
-        self.driver = driver
-        if not HAS_PYAUDIO:
-            print("ERROR: pyaudiowpatch not available - audio detection will not work")
-            return
-            
-        self.recognizer = sr.Recognizer()
-        
-        # Enhanced recognizer settings
-        self.recognizer.energy_threshold = 200
-        self.recognizer.dynamic_energy_threshold = True
-        self.recognizer.pause_threshold = 0.5
-        self.recognizer.phrase_threshold = 0.2
-        self.recognizer.non_speaking_duration = 0.3
-        
-        self.is_running = False
-        
-        # Enhanced audio settings for better quality
-        self.CHUNK = 2048
-        self.FORMAT = pyaudio.paInt16
-        self.CHANNELS = 2
-        self.RATE = 44100
-        
-        self.p = pyaudio.PyAudio()
-        self.audio_queue = queue.Queue()
-        
-        # Audio processing parameters
-        self.buffer_duration = 40
-        self.overlap_duration = 2
-        
-        # Number collection
-        self.collected_numbers = []
-        self.target_count = 6
-        self.numbers_lock = threading.Lock()
-        self.complete_sequence = ""
-        
-        print(f"Buffer duration: {self.buffer_duration}s, Overlap: {self.overlap_duration}s")
-        print(f"Will stop after collecting {self.target_count} numbers in sequence")
-
-    def get_default_speakers(self):
-        """Get the default speakers/output device for loopback capture"""
-        try:
-            wasapi_info = self.p.get_host_api_info_by_type(pyaudio.paWASAPI)
-            default_speakers = self.p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
-            
-            if not default_speakers["isLoopbackDevice"]:
-                for loopback in self.p.get_loopback_device_info_generator():
-                    if default_speakers["name"] in loopback["name"]:
-                        default_speakers = loopback
-                        break
-            
-            print(f"Found system audio device: {default_speakers['name']}")
-            return default_speakers
-            
-        except Exception as e:
-            print(f"Error finding speakers: {e}")
-            return None
-    
-    def extract_numbers_sequence(self, text):
-        """Extract numbers from text in the correct sequence"""
-        word_to_num = {
-            'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
-            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
-            'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13',
-            'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17',
-            'eighteen': '18', 'nineteen': '19', 'twenty': '20', 'thirty': '30',
-            'forty': '40', 'fifty': '50', 'sixty': '60', 'seventy': '70',
-            'eighty': '80', 'ninety': '90', 'hundred': '100'
-        }
-        
-        words = text.lower().replace(',', '').replace('.', '').split()
-        numbers = []
-        
-        for word in words:
-            if word in word_to_num:
-                numbers.append(word_to_num[word])
-            elif word.isdigit():
-                numbers.append(word)
-            elif re.match(r'^\d+$', word):
-                for digit in word:
-                    numbers.append(digit)
-        
-        digit_matches = re.findall(r'\b\d\b', text)
-        all_numbers = numbers + digit_matches
-        
-        # Remove the duplicate filtering - keep all numbers in sequence
-        valid_numbers = []
-        for num in all_numbers:
-            if num.isdigit() and len(num) == 1:
-                valid_numbers.append(num)
-        
-        return valid_numbers
-    
-    def find_complete_sequence(self, text):
-        """Try to find a complete 6-digit sequence"""
-        text_clean = re.sub(r'[^\w\s]', ' ', text.lower())
-        numbers = self.extract_numbers_sequence(text)
-        
-        if len(numbers) == 6:
-            return ''.join(numbers)
-        
-        sequence_patterns = [r'(\w+)\s+(\w+)\s+(\w+)\s+(\w+)\s+(\w+)\s+(\w+)']
-        
-        word_to_num = {
-            'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
-            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
-        }
-        
-        for pattern in sequence_patterns:
-            matches = re.findall(pattern, text_clean)
-            for match in matches:
-                sequence = []
-                for word in match:
-                    if word in word_to_num:
-                        sequence.append(word_to_num[word])
-                    elif word.isdigit() and len(word) == 1:
-                        sequence.append(word)
-                
-                if len(sequence) == 6:
-                    return ''.join(sequence)
-        
-        return None
-
-    def input_captcha_solution(self, sequence):
-        """Input the 6-digit sequence into the captcha form using trusted events"""
-        if not self.driver or not sequence or len(sequence) != 6:
-            print("Cannot input solution: missing driver or invalid sequence")
-            return False
-        
-        print(f"Starting to input captcha solution: {sequence}")
-        
-        try:
-            # Navigate to the correct iframe (same as before)
-            self.driver.switch_to.default_content()
-            
-            iframe_selectors = [
-                "iframe[src*='captcha']",
-                "iframe[src*='datadome']",
-                "iframe[id*='datadome']",
-                "iframe[class*='datadome']",
-                "iframe[title*='captcha']",
-                "iframe[title*='DataDome']"
-            ]
-            
-            iframe_found = False
-            for selector in iframe_selectors:
-                try:
-                    iframe = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                    )
-                    print(f"Found main iframe with selector: {selector}")
-                    self.driver.switch_to.frame(iframe)
-                    iframe_found = True
-                    break
-                except TimeoutException:
-                    continue
-            
-            if not iframe_found:
-                print("Could not find captcha iframe for input")
-                return False
-            
-            # Find input fields
-            input_selectors = [
-                "input.audio-captcha-inputs",
-                "input[class*='audio-captcha-inputs']",
-                "input[data-index='1']",
-                "input[maxlength='1'][inputmode='numeric']",
-                "input[data-form-type='other'][maxlength='1']"
-            ]
-            
-            input_found = False
-            first_input = None
-            
-            for selector in input_selectors:
-                try:
-                    first_input = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                    )
-                    print(f"Found first input field with selector: {selector}")
-                    input_found = True
-                    break
-                except TimeoutException:
-                    continue
-            
-            # Check nested iframes if not found
-            if not input_found:
-                print("Input fields not found in current iframe, checking nested iframes...")
-                
-                try:
-                    nested_iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
-                    print(f"Found {len(nested_iframes)} nested iframes")
-                    
-                    for i, nested_iframe in enumerate(nested_iframes):
-                        try:
-                            print(f"Trying nested iframe {i}...")
-                            self.driver.switch_to.frame(nested_iframe)
-                            
-                            for selector in input_selectors:
-                                try:
-                                    first_input = WebDriverWait(self.driver, 3).until(
-                                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                                    )
-                                    print(f"Found first input field in nested iframe {i} with selector: {selector}")
-                                    input_found = True
-                                    break
-                                except:
-                                    continue
-                            
-                            if input_found:
-                                break
-                            
-                            self.driver.switch_to.parent_frame()
-                            
-                        except Exception as e:
-                            print(f"Error with nested iframe {i}: {e}")
-                            try:
-                                self.driver.switch_to.parent_frame()
-                            except:
-                                self.driver.switch_to.default_content()
-                                for sel in iframe_selectors:
-                                    try:
-                                        iframe = self.driver.find_element(By.CSS_SELECTOR, sel)
-                                        self.driver.switch_to.frame(iframe)
-                                        break
-                                    except:
-                                        continue
-                            continue
-                
-                except Exception as e:
-                    print(f"Error searching nested iframes for inputs: {e}")
-            
-            if not input_found or not first_input:
-                print("Could not find input fields")
-                self.driver.switch_to.default_content()
-                return False
-            
-            print("Starting to input digits using native Selenium methods...")
-            
-            # Click on the first input field
-            time.sleep(random.uniform(0.5, 1.0))
-            
-            # Scroll into view
-            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", first_input)
-            time.sleep(random.uniform(0.3, 0.6))
-
-            action = ActionChains(self.driver)
-
-
-            # Click with ActionChains (this generates trusted events)
-
-
-            offset_x = random.randint(-2, 2)
-            offset_y = random.randint(-2, 2)
-
-            action.move_to_element_with_offset(first_input, offset_x, offset_y)
-            time.sleep(random.uniform(0.2, 0.4))
-            action.move_to_element(first_input)
-            time.sleep(random.uniform(0.1, 0.3))
-            action.click().perform()
-            
-            print("Clicked on first input field")
-
-
-            # Input each digit using send_keys (generates TRUSTED events)
-            # Input each digit using PyAutoGUI
-            for i, digit in enumerate(sequence):
-                print(f"Inputting digit {i+1}: {digit}")
