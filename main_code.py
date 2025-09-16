@@ -70,8 +70,7 @@ VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7096578621-stardew-valley-nintendo-switch-game?homepage_session_id=34ca33e1-5065-404b-a8e6-30418b0fdf45",
-    "https://www.vinted.co.uk/items/7098226379-mario-rabbids-kingdom-battle-nintendo-switch?homepage_session_id=194e7299-4ee7-4d6c-b536-392431d64a47", 
+    "https://www.vinted.co.uk/items/7102546985-fc24-nintendo-switch?homepage_session_id=6e3fa7fa-65d1-4aef-a0da-dda652e1c311", 
     "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
     "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
     "https://www.vinted.co.uk/items/7097706534-just-dance-2022-nintendo-switch-game-cartridge?homepage_session_id=6c527539-91d8-4297-8e48-f96581b761d3"
@@ -1551,33 +1550,34 @@ def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
         except:
             pass
 
-# 5. VM-specific first buy sequence (using EXACT main program logic)
 def execute_vm_first_buy_sequence(driver, step_log):
     """
-    Execute first buy sequence for VM driver using EXACT same logic as main program
+    Execute first buy sequence for VM driver using JavaScript-first approach
+    """
+    return execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log)
+
+
+
+# 5. VM-specific first buy sequence (using EXACT main program logic)
+def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log):
+    """
+    Modified first buy sequence - JavaScript-first clicking
     """
     try:
-        # Find and click first buy button using EXACT main program logic
-        print(f"🔖 DRIVER {step_log['driver_number']}: Looking for Buy now button...")
+        print(f"🔖 JAVASCRIPT-FIRST: Looking for Buy now button...")
         
-        buy_button, buy_selector = vm_try_selectors(
-            driver, 
-            'buy_button', 
-            operation='click', 
-            timeout=10, 
-            click_method='all',
-            step_log=step_log
-        )
+        # Use the new JavaScript-first buy button finder (already clicks the button)
+        buy_button, buy_selector = find_buy_button_with_shadow_dom(driver)
         
         if not buy_button:
-            print(f"❌ DRIVER {step_log['driver_number']}: Buy button not found - item likely sold")
+            print(f"❌ JAVASCRIPT-FIRST: Buy button not found - item likely sold")
             return False
         
-        print(f"✅ DRIVER {step_log['driver_number']}: Buy button clicked using: {buy_selector[:30]}...")
-        step_log['steps_completed'].append(f"buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
+        print(f"✅ JAVASCRIPT-FIRST: Buy button found and clicked using: {buy_selector}")
+        step_log['steps_completed'].append(f"javascript_first_buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
         
-        # Wait for pay button to appear using EXACT main program logic
-        print(f"💳 DRIVER {step_log['driver_number']}: Waiting for pay button...")
+        # Wait for pay button to appear using existing logic
+        print(f"💳 JAVASCRIPT-FIRST: Waiting for pay button...")
         
         pay_button, pay_selector = vm_try_selectors(
             driver,
@@ -1588,11 +1588,11 @@ def execute_vm_first_buy_sequence(driver, step_log):
         )
         
         if not pay_button:
-            print(f"❌ DRIVER {step_log['driver_number']}: Pay button not found")
+            print(f"❌ JAVASCRIPT-FIRST: Pay button not found")
             return False
         
-        print(f"✅ DRIVER {step_log['driver_number']}: Pay button found using: {pay_selector[:30]}...")
-        step_log['steps_completed'].append(f"pay_button_found - {time.time() - step_log['start_time']:.2f}s")
+        print(f"✅ JAVASCRIPT-FIRST: Pay button found using: {pay_selector[:30]}...")
+        step_log['steps_completed'].append(f"javascript_first_pay_button_found - {time.time() - step_log['start_time']:.2f}s")
         
         # Handle shipping options (same as main scraper)
         handle_vm_shipping_options(driver, step_log)
@@ -1601,8 +1601,78 @@ def execute_vm_first_buy_sequence(driver, step_log):
         return execute_vm_critical_pay_sequence(driver, pay_button, step_log)
         
     except Exception as e:
-        print(f"❌ DRIVER {step_log['driver_number']}: First buy sequence error: {e}")
+        print(f"❌ JAVASCRIPT-FIRST: First buy sequence error: {e}")
         return False
+
+def execute_vm_second_sequence_with_javascript_first(driver, actual_url, step_log):
+    """
+    Execute second sequence using the same JavaScript-first approach for buy button
+    """
+    print(f"🔍 JAVASCRIPT-FIRST: Executing second sequence...")
+    
+    try:
+        # Open new tab for second sequence
+        driver.execute_script("window.open('');")
+        second_tab = driver.window_handles[-1]
+        driver.switch_to.window(second_tab)
+        step_log['steps_completed'].append(f"second_tab_created - {time.time() - step_log['start_time']:.2f}s")
+        
+        # Navigate again
+        driver.get(actual_url)
+        step_log['steps_completed'].append(f"second_navigation - {time.time() - step_log['start_time']:.2f}s")
+        
+        # Look for buy button again using SAME JavaScript-first approach
+        print(f"🔍 JAVASCRIPT-FIRST: Looking for second buy button...")
+        second_buy_button, second_buy_selector = find_buy_button_with_shadow_dom(driver)
+        
+        if second_buy_button:
+            print(f"✅ JAVASCRIPT-FIRST: Second buy button found and clicked using: {second_buy_selector}")
+            step_log['steps_completed'].append(f"second_buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
+            
+            # Check for processing payment success with extended timeout
+            print(f"🔍 JAVASCRIPT-FIRST: Waiting up to 15 seconds for processing payment message...")
+            processing_element, VM_SELECTOR_SETS = vm_try_selectors(
+                driver,
+                'processing_payment',
+                operation='find',
+                timeout=15,  # Extended timeout to 15 seconds
+                step_log=step_log
+            )
+            
+            if processing_element:
+                element_text = processing_element.text.strip()
+                step_log['steps_completed'].append(f"processing_payment_found - {time.time() - step_log['start_time']:.2f}s")
+                print('✅ JAVASCRIPT-FIRST: SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+                
+                # Close second tab
+                driver.close()
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+                
+                return True
+            else:
+                print('⚠️ JAVASCRIPT-FIRST: Processing payment message not found')
+                
+        else:
+            print(f"❌ JAVASCRIPT-FIRST: Second buy button not found")
+            
+        # Close second tab
+        driver.close()
+        if len(driver.window_handles) > 0:
+            driver.switch_to.window(driver.window_handles[0])
+            
+        return True  # Return true as this isn't a critical failure
+            
+    except Exception as second_sequence_error:
+        print(f"❌ JAVASCRIPT-FIRST: Second sequence error: {second_sequence_error}")
+        # Clean up second tab
+        try:
+            driver.close()
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+        return True
 
 # NEW: Add the EXACT selector system from main program
 def vm_try_selectors(driver, selector_set_name, operation='find', timeout=5, click_method='standard', step_log=None):
@@ -1630,6 +1700,13 @@ def vm_try_selectors(driver, selector_set_name, operation='find', timeout=5, cli
             '//button[contains(@data-testid, "purchase-button")]',
             '//button[contains(@class, "web_ui__Button__primary")]',
             'button[class*="web_ui__Button"][class*="primary"][data-testid*="purchase"]'
+        ],
+        'processing_payment': [
+            "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
+            "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
+            "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format' and contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+            "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+            "//*[contains(text(), 'Processing payment')]"
         ]
     }
     
@@ -1748,9 +1825,8 @@ def handle_vm_shipping_options(driver, step_log):
                 ship_home.click()
                 
                 # Wait 0.3 seconds as in main scraper
-                time.sleep(0.3)
-                print(f"✅ DRIVER {step_log['driver_number']}: Switched to Ship to home")
-                
+                print(f"✅ DRIVER {step_log['driver_number']}: Switched to Ship to home, waiting 3 seconds...")
+                time.sleep(3)
             except:
                 print(f"✅ DRIVER {step_log['driver_number']}: Pickup point ready")
                 
@@ -1824,51 +1900,21 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
 # 8. VM-specific second sequence (for completeness - monitors for success)
 def execute_vm_second_sequence(driver, listing_url, step_log):
     """
-    Execute second sequence for VM driver (monitors for processing payment)
+    Execute second sequence for VM driver using JavaScript-first approach
     """
-    try:
-        print(f"🔍 DRIVER {step_log['driver_number']}: Executing second sequence...")
-        
-        # Open new tab for second sequence
-        driver.execute_script("window.open('');")
-        second_tab = driver.window_handles[-1]
-        driver.switch_to.window(second_tab)
-        
-        # Navigate again
-        driver.get(listing_url)
-        
-        # Look for buy button again
-        try:
-            buy_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-testid="item-buy-button"]'))
-            )
-            buy_button.click()
-            print(f"✅ DRIVER {step_log['driver_number']}: Second buy button clicked")
-            
-            # Check for "Processing payment" message
-            try:
-                processing_element = WebDriverWait(driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, 
-                        "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']"))
-                )
-                
-                if processing_element:
-                    print(f'🎉 DRIVER {step_log["driver_number"]}: SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
-                    step_log['success'] = True
-                    
-            except:
-                print(f"🔍 DRIVER {step_log['driver_number']}: Processing payment message not found")
-                
-        except:
-            print(f"⚠️ DRIVER {step_log['driver_number']}: Second buy button not found")
-        
-        # Close second tab
-        driver.close()
-        if len(driver.window_handles) > 0:
-            driver.switch_to.window(driver.window_handles[0])
-            
-    except Exception as e:
-        print(f"❌ DRIVER {step_log['driver_number']}: Second sequence error: {e}")
+    return execute_vm_second_sequence_with_javascript_first(driver, listing_url, step_log)
+
+
+# Additional selector sets needed for the vm_try_selectors function
+VM_SELECTOR_SETS = {
+    'processing_payment': [
+        "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
+        "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
+        "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format' and contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+        "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
+        "//*[contains(text(), 'Processing payment')]"
+    ]
+}
 
 def clear_browser_data_universal(vm_ip_address, config):
     """
@@ -2133,6 +2179,218 @@ def setup_driver_universal(vm_ip_address, config):
                 pass
         
         return None
+
+def find_buy_button_with_shadow_dom(driver):
+    """
+    Enhanced buy now button finder - JavaScript click first approach
+    Finds button and immediately clicks with JavaScript for reliability
+    """
+    print("🔍 SHADOW DOM: Starting buy button search with JavaScript-first approach...")
+    
+    # Method 1: Find button and immediately click with JavaScript
+    print("⚡ JAVASCRIPT-FIRST: Finding and clicking buy button with JavaScript...")
+    buy_selectors = [
+        'button[data-testid="item-buy-button"]',
+        'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+        '//button[@data-testid="item-buy-button"]',
+        '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+        '//span[text()="Buy now"]/parent::button'
+    ]
+    
+    for selector in buy_selectors:
+        try:
+            if selector.startswith('//'):
+                buy_button = driver.find_element(By.XPATH, selector)
+            else:
+                buy_button = driver.find_element(By.CSS_SELECTOR, selector)
+            
+            print(f"✅ FOUND: Buy button with: {selector}")
+            
+            # IMMEDIATELY click with JavaScript - no other methods tried
+            try:
+                driver.execute_script("arguments[0].click();", buy_button)
+                print(f"✅ JAVASCRIPT-FIRST: Buy button clicked immediately with JavaScript")
+                return buy_button, selector
+            except Exception as js_error:
+                print(f"❌ JAVASCRIPT-FIRST: JavaScript click failed: {js_error}")
+                continue
+                
+        except:
+            continue
+    
+    # Method 2: Shadow DOM traversal using JavaScript
+    print("🌊 SHADOW DOM: Standard selectors failed, trying Shadow DOM traversal...")
+    
+    shadow_dom_script = """
+    function findBuyButtonInShadowDOM() {
+        // Function to recursively search through shadow roots
+        function searchInShadowRoot(element) {
+            if (!element) return null;
+            
+            // Check if this element has a shadow root
+            if (element.shadowRoot) {
+                // Search within the shadow root
+                let shadowButton = element.shadowRoot.querySelector('button[data-testid="item-buy-button"]');
+                if (shadowButton) {
+                    console.log('Found buy button in shadow root of:', element.tagName);
+                    return shadowButton;
+                }
+                
+                // Try other selectors in shadow root
+                let shadowButtonAlt = element.shadowRoot.querySelector('button.web_ui__Button__primary');
+                if (shadowButtonAlt) {
+                    let span = shadowButtonAlt.querySelector('span');
+                    if (span && span.textContent.includes('Buy now')) {
+                        console.log('Found buy button (alternative) in shadow root of:', element.tagName);
+                        return shadowButtonAlt;
+                    }
+                }
+                
+                // Recursively search child elements in shadow root
+                let shadowChildren = element.shadowRoot.querySelectorAll('*');
+                for (let child of shadowChildren) {
+                    let result = searchInShadowRoot(child);
+                    if (result) return result;
+                }
+            }
+            
+            return null;
+        }
+        
+        // Search all elements in the main document
+        let allElements = document.querySelectorAll('*');
+        for (let element of allElements) {
+            let result = searchInShadowRoot(element);
+            if (result) {
+                return result;
+            }
+        }
+        
+        return null;
+    }
+    
+    return findBuyButtonInShadowDOM();
+    """
+    
+    try:
+        shadow_button = driver.execute_script(shadow_dom_script)
+        if shadow_button:
+            print("✅ SHADOW DOM: Found buy button via Shadow DOM traversal!")
+            return shadow_button, "shadow_dom_traversal"
+    except Exception as e:
+        print(f"❌ SHADOW DOM: Shadow DOM search failed: {e}")
+    
+    # Method 3: Alternative Shadow DOM approach - search by text content
+    print("🔍 SHADOW DOM: Trying text-based Shadow DOM search...")
+    
+    text_based_script = """
+    function findBuyButtonByText() {
+        function searchForBuyNowText(element) {
+            if (!element) return null;
+            
+            // Check shadow root
+            if (element.shadowRoot) {
+                // Look for any button with "Buy now" text in shadow root
+                let buttons = element.shadowRoot.querySelectorAll('button');
+                for (let button of buttons) {
+                    if (button.textContent && button.textContent.includes('Buy now')) {
+                        console.log('Found "Buy now" button in shadow root via text search');
+                        return button;
+                    }
+                }
+                
+                // Recursively search in shadow root
+                let shadowChildren = element.shadowRoot.querySelectorAll('*');
+                for (let child of shadowChildren) {
+                    let result = searchForBuyNowText(child);
+                    if (result) return result;
+                }
+            }
+            
+            return null;
+        }
+        
+        let allElements = document.querySelectorAll('*');
+        for (let element of allElements) {
+            let result = searchForBuyNowText(element);
+            if (result) return result;
+        }
+        
+        return null;
+    }
+    
+    return findBuyButtonByText();
+    """
+    
+    try:
+        text_button = driver.execute_script(text_based_script)
+        if text_button:
+            print("✅ SHADOW DOM: Found buy button via text-based Shadow DOM search!")
+            return text_button, "shadow_dom_text_search"
+    except Exception as e:
+        print(f"❌ SHADOW DOM: Text-based Shadow DOM search failed: {e}")
+    
+    # Method 4: Deep Shadow DOM inspection - log what's actually in shadow roots
+    print("🔍 SHADOW DOM: Performing deep inspection to debug...")
+    
+    inspection_script = """
+    function inspectShadowRoots() {
+        let findings = [];
+        
+        function inspectElement(element, path = '') {
+            if (!element) return;
+            
+            if (element.shadowRoot) {
+                let shadowButtons = element.shadowRoot.querySelectorAll('button');
+                if (shadowButtons.length > 0) {
+                    findings.push({
+                        path: path + ' > ' + element.tagName + '[shadow]',
+                        buttonCount: shadowButtons.length,
+                        buttons: Array.from(shadowButtons).map(btn => ({
+                            tagName: btn.tagName,
+                            className: btn.className,
+                            textContent: btn.textContent?.substring(0, 50),
+                            testId: btn.getAttribute('data-testid'),
+                            id: btn.id
+                        }))
+                    });
+                }
+                
+                // Inspect children in shadow root
+                let shadowChildren = element.shadowRoot.querySelectorAll('*');
+                for (let i = 0; i < Math.min(shadowChildren.length, 10); i++) {
+                    inspectElement(shadowChildren[i], path + ' > ' + element.tagName + '[shadow]');
+                }
+            }
+        }
+        
+        let allElements = document.querySelectorAll('*');
+        for (let i = 0; i < Math.min(allElements.length, 20); i++) {
+            inspectElement(allElements[i], 'root');
+        }
+        
+        return findings;
+    }
+    
+    return inspectShadowRoots();
+    """
+    
+    try:
+        inspection_results = driver.execute_script(inspection_script)
+        if inspection_results:
+            print("🔍 SHADOW DOM INSPECTION RESULTS:")
+            for result in inspection_results[:3]:  # Show first 3 results
+                print(f"  📍 Path: {result['path']}")
+                print(f"  🔘 Button count: {result['buttonCount']}")
+                for btn in result['buttons'][:2]:  # Show first 2 buttons
+                    print(f"    - {btn['tagName']}: '{btn['textContent']}' (testId: {btn['testId']})")
+    except Exception as e:
+        print(f"❌ SHADOW DOM: Inspection failed: {e}")
+    
+    print("❌ SHADOW DOM: All Shadow DOM methods failed to find buy button")
+    return None, None
+
+
 
 class HIDKeyboard:
     """
@@ -2504,6 +2762,7 @@ class AudioNumberDetector:
                     return ''.join(sequence)
         
         return None
+
 
     def input_captcha_solution(self, sequence):
         """Input the 6-digit sequence into the captcha form using trusted events"""
