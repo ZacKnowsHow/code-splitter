@@ -1,4 +1,248 @@
 # Continuation from line 2201
+        print(f"✓ Temporary driver created successfully (Session: {clear_driver.session_id})")
+        
+        print("Step 2: Navigating to Chrome settings...")
+        clear_driver.get("chrome://settings/clearBrowserData")
+        print("✓ Navigated to clear browser data page")
+        
+        print("Step 3: Waiting for page to load...")
+        time.sleep(2)  # Wait for Shadow DOM to initialize
+        
+        print("Step 4: Accessing Shadow DOM to find clear button...")
+        
+        # JavaScript to navigate Shadow DOM and click the clear button
+        shadow_dom_script = """
+        function findAndClickClearButton() {
+            // Multiple strategies to find the clear button in Shadow DOM
+            
+            // Strategy 1: Direct access via settings-ui
+            let settingsUi = document.querySelector('settings-ui');
+            if (settingsUi && settingsUi.shadowRoot) {
+                let clearBrowserData = settingsUi.shadowRoot.querySelector('settings-main')?.shadowRoot
+                    ?.querySelector('settings-basic-page')?.shadowRoot
+                    ?.querySelector('settings-section[section="privacy"]')?.shadowRoot
+                    ?.querySelector('settings-clear-browsing-data-dialog');
+                
+                if (clearBrowserData && clearBrowserData.shadowRoot) {
+                    let clearButton = clearBrowserData.shadowRoot.querySelector('#clearButton');
+                    if (clearButton) {
+                        console.log('Found clear button via strategy 1');
+                        clearButton.click();
+                        return true;
+                    }
+                }
+            }
+            
+            // Strategy 2: Search all shadow roots recursively
+            function searchShadowRoots(element) {
+                if (element.shadowRoot) {
+                    let clearButton = element.shadowRoot.querySelector('#clearButton');
+                    if (clearButton) {
+                        console.log('Found clear button via recursive search');
+                        clearButton.click();
+                        return true;
+                    }
+                    
+                    // Search nested shadow roots
+                    let shadowElements = element.shadowRoot.querySelectorAll('*');
+                    for (let el of shadowElements) {
+                        if (searchShadowRoots(el)) return true;
+                    }
+                }
+                return false;
+            }
+            
+            let allElements = document.querySelectorAll('*');
+            for (let el of allElements) {
+                if (searchShadowRoots(el)) return true;
+            }
+            
+            // Strategy 3: Look for cr-button elements in shadow roots
+            function findCrButton(element) {
+                if (element.shadowRoot) {
+                    let crButtons = element.shadowRoot.querySelectorAll('cr-button');
+                    for (let btn of crButtons) {
+                        if (btn.id === 'clearButton' || btn.textContent.includes('Delete data')) {
+                            console.log('Found cr-button via strategy 3');
+                            btn.click();
+                            return true;
+                        }
+                    }
+                    
+                    let shadowElements = element.shadowRoot.querySelectorAll('*');
+                    for (let el of shadowElements) {
+                        if (findCrButton(el)) return true;
+                    }
+                }
+                return false;
+            }
+            
+            for (let el of allElements) {
+                if (findCrButton(el)) return true;
+            }
+            
+            console.log('Clear button not found in any shadow root');
+            return false;
+        }
+        
+        return findAndClickClearButton();
+        """
+        
+        # Execute the Shadow DOM navigation script
+        result = clear_driver.execute_script(shadow_dom_script)
+        
+        if result:
+            print("✓ Successfully clicked clear data button via Shadow DOM!")
+            print("Step 5: Waiting for data clearing to complete...")
+            time.sleep(2)  # Wait for clearing process
+            print("✓ Browser data clearing completed successfully!")
+        else:
+            print("✗ Failed to find clear button in Shadow DOM")
+            
+            # Fallback: Try to trigger clear via keyboard shortcut
+            print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
+            try:
+                from selenium.webdriver.common.keys import Keys
+                body = clear_driver.find_element(By.TAG_NAME, "body")
+                body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
+                time.sleep(1)
+                # Try to press Enter to confirm
+                body.send_keys(Keys.ENTER)
+                time.sleep(1)
+                print("✓ Fallback keyboard shortcut attempted")
+            except Exception as fallback_error:
+                print(f"✗ Fallback also failed: {fallback_error}")
+        
+    except Exception as e:
+        print(f"✗ Browser data clearing failed: {str(e)}")
+        print("Continuing with main execution anyway...")
+        import traceback
+        traceback.print_exc()
+    
+    finally:
+        if clear_driver:
+            try:
+                print("Step 6: Closing temporary driver...")
+                clear_driver.quit()
+                print("✓ Temporary driver closed successfully")
+            except Exception as e:
+                print(f"Warning: Failed to close temporary driver: {e}")
+        
+        print("=" * 50)
+        print("BROWSER DATA CLEAR COMPLETE")
+        print("=" * 50)
+        time.sleep(0.5)  # Brief pause before continuing
+
+def setup_driver_universal(vm_ip_address, config):
+    """Universal setup function for any driver configuration"""
+    
+    # Session cleanup (existing code)
+    try:
+        import requests
+        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+        status_data = status_response.json()
+        
+        if 'value' in status_data and 'nodes' in status_data['value']:
+            for node in status_data['value']['nodes']:
+                if 'slots' in node:
+                    for slot in node['slots']:
+                        if slot.get('session'):
+                            session_id = slot['session']['sessionId']
+                            print(f"Found existing session: {session_id}")
+                            delete_response = requests.delete(
+                                f"http://{vm_ip_address}:4444/session/{session_id}",
+                                timeout=10
+                            )
+                            print(f"Cleaned up session: {session_id}")
+    
+    except Exception as e:
+        print(f"Session cleanup failed: {e}")
+    
+    # Chrome options for the VM instance
+    chrome_options = ChromeOptions()
+    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
+    chrome_options.add_argument(f"--profile-directory={config['profile']}")
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    
+    # VM-specific optimizations
+    chrome_options.add_argument('--force-device-scale-factor=1')
+    chrome_options.add_argument('--high-dpi-support=1')
+    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
+    chrome_options.add_argument('--remote-allow-origins=*')
+    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--disable-web-security')
+    chrome_options.add_argument('--allow-running-insecure-content')
+
+    
+    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
+    
+    driver = None
+    
+    try:
+        print("Attempting to connect to remote WebDriver...")
+        
+        driver = webdriver.Remote(
+            command_executor=f'http://{vm_ip_address}:4444',
+            options=chrome_options
+        )
+        
+        print(f"✓ Successfully created remote WebDriver connection")
+        print(f"Session ID: {driver.session_id}")
+        
+        print("Applying stealth modifications...")
+        stealth_script = """
+        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+        window.chrome = {runtime: {}};
+        Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+        
+        Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
+        Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+        Object.defineProperty(screen, 'colorDepth', {get: () => 24});
+        """
+        driver.execute_script(stealth_script)
+        print("✓ Stealth script applied successfully")
+        
+        print(f"✓ Successfully connected to VM Chrome with clean profile")
+        return driver
+        
+    except Exception as e:
+        print(f"✗ Failed to connect to VM WebDriver")
+        print(f"Error: {str(e)}")
+        
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
+        
+        return None
+
+def find_buy_button_with_shadow_dom(driver):
+    """
+    Enhanced buy now button finder - JavaScript click first approach
+    Finds button and immediately clicks with JavaScript for reliability
+    """
+    print("🔍 SHADOW DOM: Starting buy button search with JavaScript-first approach...")
+    
+    # Method 1: Find button and immediately click with JavaScript
+    print("⚡ JAVASCRIPT-FIRST: Finding and clicking buy button with JavaScript...")
+    buy_selectors = [
+        'button[data-testid="item-buy-button"]',
+        'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+        '//button[@data-testid="item-buy-button"]',
+        '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+        '//span[text()="Buy now"]/parent::button'
+    ]
+    
+    for selector in buy_selectors:
         try:
             if selector.startswith('//'):
                 buy_button = driver.find_element(By.XPATH, selector)
@@ -1955,247 +2199,3 @@ def render_main_page():
                 </div>
             </div>
         </body>
-        </html>
-        '''
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        print(f"ERROR in render_main_page: {e}")
-        print(f"Traceback: {error_details}")
-        return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
-
-def base64_encode_image(img):
-    """Convert PIL Image to base64 string, resizing if necessary"""
-    max_size = (200, 200)
-    img.thumbnail(max_size, Image.LANCZOS)
-    buffered = io.BytesIO()
-    img.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode()
-
-
-class VintedScraper:
-
-    def restart_driver_if_dead(self, driver):
-        """If driver is dead, create a new one. That's it."""
-        try:
-            driver.current_url  # Simple test
-            return driver  # Driver is fine
-        except:
-            print("🔄 Driver crashed, restarting...")
-            try:
-                driver.quit()
-            except:
-                pass
-            return self.setup_driver()
-    # Add this method to the VintedScraper class
-    def send_pushover_notification(self, title, message, api_token, user_key):
-        """
-        Send a notification via Pushover
-        :param title: Notification title
-        :param message: Notification message
-        :param api_token: Pushover API token
-        :param user_key: Pushover user key
-        """
-        try:
-            url = "https://api.pushover.net/1/messages.json"
-            payload = {
-                "token": api_token,
-                "user": user_key,
-                "title": title,
-                "message": message
-            }
-            response = requests.post(url, data=payload)
-            if response.status_code == 200:
-                print(f"Notification sent successfully: {title}")
-            else:
-                print(f"Failed to send notification. Status code: {response.status_code}")
-                print(f"Response: {response.text}")
-        except Exception as e:
-            print(f"Error sending Pushover notification: {str(e)}")
-
-    def fetch_price(self, class_name):
-        if class_name in ['lite_box', 'oled_box', 'oled_in_tv', 'switch_box', 'switch_in_tv', 'other_mario']:
-            return None
-        price = BASE_PRICES.get(class_name, 0)
-        delivery_cost = 5.0 if class_name in ['lite', 'oled', 'switch'] else 3.5
-        final_price = price + delivery_cost
-        return final_price
-    def fetch_all_prices(self):
-        all_prices = {class_name: self.fetch_price(class_name) for class_name in class_names if self.fetch_price(class_name) is not None}
-        all_prices.update({
-            'lite_box': all_prices.get('lite', 0) * 1.05, 
-            'oled_box': all_prices.get('oled', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_white', 0) - 15, 
-            'oled_in_tv': all_prices.get('oled', 0) + all_prices.get('tv_white', 0) - 10, 
-            'switch_box': all_prices.get('switch', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_black', 0) - 5, 
-            'switch_in_tv': all_prices.get('switch', 0) + all_prices.get('tv_black', 0) - 3.5, 
-            'other_mario': 22.5,
-            'anonymous_games': 5  # Add price for anonymous games
-        })
-        return all_prices
-    def __init__(self):
-
-        # Initialize pygame-related variables similar to FacebookScraper
-        global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
-        global current_expected_revenue, current_profit, current_detected_items, current_listing_images
-        global current_bounding_boxes, current_listing_url, current_suitability, suitable_listings
-        global current_listing_index, recent_listings
-        
-        # **CRITICAL FIX: Initialize recent_listings for website navigation**
-        recent_listings = {
-            'listings': [],
-            'current_index': 0
-        }
-        
-        # Initialize all current listing variables
-        current_listing_title = "No title"
-        current_listing_description = "No description"
-        current_listing_join_date = "No join date"
-        current_listing_price = "0"
-        current_expected_revenue = "0"
-        current_profit = "0"
-        current_detected_items = "None"
-        current_listing_images = []
-        current_bounding_boxes = {}
-        current_listing_url = ""
-        current_suitability = "Suitability unknown"
-        suitable_listings = []
-        current_listing_index = 0
-        self.monitoring_threads_active = threading.Event()
-
-        self.vinted_button_queue = queue.Queue()
-        self.vinted_processing_active = threading.Event()  # To track if we're currently processing
-        self.main_driver = None
-        self.persistent_buying_driver = None
-        self.main_tab_handle = None
-        self.clicked_yes_listings = set()
-        self.bookmark_timers = {}
-        self.buying_drivers = {}  # Dictionary to store drivers {1: driver_object, 2: driver_object, etc.}
-        self.driver_status = {}   # Track driver status {1: 'free'/'busy', 2: 'free'/'busy', etc.}
-        self.driver_lock = threading.Lock()  # Thread safety for driver management
-        # Check if CUDA is available
-        
-        print(f"CUDA available: {torch.cuda.is_available()}")
-        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
-
-        # Load model with explicit GPU usage
-        if torch.cuda.is_available():
-            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
-            print("✅ YOLO model loaded on GPU")
-        else:
-            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
-            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
-
-        # Initialize all driver slots as not created
-        for i in range(1, 6):  # Drivers 1-5
-            self.buying_drivers[i] = None
-            self.driver_status[i] = 'not_created'
-
-        self.bookmark_driver_threads = {}  # Track threads for each driver
-        self.bookmark_driver_locks = {}    # Lock for each driver
-        
-        # Initialize locks for each bookmark driver
-        for i in range(5):
-            self.bookmark_driver_locks[i] = threading.Lock()
-
-
-        self.current_bookmark_driver_index = 0
-        self.bookmark_driver_configs = [
-            {
-                'user_data_dir': 'C:\\VintedScraper_Default_Bookmark',
-                'profile_directory': 'Profile 4'
-            },
-            {
-                'user_data_dir': 'C:\\VintedScraper_Default2_Bookmark', 
-                'profile_directory': 'Profile 17'
-            },
-            {
-                'user_data_dir': 'C:\\VintedScraper_Default3_Bookmark',
-                'profile_directory': 'Profile 6' 
-            },
-            {
-                'user_data_dir': 'C:\\VintedScraper_Default4_Bookmark',
-                'profile_directory': 'Profile 12'
-            },
-            {
-                'user_data_dir': 'C:\\VintedScraper_Default5_Bookmark',
-                'profile_directory': 'Profile 18'
-            }
-        ]
-        self.current_bookmark_driver = None
-        self.shutdown_event = threading.Event()
-
-
-    def cleanup_all_bookmark_threads(self):
-        """
-        Clean up all bookmark driver threads when program exits
-        """
-        print("🧹 CLEANUP: Stopping all bookmark driver threads...")
-        
-        active_threads = []
-        for driver_index, thread in self.bookmark_driver_threads.items():
-            if thread and thread.is_alive():
-                active_threads.append((driver_index + 1, thread))
-        
-        if active_threads:
-            print(f"🧹 CLEANUP: Found {len(active_threads)} active bookmark threads")
-            
-            # Give threads 10 seconds to finish naturally
-            print("⏳ CLEANUP: Waiting 10 seconds for threads to complete...")
-            for driver_num, thread in active_threads:
-                thread.join(timeout=10)
-                if thread.is_alive():
-                    print(f"⚠️ CLEANUP: BookmarkDriver-{driver_num} still running after timeout")
-                else:
-                    print(f"✅ CLEANUP: BookmarkDriver-{driver_num} completed")
-        
-        print("✅ CLEANUP: Bookmark thread cleanup completed")
-
-    def bookmark_driver_threaded(self, listing_url, username=None):
-        """
-        THREADED VERSION: Run each bookmark driver in its own thread
-        """
-        # Get the next available driver index (cycle through 0-4)
-        with threading.Lock():  # Ensure thread-safe driver selection
-            driver_index = self.current_bookmark_driver_index
-            self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
-        
-        # Start the bookmark process in a separate thread for this driver
-        thread_name = f"BookmarkDriver-{driver_index + 1}"
-        bookmark_thread = threading.Thread(
-            target=self._bookmark_driver_thread_worker,
-            args=(driver_index, listing_url, username),
-            name=thread_name
-        )
-        bookmark_thread.daemon = True
-        bookmark_thread.start()
-        
-        # Track the thread
-        self.bookmark_driver_threads[driver_index] = bookmark_thread
-        
-        print(f"🧵 BOOKMARK: Started {thread_name} for URL: {listing_url[:50]}...")
-        return True
-
-    def _bookmark_driver_thread_worker(self, driver_index, listing_url, username):
-        """
-        Worker function that runs in each bookmark driver thread
-        """
-        thread_name = f"BookmarkDriver-{driver_index + 1}"
-        
-        with self.bookmark_driver_locks[driver_index]:
-            print(f"🔖 {thread_name}: Starting bookmark process...")
-            
-            try:
-                # Create driver for this specific thread
-                config = self.bookmark_driver_configs[driver_index]
-                driver = self._create_bookmark_driver(config, driver_index)
-                
-                if driver is None:
-                    print(f"❌ {thread_name}: Failed to create driver")
-                    return
-                
-                # Execute the bookmark process using existing logic
-                step_log = self._initialize_step_logging()
-                step_log['driver_number'] = driver_index + 1
-                
-                # Validate inputs
-                if not self._validate_bookmark_inputs(listing_url, username, step_log):
