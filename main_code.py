@@ -70,7 +70,7 @@ VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7102546985-fc24-nintendo-switch?homepage_session_id=6e3fa7fa-65d1-4aef-a0da-dda652e1c311", 
+    "https://www.vinted.co.uk/items/7102594041-minecraft-switch-game?homepage_session_id=1dd1106e-5c8b-46c0-b8be-c27742ca7391", 
     "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
     "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
     "https://www.vinted.co.uk/items/7097706534-just-dance-2022-nintendo-switch-game-cartridge?homepage_session_id=6c527539-91d8-4297-8e48-f96581b761d3"
@@ -1508,47 +1508,291 @@ def execute_vm_bookmark_process(driver, url, driver_number):
         return False
 
 # 4. VM-specific bookmark sequences (adapted from existing VintedScraper methods)
+def monitor_purchase_unsuccessful_vm(driver, step_log, current_url, monitoring_tab_handle):
+    """
+    VM VERSION of the Purchase Unsuccessful monitoring
+    EXACT SAME LOGIC as VintedScraper._monitor_purchase_unsuccessful but for VM drivers
+    """
+    print(f"⏱️ VM MONITORING: Started monitoring at {time.strftime('%H:%M:%S')}")
+    
+    # Maximum wait time: 25 minutes (1500 seconds) - SAME as main scraper
+    max_wait_time = 25 * 60  
+    monitoring_start_time = time.time()
+    
+    # SAME selectors as main VintedScraper
+    unsuccessful_selectors = [
+        "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+        "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+        "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+        "//*[text()='Purchase unsuccessful']"
+    ]
+    
+    print(f"🔍 VM MONITORING: Watching for 'Purchase unsuccessful' for up to {max_wait_time/60:.0f} minutes...")
+    
+    try:
+        # CRITICAL FIX: Switch to the correct tab for monitoring
+        driver.switch_to.window(monitoring_tab_handle)
+        print(f"🔍 VM MONITORING: Switched to monitoring tab")
+        
+        while True:
+            elapsed_time = time.time() - monitoring_start_time
+            
+            # Check if we've exceeded the maximum wait time (SAME as main scraper)
+            if elapsed_time >= max_wait_time:
+                print(f"⏰ VM MONITORING: Maximum wait time of {max_wait_time/60:.0f} minutes reached")
+                print(f"⏱️ VM MONITORING: Monitoring ended after {elapsed_time/60:.2f} minutes (TIMEOUT)")
+                break
+            
+            # Check if driver is still alive and tab still exists
+            try:
+                # Verify we're still on the right tab
+                if driver.current_window_handle != monitoring_tab_handle:
+                    driver.switch_to.window(monitoring_tab_handle)
+                
+                # Test that the tab is still alive by getting the URL
+                current_page_url = driver.current_url
+                
+            except Exception as driver_dead:
+                print(f"💀 VM MONITORING: Driver/tab died during monitoring: {driver_dead}")
+                print(f"⏱️ VM MONITORING: Monitoring ended after {elapsed_time/60:.2f} minutes (DRIVER/TAB DIED)")
+                break
+            
+            # Try each selector to find "Purchase unsuccessful" (SAME logic as main scraper)
+            found_unsuccessful = False
+            for selector in unsuccessful_selectors:
+                try:
+                    element = WebDriverWait(driver, 1).until(
+                        EC.presence_of_element_located((By.XPATH, selector))
+                    )
+                    
+                    # Found it!
+                    end_time = time.time()
+                    total_elapsed = end_time - monitoring_start_time
+                    
+                    print(f"🎯 VM MONITORING: FOUND! 'Purchase unsuccessful' detected!")
+                    print(f"📍 VM MONITORING: Found using selector: {selector}")
+                    print(f"⏱️ VM MONITORING: Monitoring completed in {total_elapsed/60:.2f} minutes ({total_elapsed:.2f} seconds)")
+                    print(f"🕒 VM MONITORING: Found at {time.strftime('%H:%M:%S')}")
+                    
+                    # TRIGGER THE BUYING LOGIC HERE
+                    # You can integrate with your existing buying driver logic
+                    trigger_vm_buying_drivers(current_url)
+                    
+                    found_unsuccessful = True
+                    break
+                    
+                except TimeoutException:
+                    continue
+                except Exception as selector_error:
+                    print(f"⚠️ VM MONITORING: Error with selector {selector}: {selector_error}")
+                    continue
+            
+            if found_unsuccessful:
+                break
+                
+            # Wait a bit before checking again (SAME as main scraper)
+            time.sleep(0.5)  # Check every 500ms for faster response
+    
+    except Exception as monitoring_error:
+        end_time = time.time()
+        total_elapsed = end_time - monitoring_start_time
+        print(f"❌ VM MONITORING ERROR: {monitoring_error}")
+        print(f"⏱️ VM MONITORING: Monitoring ended after {total_elapsed/60:.2f} minutes (ERROR)")
+    
+    finally:
+        # Clean up monitoring (SAME cleanup as main scraper)
+        print(f"🗑️ VM MONITORING: Cleanup - closing monitoring tab...")
+        try:
+            # Close the monitoring tab
+            driver.switch_to.window(monitoring_tab_handle)
+            driver.close()
+            print(f"✅ VM MONITORING: Closed monitoring tab")
+            
+            # Switch back to main tab (driver.window_handles[0])
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+                print(f"🔄 VM MONITORING: Switched back to main tab")
+            
+        except Exception as tab_close_error:
+            print(f"⚠️ VM MONITORING: Error during cleanup: {tab_close_error}")
+        
+        # Mark monitoring as complete
+        step_log['monitoring_active'] = False
+        print(f"🔄 VM MONITORING: Monitoring complete, marked inactive")
+
+
+def trigger_vm_buying_drivers(current_url):
+    """
+    Trigger buying drivers when "Purchase unsuccessful" is detected
+    You can integrate this with your existing buying driver logic
+    """
+    print(f"🚀 VM TRIGGER: Purchase unsuccessful detected for {current_url[:50]}...")
+    print(f"🚀 VM TRIGGER: This is where you would trigger buying drivers to click pay immediately!")
+    
+    # Add your buying driver logic here
+    # For example, if you have a global dictionary tracking waiting drivers:
+    global purchase_unsuccessful_detected_urls
+    if current_url in purchase_unsuccessful_detected_urls:
+        entry = purchase_unsuccessful_detected_urls[current_url]
+        entry['waiting'] = False  # Signal the buying driver to click pay NOW
+        print(f"🎯 VM TRIGGER: Signaled buying driver for {current_url}")
+
+# Replace your execute_vm_bookmark_sequences function with this version:
 def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
     """
-    Execute bookmark sequences for VM drivers using existing bookmark logic
+    UPDATED: Execute bookmark sequences with Purchase Unsuccessful monitoring
+    """
+    return execute_vm_bookmark_sequences_with_monitoring(driver, listing_url, username, step_log)
+
+def execute_vm_second_sequence_with_purchase_monitoring(driver, actual_url, step_log):
+    """
+    Execute second sequence with Purchase Unsuccessful monitoring
+    SAME MONITORING LOGIC as main VintedScraper._monitor_purchase_unsuccessful
+    """
+    print(f"🔍 VM DRIVER {step_log['driver_number']}: Executing second sequence WITH monitoring...")
+    
+    try:
+        # Open new tab for second sequence
+        driver.execute_script("window.open('');")
+        second_tab = driver.window_handles[-1]
+        driver.switch_to.window(second_tab)
+        step_log['steps_completed'].append(f"second_tab_created - {time.time() - step_log['start_time']:.2f}s")
+        
+        # Navigate again
+        driver.get(actual_url)
+        step_log['steps_completed'].append(f"second_navigation - {time.time() - step_log['start_time']:.2f}s")
+        
+        # Look for buy button again using SAME JavaScript-first approach
+        print(f"🔍 VM DRIVER {step_log['driver_number']}: Looking for second buy button...")
+        second_buy_button, second_buy_selector = find_buy_button_with_shadow_dom(driver)
+        
+        if second_buy_button:
+            print(f"✅ VM DRIVER {step_log['driver_number']}: Second buy button found and clicked using: {second_buy_selector}")
+            step_log['steps_completed'].append(f"second_buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
+            
+            # CHECK FOR PROCESSING PAYMENT SUCCESS
+            print(f"🔍 VM DRIVER {step_log['driver_number']}: Waiting for processing payment message...")
+            processing_element, _ = vm_try_selectors(
+                driver,
+                'processing_payment',
+                operation='find',
+                timeout=15,
+                step_log=step_log
+            )
+            
+            if processing_element:
+                element_text = processing_element.text.strip()
+                step_log['steps_completed'].append(f"processing_payment_found - {time.time() - step_log['start_time']:.2f}s")
+                print('✅ VM DRIVER: SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
+                
+                # KEY ADDITION: START MONITORING FOR "Purchase unsuccessful"
+                print('🔍 VM MONITORING: Starting "Purchase unsuccessful" detection for 25 minutes...')
+                
+                # CRITICAL FIX: Mark that monitoring is active so main function doesn't close tabs
+                step_log['monitoring_active'] = True
+                
+                # Start monitoring in separate thread (SAME as main VintedScraper)
+                monitoring_thread = threading.Thread(
+                    target=monitor_purchase_unsuccessful_vm,
+                    args=(driver, step_log, actual_url, second_tab)  # Pass the tab handle
+                )
+                monitoring_thread.daemon = True
+                monitoring_thread.start()
+                
+                # DON'T close second tab - monitoring thread will handle it
+                print(f"🔍 VM MONITORING: Thread started, keeping tab open for monitoring...")
+                
+                # IMPORTANT: Don't switch back to main tab yet - let monitoring thread handle cleanup
+                return True
+            else:
+                print('⚠️ VM DRIVER: Processing payment message not found')
+                # Close second tab
+                driver.close()
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+                
+        else:
+            print(f"❌ VM DRIVER {step_log['driver_number']}: Second buy button not found")
+            # Close second tab
+            driver.close()
+            if len(driver.window_handles) > 0:
+                driver.switch_to.window(driver.window_handles[0])
+            
+        return True  # Return true as this isn't a critical failure
+            
+    except Exception as second_sequence_error:
+        print(f"❌ VM DRIVER {step_log['driver_number']}: Second sequence error: {second_sequence_error}")
+        # Clean up second tab only if monitoring isn't active
+        if not step_log.get('monitoring_active', False):
+            try:
+                driver.close()
+                if len(driver.window_handles) > 0:
+                    driver.switch_to.window(driver.window_handles[0])
+            except:
+                pass
+        return True
+    
+def execute_vm_bookmark_sequences_with_monitoring(driver, listing_url, username, step_log):
+    """
+    Execute bookmark sequences for VM drivers with Purchase Unsuccessful monitoring
+    SAME LOGIC as main VintedScraper but adapted for VM drivers
     """
     try:
-        # Create new tab and navigate (using existing logic)
-        print(f"🔖 DRIVER {step_log['driver_number']}: Creating new tab...")
+        # Create new tab and navigate
+        print(f"🔖 VM DRIVER {step_log['driver_number']}: Creating new tab...")
         stopwatch_start = time.time()
         driver.execute_script("window.open('');")
         new_tab = driver.window_handles[-1]
         driver.switch_to.window(new_tab)
         
         # Navigate to listing
-        print(f"🔖 DRIVER {step_log['driver_number']}: Navigating to listing...")
+        print(f"🔖 VM DRIVER {step_log['driver_number']}: Navigating to listing...")
         driver.get(listing_url)
         
         # Execute first buy sequence (critical for bookmarking)
         success = execute_vm_first_buy_sequence(driver, step_log)
         
         if success:
-            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence completed")
+            print(f"🔖 VM DRIVER {step_log['driver_number']}: First buy sequence completed")
             
-            # Execute second sequence with monitoring (if needed)
-            execute_vm_second_sequence(driver, listing_url, step_log)
+            # Execute second sequence WITH MONITORING (KEY CHANGE)
+            execute_vm_second_sequence_with_purchase_monitoring(driver, listing_url, step_log)
+            
+            # CRITICAL FIX: Check if monitoring is active before closing tabs
+            if not step_log.get('monitoring_active', False):
+                # Only close tab if monitoring is NOT active
+                try:
+                    if len(driver.window_handles) > 1:
+                        driver.close()  # Close bookmark tab
+                        driver.switch_to.window(driver.window_handles[0])  # Return to main tab
+                except:
+                    pass
+            else:
+                print(f"🔍 VM MONITORING: Tab cleanup will be handled by monitoring thread")
             
             return True
         else:
-            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence failed")
+            print(f"🔖 VM DRIVER {step_log['driver_number']}: First buy sequence failed")
+            # Close tab on failure
+            try:
+                if len(driver.window_handles) > 1:
+                    driver.close()
+                    driver.switch_to.window(driver.window_handles[0])
+            except:
+                pass
             return False
             
     except Exception as e:
-        print(f"❌ DRIVER {step_log['driver_number']}: Sequence execution error: {e}")
+        print(f"❌ VM DRIVER {step_log['driver_number']}: Sequence execution error: {e}")
+        # Cleanup on error (only if monitoring not active)
+        if not step_log.get('monitoring_active', False):
+            try:
+                if len(driver.window_handles) > 1:
+                    driver.close()
+                    driver.switch_to.window(driver.window_handles[0])
+            except:
+                pass
         return False
-    finally:
-        # Always switch back to main tab
-        try:
-            if len(driver.window_handles) > 1:
-                driver.close()  # Close bookmark tab
-                driver.switch_to.window(driver.window_handles[0])  # Return to main tab
-        except:
-            pass
 
 def execute_vm_first_buy_sequence(driver, step_log):
     """
