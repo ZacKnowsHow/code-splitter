@@ -1,4 +1,248 @@
 # Continuation from line 6601
+        try:
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull  # Suppress driver logs
+            )
+            
+            # Add service arguments for additional stability
+            service_args = [
+                '--verbose=false',
+                '--silent',
+                '--log-level=3'
+            ]
+            
+            print("🚀 Starting Chrome driver with enhanced stability settings...")
+            driver = webdriver.Chrome(service=service, options=options)
+            
+            # Set timeouts
+            driver.implicitly_wait(10)
+            driver.set_page_load_timeout(30)
+            driver.set_script_timeout(30)
+            
+            print("✅ Chrome driver initialized successfully")
+            return driver
+            
+        except Exception as e:
+            print(f"❌ CRITICAL: Chrome driver failed to start: {e}")
+            print("Troubleshooting steps:")
+            print("1. Ensure all Chrome instances are closed")
+            print("2. Check Chrome and ChromeDriver versions")
+            print("3. Verify user data directory permissions")
+            print("4. Try restarting the system")
+            
+            # Try fallback options
+            print("⏳ Attempting fallback configuration...")
+            
+            # Fallback: Remove problematic arguments
+            fallback_opts = Options()
+            fallback_opts.add_experimental_option("prefs", prefs)
+            #fallback_opts.add_argument("--headless")
+            fallback_opts.add_argument("--no-sandbox")
+            fallback_opts.add_argument("--disable-dev-shm-usage")
+            fallback_opts.add_argument("--disable-gpu")
+            fallback_opts.add_argument("--remote-debugging-port=0")
+            fallback_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+            fallback_opts.add_argument(f"--profile-directory=Default")
+            #profile 2 = pc
+            #default = laptop
+            
+            try:
+                fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
+                print("✅ Fallback Chrome driver started successfully")
+                return fallback_driver
+            except Exception as fallback_error:
+                print(f"❌ Fallback also failed: {fallback_error}")
+                raise Exception(f"Could not start Chrome driver: {e}")
+            
+
+    def setup_buying_driver(self, driver_num):
+        """
+        FIXED: Setup a specific buying driver with better error handling and unique directories
+        """
+        try:
+            print(f"🚗 SETUP: Creating buying driver {driver_num}")
+            
+            # Ensure ChromeDriver is cached
+            if not hasattr(self, '_cached_chromedriver_path'):
+                self._cached_chromedriver_path = ChromeDriverManager().install()
+            
+            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
+            
+            chrome_opts = Options()
+            
+            # CRITICAL FIX: Each driver gets its own UNIQUE directory to prevent conflicts
+            user_data_dir = f"C:\\VintedBuyer{driver_num}"  # Add timestamp for uniqueness
+            chrome_opts.add_argument(f"--user-data-dir={user_data_dir}")
+            chrome_opts.add_argument("--profile-directory=Default")
+            
+            # FIXED: Better stability options
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--disable-extensions")
+            chrome_opts.add_argument("--disable-plugins")
+            chrome_opts.add_argument("--disable-images")  # Speed optimization
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_argument("--disable-web-security")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+            chrome_opts.add_experimental_option('useAutomationExtension', False)
+            
+            # Create the driver
+            driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # FIXED: Set appropriate timeouts for buying process
+            driver.implicitly_wait(2)
+            driver.set_page_load_timeout(15)  # Increased for stability
+            driver.set_script_timeout(10)
+            
+            # CRITICAL FIX: Navigate to vinted.co.uk and WAIT for it to fully load
+            print(f"🏠 NAVIGATE: Driver {driver_num} going to vinted.co.uk")
+            driver.get("https://www.vinted.co.uk")
+            
+            # Wait for page to load completely before marking as ready
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                print(f"✅ SUCCESS: Buying driver {driver_num} fully loaded and ready")
+            except TimeoutException:
+                print(f"⚠️ WARNING: Driver {driver_num} loaded but page may not be fully ready")
+            
+            return driver
+            
+        except Exception as e:
+            print(f"❌ ERROR: Failed to create buying driver {driver_num}: {e}")
+            return None
+            
+
+    def extract_vinted_price(self, text):
+        """
+        Enhanced price extraction for Vinted that handles various price formats
+        """
+        debug_function_call("extract_vinted_price")
+        import re  # FIXED: Import re at function level
+        
+        if not text:
+            return 0.0
+        
+        # Remove currency symbols and extra text, extract number
+        cleaned_text = re.sub(r'[^\d.,]', '', str(text))
+        if not cleaned_text:
+            return 0.0
+            
+        # Handle comma as decimal separator (European format)
+        if ',' in cleaned_text and '.' not in cleaned_text:
+            cleaned_text = cleaned_text.replace(',', '.')
+        elif ',' in cleaned_text and '.' in cleaned_text:
+            # Assume comma is thousands separator
+            cleaned_text = cleaned_text.replace(',', '')
+        
+        try:
+            return float(cleaned_text)
+        except ValueError:
+            return 0.0
+        
+    def detect_console_keywords_vinted(self, listing_title, listing_description):
+        """
+        Detect console keywords in Vinted title and description (ported from Facebook)
+        """
+        listing_title_lower = listing_title.lower()
+        listing_description_lower = listing_description.lower()
+        
+        console_keywords = {
+            'switch console': 'switch',
+            'swith console': 'switch',
+            'switc console': 'switch',
+            'swich console': 'switch',
+            'oled console': 'oled',
+            'lite console': 'lite'
+        }
+        
+        # Check if title contains console keywords
+        title_contains_console = any(keyword in listing_title_lower for keyword in console_keywords.keys())
+        
+        # Check if description contains console keywords and title contains relevant terms
+        desc_contains_console = any(
+            keyword in listing_description_lower and
+            any(term in listing_title_lower for term in ['nintendo switch', 'oled', 'lite'])
+            for keyword in console_keywords.keys()
+        )
+        
+        detected_console = None
+        if title_contains_console or desc_contains_console:
+            for keyword, console_type in console_keywords.items():
+                if keyword in listing_title_lower or keyword in listing_description_lower:
+                    detected_console = console_type
+                    break
+        
+        return detected_console
+
+    def detect_anonymous_games_vinted(self, listing_title, listing_description):
+        """
+        Detect anonymous games count from title and description (ported from Facebook)
+        """
+        debug_function_call("detect_anonymous_games_vinted")
+        import re  # FIXED: Import re at function level
+
+        def extract_games_number(text):
+            # Prioritize specific game type matches first
+            matches = (
+                re.findall(r'(\d+)\s*(switch|nintendo)\s*games', text.lower()) + # Switch/Nintendo specific
+                re.findall(r'(\d+)\s*games', text.lower()) # Generic games
+            )
+            # Convert matches to integers and find the maximum
+            numeric_matches = [int(match[0]) if isinstance(match, tuple) else int(match) for match in matches]
+            return max(numeric_matches) if numeric_matches else 0
+        
+        title_games = extract_games_number(listing_title)
+        desc_games = extract_games_number(listing_description)
+        return max(title_games, desc_games)
+
+    def detect_sd_card_vinted(self, listing_title, listing_description):
+        """
+        Detect SD card presence in title or description
+        """
+        sd_card_keywords = {'sd card', 'sdcard', 'sd', 'card', 'memory card', 'memorycard', 'micro sd', 'microsd',
+                        'memory card', 'memorycard', 'sandisk', '128gb', '256gb', 'game'}
+        
+        title_lower = listing_title.lower()
+        desc_lower = listing_description.lower()
+        
+        return any(keyword in title_lower or keyword in desc_lower for keyword in sd_card_keywords)
+
+    def handle_mutually_exclusive_items_vinted(self, detected_objects, confidences):
+        """
+        Handle mutually exclusive items for Vinted (ported from Facebook)
+        """
+        mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
+        
+        # Find the item with highest confidence
+        selected_item = max(confidences.items(), key=lambda x: x[1])[0] if any(confidences.values()) else None
+        
+        if selected_item:
+            # Set the selected item to 1 and all others to 0
+            for item in mutually_exclusive_items:
+                detected_objects[item] = 1 if item == selected_item else 0
+                
+            # Handle accessory incompatibilities
+            if selected_item in ['oled', 'oled_in_tv', 'oled_box']:
+                detected_objects['tv_black'] = 0
+            elif selected_item in ['switch', 'switch_in_tv', 'switch_box']:
+                detected_objects['tv_white'] = 0
+                
+            if selected_item in ['lite', 'lite_box', 'switch_box', 'oled_box']:
+                detected_objects['comfort_h'] = 0
+                
+            if selected_item in ['switch_in_tv', 'switch_box']:
+                detected_objects['tv_black'] = 0
+                
+            if selected_item in ['oled_in_tv', 'oled_box']:
+                detected_objects['tv_white'] = 0
+        
+        return detected_objects
+
     def handle_oled_title_conversion_vinted(self, detected_objects, listing_title, listing_description):
         """
         Handle OLED title conversion logic (ported from Facebook)
@@ -1955,247 +2199,3 @@
                         
                         # Found it!
                         end_time = time.time()
-                        total_elapsed = end_time - monitoring_start_time
-                        
-                        print(f"🎯 FOUND! 'Purchase unsuccessful' detected!")
-                        print(f"📍 ELEMENT: Found using selector: {selector}")
-                        print(f"⏱️ STOPWATCH: Monitoring completed in {total_elapsed/60:.2f} minutes ({total_elapsed:.2f} seconds)")
-                        print(f"🕒 TIME: Found at {time.strftime('%H:%M:%S')}")
-                        
-                        # MODIFIED: Signal all waiting buying drivers to click pay NOW
-                        print(f"🚀 TRIGGERING: All waiting buying drivers to click pay NOW!")
-                        
-                        for url, entry in purchase_unsuccessful_detected_urls.items():
-                            if entry.get('waiting', True):
-                                print(f"🎯 TRIGGERING: Buying driver for {url[:50]}...")
-                                entry['waiting'] = False  # Signal the buying driver
-                        
-                        self._log_step(step_log, "purchase_unsuccessful_found", True, 
-                                    f"Found after {total_elapsed:.2f}s using: {selector[:50]}...")
-                        
-                        found_unsuccessful = True
-                        break
-                        
-                    except TimeoutException:
-                        continue
-                    except Exception as selector_error:
-                        print(f"⚠️ MONITORING: Error with selector {selector}: {selector_error}")
-                        continue
-                
-                if found_unsuccessful:
-                    break
-                    
-                # Wait a bit before checking again
-                time.sleep(0.5)  # Check every 500ms for faster response
-        
-        except Exception as monitoring_error:
-            end_time = time.time()
-            total_elapsed = end_time - monitoring_start_time
-            print(f"❌ MONITORING ERROR: {monitoring_error}")
-            print(f"⏱️ STOPWATCH: Monitoring ended after {total_elapsed/60:.2f} minutes (ERROR)")
-            self._log_step(step_log, "monitoring_error", False, str(monitoring_error))
-        
-        finally:
-            # Clean up monitoring
-            step_log['monitoring_active'] = False
-            self.monitoring_threads_active.clear()
-            
-            print(f"🗑️ MONITORING CLEANUP: Closing monitoring tab and advancing driver...")
-            try:
-                current_driver.close()
-                print(f"✅ MONITORING CLEANUP: Closed monitoring tab")
-            except Exception as tab_close_error:
-                print(f"⚠️ MONITORING CLEANUP: Error closing tab: {tab_close_error}")
-            
-            try:
-                self.close_current_bookmark_driver()
-                print(f"✅ MONITORING CLEANUP: Closed bookmark driver and advanced to next")
-            except Exception as driver_close_error:
-                print(f"⚠️ MONITORING CLEANUP: Error closing driver: {driver_close_error}")
-            
-            print(f"🔄 MONITORING COMPLETE: Driver cleanup finished, ready for next bookmark")
-            
-    def _execute_messages_sequence(self, current_driver, actual_url, username, step_log):
-        """Execute the messages sequence for username validation"""
-        self._log_step(step_log, "messages_sequence_start", True)
-        
-        try:
-            # Open messages tab
-            current_driver.execute_script("window.open('');")
-            messages_tab = current_driver.window_handles[-1]
-            current_driver.switch_to.window(messages_tab)
-            self._log_step(step_log, "messages_tab_created", True)
-            
-            # Navigate to URL for messages
-            current_driver.get(actual_url)
-            self._log_step(step_log, "messages_navigation", True)
-            
-            # Find and click messages button
-            messages_element, messages_selector = self._try_selectors(
-                current_driver,
-                'messages_button',
-                operation='click',
-                timeout=1,
-                click_method='all',
-                step_log=step_log
-            )
-            
-            if messages_element:
-                self._log_step(step_log, "messages_button_clicked", True, f"Used: {messages_selector[:30]}...")
-                
-                # Search for username
-                self._search_for_username(current_driver, username, actual_url, step_log)
-            else:
-                self._log_step(step_log, "messages_button_not_found", False, "Messages button not found with any selector")
-            
-            # Close messages tab
-            current_driver.close()
-            if len(current_driver.window_handles) > 0:
-                current_driver.switch_to.window(current_driver.window_handles[0])
-            self._log_step(step_log, "messages_tab_closed", True)
-            
-            return True
-            
-        except Exception as messages_error:
-            self._log_step(step_log, "messages_sequence_error", False, str(messages_error))
-            # Clean up messages tab
-            try:
-                current_driver.close()
-                if len(current_driver.window_handles) > 0:
-                    current_driver.switch_to.window(current_driver.window_handles[0])
-            except:
-                pass
-            return True
-
-    def _search_for_username(self, current_driver, username, actual_url, step_log):
-        """Search for username in messages to detect accidental purchases"""
-        if not username:
-            self._log_step(step_log, "no_username_for_search", False, "No username available")
-            time.sleep(3)
-            return
-        
-        self._log_step(step_log, "username_search_start", True, f"Searching for: {username}")
-        time.sleep(2)  # Wait for messages page to load
-        
-        try:
-            username_element = WebDriverWait(current_driver, 3).until(
-                EC.element_to_be_clickable((By.XPATH, f"//h2[contains(@class, 'web_ui') and contains(@class, 'Text') and contains(@class, 'title') and text()='{username}']"))
-            )
-            
-            self._log_step(step_log, "username_found_on_messages", True, f"Found: {username}")
-            
-            # Try to click username
-            username_clicked = self._click_username_element(current_driver, username_element, step_log)
-            
-            if username_clicked:
-                self._log_step(step_log, "accidental_purchase_detected", True, "ABORT - username found in messages")
-                print("USERNAME FOUND, POSSIBLE ACCIDENTAL PURCHASE, ABORT")
-                time.sleep(3)
-                self._log_final_bookmark_result(step_log)
-                sys.exit(0)
-            else:
-                self._log_step(step_log, "username_click_failed", False, "Could not click username")
-                
-        except TimeoutException:
-            self._log_step(step_log, "username_not_found_in_messages", True, f"Username {username} not in messages - likely bookmarked!")
-            print(f"📧 NOT FOUND: Username '{username}' not found on messages page")
-            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
-        except Exception as search_error:
-            self._log_step(step_log, "username_search_error", False, str(search_error))
-            print(f"unable to find username {username} for listing {actual_url}, likely bookmarked!")
-
-    def _click_username_element(self, current_driver, username_element, step_log):
-        """Try to click the username element with multiple methods"""
-        username_clicked = False
-        for click_method in ['standard', 'javascript', 'actionchains']:
-            try:
-                if click_method == 'standard':
-                    username_element.click()
-                elif click_method == 'javascript':
-                    current_driver.execute_script("arguments[0].click();", username_element)
-                elif click_method == 'actionchains':
-                    ActionChains(current_driver).move_to_element(username_element).click().perform()
-                
-                username_clicked = True
-                self._log_step(step_log, f"username_clicked_{click_method}", True)
-                break
-            except:
-                continue
-        return username_clicked
-
-    def _try_selectors(self, driver, selector_set_name, operation='find', timeout=5, click_method='standard', step_log=None):
-        """Try selectors with quick timeouts and fail fast"""
-        SELECTOR_SETS = {
-
-            'purchase_unsuccessful': [
-                "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
-                "//*[text()='Purchase unsuccessful']"
-            ],
-
-            'buy_button': [
-                "button[data-testid='item-buy-button']",
-                "button.web_ui__Button__primary[data-testid='item-buy-button']",
-                "button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated",
-                "//button[@data-testid='item-buy-button']",
-                "//button[contains(@class, 'web_ui__Button__primary')]//span[text()='Buy now']"
-            ],
-            'pay_button': [
-                'button[data-testid="single-checkout-order-summary-purchase-button"]',
-                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
-                '//button[@data-testid="single-checkout-order-summary-purchase-button"]',
-                'button.web_ui__Button__primary[data-testid*="purchase"]',
-                '//button[contains(@data-testid, "purchase-button")]'
-            ],
-            'processing_payment': [
-                "//h2[@class='web_ui__Text__text web_ui__Text__title web_ui__Text__left' and text()='Processing payment']",
-                "//h2[contains(@class, 'web_ui__Text__title') and text()='Processing payment']",
-                "//span[@class='web_ui__Text__text web_ui__Text__body web_ui__Text__left web_ui__Text__format' and contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
-                "//span[contains(text(), \"We've reserved this item for you until your payment finishes processing\")]",
-                "//*[contains(text(), 'Processing payment')]"
-            ],
-            'messages_button': [
-                "a[data-testid='header-conversations-button']",
-                "a[href='/inbox'][data-testid='header-conversations-button']",
-                "a[href='/inbox'].web_ui__Button__button",
-                "a[aria-label*='message'][href='/inbox']",
-                "a[href='/inbox']"
-            ]
-        }
-        
-        selectors = SELECTOR_SETS.get(selector_set_name, [])
-        if not selectors:
-            if step_log:
-                self._log_step(step_log, f"try_selectors_{selector_set_name}", False, "No selectors defined")
-            return None, None
-        
-        for i, selector in enumerate(selectors):
-            try:
-                if selector.startswith('//'):
-                    element = WebDriverWait(driver, timeout).until(
-                        EC.element_to_be_clickable((By.XPATH, selector)) if operation == 'click' 
-                        else EC.presence_of_element_located((By.XPATH, selector))
-                    )
-                else:
-                    element = WebDriverWait(driver, timeout).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector)) if operation == 'click'
-                        else EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                    )
-                
-                if operation == 'click':
-                    click_success = self._perform_element_click(driver, element, click_method, step_log, selector_set_name)
-                    if not click_success:
-                        continue
-                
-                if step_log:
-                    self._log_step(step_log, f"selector_{selector_set_name}_success", True, f"Used selector #{i+1}")
-                return element, selector
-                
-            except TimeoutException:
-                if step_log:
-                    self._log_step(step_log, f"selector_{selector_set_name}_{i+1}_timeout", False, f"Timeout after {timeout}s")
-                continue
-            except Exception as e:
-                if step_log:

@@ -1,4 +1,248 @@
 # Continuation from line 4401
+        </html>
+        '''
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in render_main_page: {e}")
+        print(f"Traceback: {error_details}")
+        return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
+
+def base64_encode_image(img):
+    """Convert PIL Image to base64 string, resizing if necessary"""
+    max_size = (200, 200)
+    img.thumbnail(max_size, Image.LANCZOS)
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode()
+
+
+class VintedScraper:
+
+    def restart_driver_if_dead(self, driver):
+        """If driver is dead, create a new one. That's it."""
+        try:
+            driver.current_url  # Simple test
+            return driver  # Driver is fine
+        except:
+            print("🔄 Driver crashed, restarting...")
+            try:
+                driver.quit()
+            except:
+                pass
+            return self.setup_driver()
+    # Add this method to the VintedScraper class
+    def send_pushover_notification(self, title, message, api_token, user_key):
+        """
+        Send a notification via Pushover
+        :param title: Notification title
+        :param message: Notification message
+        :param api_token: Pushover API token
+        :param user_key: Pushover user key
+        """
+        try:
+            url = "https://api.pushover.net/1/messages.json"
+            payload = {
+                "token": api_token,
+                "user": user_key,
+                "title": title,
+                "message": message
+            }
+            response = requests.post(url, data=payload)
+            if response.status_code == 200:
+                print(f"Notification sent successfully: {title}")
+            else:
+                print(f"Failed to send notification. Status code: {response.status_code}")
+                print(f"Response: {response.text}")
+        except Exception as e:
+            print(f"Error sending Pushover notification: {str(e)}")
+
+    def fetch_price(self, class_name):
+        if class_name in ['lite_box', 'oled_box', 'oled_in_tv', 'switch_box', 'switch_in_tv', 'other_mario']:
+            return None
+        price = BASE_PRICES.get(class_name, 0)
+        delivery_cost = 5.0 if class_name in ['lite', 'oled', 'switch'] else 3.5
+        final_price = price + delivery_cost
+        return final_price
+    def fetch_all_prices(self):
+        all_prices = {class_name: self.fetch_price(class_name) for class_name in class_names if self.fetch_price(class_name) is not None}
+        all_prices.update({
+            'lite_box': all_prices.get('lite', 0) * 1.05, 
+            'oled_box': all_prices.get('oled', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_white', 0) - 15, 
+            'oled_in_tv': all_prices.get('oled', 0) + all_prices.get('tv_white', 0) - 10, 
+            'switch_box': all_prices.get('switch', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_black', 0) - 5, 
+            'switch_in_tv': all_prices.get('switch', 0) + all_prices.get('tv_black', 0) - 3.5, 
+            'other_mario': 22.5,
+            'anonymous_games': 5  # Add price for anonymous games
+        })
+        return all_prices
+    def __init__(self):
+
+        # Initialize pygame-related variables similar to FacebookScraper
+        global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
+        global current_expected_revenue, current_profit, current_detected_items, current_listing_images
+        global current_bounding_boxes, current_listing_url, current_suitability, suitable_listings
+        global current_listing_index, recent_listings
+        
+        # **CRITICAL FIX: Initialize recent_listings for website navigation**
+        recent_listings = {
+            'listings': [],
+            'current_index': 0
+        }
+        
+        # Initialize all current listing variables
+        current_listing_title = "No title"
+        current_listing_description = "No description"
+        current_listing_join_date = "No join date"
+        current_listing_price = "0"
+        current_expected_revenue = "0"
+        current_profit = "0"
+        current_detected_items = "None"
+        current_listing_images = []
+        current_bounding_boxes = {}
+        current_listing_url = ""
+        current_suitability = "Suitability unknown"
+        suitable_listings = []
+        current_listing_index = 0
+        self.monitoring_threads_active = threading.Event()
+
+        self.vinted_button_queue = queue.Queue()
+        self.vinted_processing_active = threading.Event()  # To track if we're currently processing
+        self.main_driver = None
+        self.persistent_buying_driver = None
+        self.main_tab_handle = None
+        self.clicked_yes_listings = set()
+        self.bookmark_timers = {}
+        self.buying_drivers = {}  # Dictionary to store drivers {1: driver_object, 2: driver_object, etc.}
+        self.driver_status = {}   # Track driver status {1: 'free'/'busy', 2: 'free'/'busy', etc.}
+        self.driver_lock = threading.Lock()  # Thread safety for driver management
+        # Check if CUDA is available
+        
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
+
+        # Load model with explicit GPU usage
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
+        # Initialize all driver slots as not created
+        for i in range(1, 6):  # Drivers 1-5
+            self.buying_drivers[i] = None
+            self.driver_status[i] = 'not_created'
+
+        self.bookmark_driver_threads = {}  # Track threads for each driver
+        self.bookmark_driver_locks = {}    # Lock for each driver
+        
+        # Initialize locks for each bookmark driver
+        for i in range(5):
+            self.bookmark_driver_locks[i] = threading.Lock()
+
+
+        self.current_bookmark_driver_index = 0
+        self.bookmark_driver_configs = [
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default_Bookmark',
+                'profile_directory': 'Profile 4'
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default2_Bookmark', 
+                'profile_directory': 'Profile 17'
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default3_Bookmark',
+                'profile_directory': 'Profile 6' 
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default4_Bookmark',
+                'profile_directory': 'Profile 12'
+            },
+            {
+                'user_data_dir': 'C:\\VintedScraper_Default5_Bookmark',
+                'profile_directory': 'Profile 18'
+            }
+        ]
+        self.current_bookmark_driver = None
+        self.shutdown_event = threading.Event()
+
+
+    def cleanup_all_bookmark_threads(self):
+        """
+        Clean up all bookmark driver threads when program exits
+        """
+        print("🧹 CLEANUP: Stopping all bookmark driver threads...")
+        
+        active_threads = []
+        for driver_index, thread in self.bookmark_driver_threads.items():
+            if thread and thread.is_alive():
+                active_threads.append((driver_index + 1, thread))
+        
+        if active_threads:
+            print(f"🧹 CLEANUP: Found {len(active_threads)} active bookmark threads")
+            
+            # Give threads 10 seconds to finish naturally
+            print("⏳ CLEANUP: Waiting 10 seconds for threads to complete...")
+            for driver_num, thread in active_threads:
+                thread.join(timeout=10)
+                if thread.is_alive():
+                    print(f"⚠️ CLEANUP: BookmarkDriver-{driver_num} still running after timeout")
+                else:
+                    print(f"✅ CLEANUP: BookmarkDriver-{driver_num} completed")
+        
+        print("✅ CLEANUP: Bookmark thread cleanup completed")
+
+    def bookmark_driver_threaded(self, listing_url, username=None):
+        """
+        THREADED VERSION: Run each bookmark driver in its own thread
+        """
+        # Get the next available driver index (cycle through 0-4)
+        with threading.Lock():  # Ensure thread-safe driver selection
+            driver_index = self.current_bookmark_driver_index
+            self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
+        
+        # Start the bookmark process in a separate thread for this driver
+        thread_name = f"BookmarkDriver-{driver_index + 1}"
+        bookmark_thread = threading.Thread(
+            target=self._bookmark_driver_thread_worker,
+            args=(driver_index, listing_url, username),
+            name=thread_name
+        )
+        bookmark_thread.daemon = True
+        bookmark_thread.start()
+        
+        # Track the thread
+        self.bookmark_driver_threads[driver_index] = bookmark_thread
+        
+        print(f"🧵 BOOKMARK: Started {thread_name} for URL: {listing_url[:50]}...")
+        return True
+
+    def _bookmark_driver_thread_worker(self, driver_index, listing_url, username):
+        """
+        Worker function that runs in each bookmark driver thread
+        """
+        thread_name = f"BookmarkDriver-{driver_index + 1}"
+        
+        with self.bookmark_driver_locks[driver_index]:
+            print(f"🔖 {thread_name}: Starting bookmark process...")
+            
+            try:
+                # Create driver for this specific thread
+                config = self.bookmark_driver_configs[driver_index]
+                driver = self._create_bookmark_driver(config, driver_index)
+                
+                if driver is None:
+                    print(f"❌ {thread_name}: Failed to create driver")
+                    return
+                
+                # Execute the bookmark process using existing logic
+                step_log = self._initialize_step_logging()
+                step_log['driver_number'] = driver_index + 1
+                
+                # Validate inputs
+                if not self._validate_bookmark_inputs(listing_url, username, step_log):
                     print(f"❌ {thread_name}: Input validation failed")
                     return
                 
@@ -1955,247 +2199,3 @@
         options.add_experimental_option('useAutomationExtension', False)
         options.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
         options.add_argument(f"--profile-directory=Default")
-        try:
-            service = Service(
-                ChromeDriverManager().install(),
-                log_path=os.devnull  # Suppress driver logs
-            )
-            
-            # Add service arguments for additional stability
-            service_args = [
-                '--verbose=false',
-                '--silent',
-                '--log-level=3'
-            ]
-            
-            print("🚀 Starting Chrome driver with enhanced stability settings...")
-            driver = webdriver.Chrome(service=service, options=options)
-            
-            # Set timeouts
-            driver.implicitly_wait(10)
-            driver.set_page_load_timeout(30)
-            driver.set_script_timeout(30)
-            
-            print("✅ Chrome driver initialized successfully")
-            return driver
-            
-        except Exception as e:
-            print(f"❌ CRITICAL: Chrome driver failed to start: {e}")
-            print("Troubleshooting steps:")
-            print("1. Ensure all Chrome instances are closed")
-            print("2. Check Chrome and ChromeDriver versions")
-            print("3. Verify user data directory permissions")
-            print("4. Try restarting the system")
-            
-            # Try fallback options
-            print("⏳ Attempting fallback configuration...")
-            
-            # Fallback: Remove problematic arguments
-            fallback_opts = Options()
-            fallback_opts.add_experimental_option("prefs", prefs)
-            #fallback_opts.add_argument("--headless")
-            fallback_opts.add_argument("--no-sandbox")
-            fallback_opts.add_argument("--disable-dev-shm-usage")
-            fallback_opts.add_argument("--disable-gpu")
-            fallback_opts.add_argument("--remote-debugging-port=0")
-            fallback_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
-            fallback_opts.add_argument(f"--profile-directory=Default")
-            #profile 2 = pc
-            #default = laptop
-            
-            try:
-                fallback_driver = webdriver.Chrome(service=service, options=fallback_opts)
-                print("✅ Fallback Chrome driver started successfully")
-                return fallback_driver
-            except Exception as fallback_error:
-                print(f"❌ Fallback also failed: {fallback_error}")
-                raise Exception(f"Could not start Chrome driver: {e}")
-            
-
-    def setup_buying_driver(self, driver_num):
-        """
-        FIXED: Setup a specific buying driver with better error handling and unique directories
-        """
-        try:
-            print(f"🚗 SETUP: Creating buying driver {driver_num}")
-            
-            # Ensure ChromeDriver is cached
-            if not hasattr(self, '_cached_chromedriver_path'):
-                self._cached_chromedriver_path = ChromeDriverManager().install()
-            
-            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
-            
-            chrome_opts = Options()
-            
-            # CRITICAL FIX: Each driver gets its own UNIQUE directory to prevent conflicts
-            user_data_dir = f"C:\\VintedBuyer{driver_num}"  # Add timestamp for uniqueness
-            chrome_opts.add_argument(f"--user-data-dir={user_data_dir}")
-            chrome_opts.add_argument("--profile-directory=Default")
-            
-            # FIXED: Better stability options
-            chrome_opts.add_argument("--no-sandbox")
-            chrome_opts.add_argument("--disable-dev-shm-usage")
-            chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument("--disable-extensions")
-            chrome_opts.add_argument("--disable-plugins")
-            chrome_opts.add_argument("--disable-images")  # Speed optimization
-            chrome_opts.add_argument("--window-size=800,600")
-            chrome_opts.add_argument("--log-level=3")
-            chrome_opts.add_argument("--disable-web-security")
-            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-            chrome_opts.add_experimental_option('useAutomationExtension', False)
-            
-            # Create the driver
-            driver = webdriver.Chrome(service=service, options=chrome_opts)
-            
-            # FIXED: Set appropriate timeouts for buying process
-            driver.implicitly_wait(2)
-            driver.set_page_load_timeout(15)  # Increased for stability
-            driver.set_script_timeout(10)
-            
-            # CRITICAL FIX: Navigate to vinted.co.uk and WAIT for it to fully load
-            print(f"🏠 NAVIGATE: Driver {driver_num} going to vinted.co.uk")
-            driver.get("https://www.vinted.co.uk")
-            
-            # Wait for page to load completely before marking as ready
-            try:
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
-                print(f"✅ SUCCESS: Buying driver {driver_num} fully loaded and ready")
-            except TimeoutException:
-                print(f"⚠️ WARNING: Driver {driver_num} loaded but page may not be fully ready")
-            
-            return driver
-            
-        except Exception as e:
-            print(f"❌ ERROR: Failed to create buying driver {driver_num}: {e}")
-            return None
-            
-
-    def extract_vinted_price(self, text):
-        """
-        Enhanced price extraction for Vinted that handles various price formats
-        """
-        debug_function_call("extract_vinted_price")
-        import re  # FIXED: Import re at function level
-        
-        if not text:
-            return 0.0
-        
-        # Remove currency symbols and extra text, extract number
-        cleaned_text = re.sub(r'[^\d.,]', '', str(text))
-        if not cleaned_text:
-            return 0.0
-            
-        # Handle comma as decimal separator (European format)
-        if ',' in cleaned_text and '.' not in cleaned_text:
-            cleaned_text = cleaned_text.replace(',', '.')
-        elif ',' in cleaned_text and '.' in cleaned_text:
-            # Assume comma is thousands separator
-            cleaned_text = cleaned_text.replace(',', '')
-        
-        try:
-            return float(cleaned_text)
-        except ValueError:
-            return 0.0
-        
-    def detect_console_keywords_vinted(self, listing_title, listing_description):
-        """
-        Detect console keywords in Vinted title and description (ported from Facebook)
-        """
-        listing_title_lower = listing_title.lower()
-        listing_description_lower = listing_description.lower()
-        
-        console_keywords = {
-            'switch console': 'switch',
-            'swith console': 'switch',
-            'switc console': 'switch',
-            'swich console': 'switch',
-            'oled console': 'oled',
-            'lite console': 'lite'
-        }
-        
-        # Check if title contains console keywords
-        title_contains_console = any(keyword in listing_title_lower for keyword in console_keywords.keys())
-        
-        # Check if description contains console keywords and title contains relevant terms
-        desc_contains_console = any(
-            keyword in listing_description_lower and
-            any(term in listing_title_lower for term in ['nintendo switch', 'oled', 'lite'])
-            for keyword in console_keywords.keys()
-        )
-        
-        detected_console = None
-        if title_contains_console or desc_contains_console:
-            for keyword, console_type in console_keywords.items():
-                if keyword in listing_title_lower or keyword in listing_description_lower:
-                    detected_console = console_type
-                    break
-        
-        return detected_console
-
-    def detect_anonymous_games_vinted(self, listing_title, listing_description):
-        """
-        Detect anonymous games count from title and description (ported from Facebook)
-        """
-        debug_function_call("detect_anonymous_games_vinted")
-        import re  # FIXED: Import re at function level
-
-        def extract_games_number(text):
-            # Prioritize specific game type matches first
-            matches = (
-                re.findall(r'(\d+)\s*(switch|nintendo)\s*games', text.lower()) + # Switch/Nintendo specific
-                re.findall(r'(\d+)\s*games', text.lower()) # Generic games
-            )
-            # Convert matches to integers and find the maximum
-            numeric_matches = [int(match[0]) if isinstance(match, tuple) else int(match) for match in matches]
-            return max(numeric_matches) if numeric_matches else 0
-        
-        title_games = extract_games_number(listing_title)
-        desc_games = extract_games_number(listing_description)
-        return max(title_games, desc_games)
-
-    def detect_sd_card_vinted(self, listing_title, listing_description):
-        """
-        Detect SD card presence in title or description
-        """
-        sd_card_keywords = {'sd card', 'sdcard', 'sd', 'card', 'memory card', 'memorycard', 'micro sd', 'microsd',
-                        'memory card', 'memorycard', 'sandisk', '128gb', '256gb', 'game'}
-        
-        title_lower = listing_title.lower()
-        desc_lower = listing_description.lower()
-        
-        return any(keyword in title_lower or keyword in desc_lower for keyword in sd_card_keywords)
-
-    def handle_mutually_exclusive_items_vinted(self, detected_objects, confidences):
-        """
-        Handle mutually exclusive items for Vinted (ported from Facebook)
-        """
-        mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
-        
-        # Find the item with highest confidence
-        selected_item = max(confidences.items(), key=lambda x: x[1])[0] if any(confidences.values()) else None
-        
-        if selected_item:
-            # Set the selected item to 1 and all others to 0
-            for item in mutually_exclusive_items:
-                detected_objects[item] = 1 if item == selected_item else 0
-                
-            # Handle accessory incompatibilities
-            if selected_item in ['oled', 'oled_in_tv', 'oled_box']:
-                detected_objects['tv_black'] = 0
-            elif selected_item in ['switch', 'switch_in_tv', 'switch_box']:
-                detected_objects['tv_white'] = 0
-                
-            if selected_item in ['lite', 'lite_box', 'switch_box', 'oled_box']:
-                detected_objects['comfort_h'] = 0
-                
-            if selected_item in ['switch_in_tv', 'switch_box']:
-                detected_objects['tv_black'] = 0
-                
-            if selected_item in ['oled_in_tv', 'oled_box']:
-                detected_objects['tv_white'] = 0
-        
-        return detected_objects
-
