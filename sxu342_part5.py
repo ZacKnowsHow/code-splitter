@@ -1,4 +1,263 @@
 # Continuation from line 8801
+                    self._log_step(step_log, f"selector_{selector_set_name}_{i+1}_error", False, str(e))
+                continue
+        
+        if step_log:
+            self._log_step(step_log, f"all_selectors_{selector_set_name}_failed", False, f"All {len(selectors)} selectors failed")
+        return None, None
+
+    def _perform_element_click(self, driver, element, click_method, step_log, selector_set_name):
+        """Perform element click with specified method(s)"""
+        click_success = False
+        click_methods = ['standard', 'javascript', 'actionchains'] if click_method == 'all' else [click_method]
+        
+        for method in click_methods:
+            try:
+                if method == 'standard':
+                    element.click()
+                elif method == 'javascript':
+                    driver.execute_script("arguments[0].click();", element)
+                elif method == 'actionchains':
+                    ActionChains(driver).move_to_element(element).click().perform()
+                
+                click_success = True
+                if step_log:
+                    self._log_step(step_log, f"click_{selector_set_name}_{method}", True)
+                break
+            except Exception as click_error:
+                if step_log:
+                    self._log_step(step_log, f"click_{selector_set_name}_{method}", False, str(click_error))
+                continue
+        
+        return click_success
+
+    def _log_step(self, step_log, step_name, success=True, error_msg=None):
+        """Log each step for debugging and success rate analysis"""
+        if success:
+            step_log['steps_completed'].append(f"{step_name} - {time.time() - step_log['start_time']:.2f}s")
+            print(f"✅ DRIVER {step_log['driver_number']}: {step_name}")
+        else:
+            step_log['failures'].append(f"{step_name}: {error_msg} - {time.time() - step_log['start_time']:.2f}s")
+            print(f"❌ DRIVER {step_log['driver_number']}: {step_name} - {error_msg}")
+
+    def _log_final_bookmark_result(self, step_log):
+        """Log comprehensive results for success rate analysis"""
+        total_time = time.time() - step_log['start_time']
+        print(f"\n📊 BOOKMARK ANALYSIS - Driver {step_log['driver_number']}")
+        print(f"🔗 URL: {step_log.get('actual_url', 'N/A')[:60]}...")
+        print(f"⏱️  Total time: {total_time:.2f}s")
+        print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
+        print(f"❌ Failures: {len(step_log['failures'])}")
+        print(f"🎯 Critical sequence: {'YES' if step_log['critical_sequence_completed'] else 'NO'}")
+        print(f"🏆 Overall success: {'YES' if step_log['success'] else 'NO'}")
+        
+        # Log failures for analysis
+        if step_log['failures']:
+            print("🔍 FAILURE DETAILS:")
+            for failure in step_log['failures'][:3]:  # Show first 3 failures
+                print(f"  • {failure}")
+    def cleanup_all_cycling_bookmark_drivers(self):
+        """
+        Clean up any remaining cycling bookmark driver when program exits
+        """
+        if self.current_bookmark_driver is not None:
+            try:
+                self.current_bookmark_driver.quit()
+                print("🔖 CLEANUP: Cycling bookmark driver closed")
+            except:
+                pass
+            finally:
+                self.current_bookmark_driver = None
+
+    def cleanup_persistent_bookmark_driver(self):
+        """
+        Call this method to clean up the persistent bookmark driver when done
+        """
+        if hasattr(self, 'persistent_bookmark_driver') and self.persistent_bookmark_driver is not None:
+            try:
+                self.persistent_bookmark_driver.quit()
+                print("🔖 CLEANUP: Persistent bookmark driver closed")
+            except:
+                pass
+            finally:
+                self.persistent_bookmark_driver = None
+
+    def check_chrome_processes(self):
+        """
+        Debug function to check for running Chrome processes
+        """
+        import psutil
+        chrome_processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                if 'chrome' in proc.info['name'].lower():
+                    chrome_processes.append({
+                        'pid': proc.info['pid'],
+                        'name': proc.info['name'],
+                        'cmdline': ' '.join(proc.info['cmdline'][:3]) if proc.info['cmdline'] else ''
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        print(f"🔖 CHROME PROCESSES: Found {len(chrome_processes)} running Chrome processes")
+        for proc in chrome_processes[:5]:  # Show first 5
+            print(f"  • PID: {proc['pid']}, Name: {proc['name']}")
+        
+        return len(chrome_processes)
+
+    def setup_driver_enhanced_debug(self):
+        """
+        Enhanced setup_driver with comprehensive debugging
+        """
+        print("🚀 ENHANCED DRIVER SETUP: Starting...")
+        
+        # Check for existing Chrome processes
+        self.check_chrome_processes()
+        
+        chrome_opts = Options()
+        
+        # Basic preferences
+        prefs = {
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.default_content_setting_values.popups": 0,
+            "download.prompt_for_download": False,
+        }
+        chrome_opts.add_experimental_option("prefs", prefs)
+        
+        # User data directory setup
+        print(f"🚀 USER DATA DIR: {PERMANENT_USER_DATA_DIR}")
+        chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+        chrome_opts.add_argument(f"--profile-directory=Default")
+        
+        # Check if user data directory exists and is accessible
+        try:
+            if not os.path.exists(PERMANENT_USER_DATA_DIR):
+                os.makedirs(PERMANENT_USER_DATA_DIR, exist_ok=True)
+                print(f"🚀 CREATED: User data directory")
+            else:
+                print(f"🚀 EXISTS: User data directory found")
+        except Exception as dir_error:
+            print(f"🚀 DIR ERROR: {dir_error}")
+        
+        # Core stability arguments (minimal set)
+        chrome_opts.add_argument("--no-sandbox")
+        chrome_opts.add_argument("--disable-dev-shm-usage")
+        chrome_opts.add_argument("--disable-gpu")
+        chrome_opts.add_argument("--disable-software-rasterizer")
+        
+        # Remove potentially problematic arguments
+        chrome_opts.add_argument("--headless")  # Try without headless first
+        
+        # Keep some logging for debugging
+        chrome_opts.add_argument("--log-level=3")  # More detailed logging
+        chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        
+        try:
+            service = Service(
+                ChromeDriverManager().install()
+            )
+            
+            print("🚀 CREATING: Chrome driver...")
+            driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set timeouts
+            driver.implicitly_wait(10)
+            driver.set_page_load_timeout(30)
+            driver.set_script_timeout(30)
+            
+            print("✅ SUCCESS: Chrome driver initialized successfully")
+            return driver
+            
+        except Exception as e:
+            print(f"❌ CRITICAL ERROR: Chrome driver failed: {e}")
+            print(f"❌ ERROR TYPE: {type(e).__name__}")
+            
+            import traceback
+            print(f"❌ TRACEBACK:\n{traceback.format_exc()}")
+            
+            # Show system info for debugging
+            print("🔧 SYSTEM INFO:")
+            print(f"  • Python: {sys.version}")
+            print(f"  • OS: {os.name}")
+            print(f"  • Chrome processes: {self.check_chrome_processes()}")
+            
+            return None
+
+    def setup_persistent_buying_driver(self):
+        
+        """
+        Set up the persistent buying driver that stays open throughout the program
+        """
+        if self.persistent_buying_driver is not None:
+            return True  # Already set up
+            
+        print("🚀 SETUP: Initializing persistent buying driver...")
+        
+        try:
+            print('USING SETUP_PRSISTENT_BUYING_DRIVER')
+
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path=os.devnull
+            )
+            
+            chrome_opts = Options()
+            #chrome_opts.add_argument("--headless")
+            chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer1")
+            chrome_opts.add_argument("--profile-directory=Default")
+            chrome_opts.add_argument("--no-sandbox")
+            chrome_opts.add_argument("--disable-dev-shm-usage")
+            chrome_opts.add_argument("--disable-gpu")
+            chrome_opts.add_argument("--window-size=800,600")
+            chrome_opts.add_argument("--log-level=3")
+            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+                                
+            self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set fast timeouts for quick processing
+            self.persistent_buying_driver.implicitly_wait(1)
+            self.persistent_buying_driver.set_page_load_timeout(8)
+            self.persistent_buying_driver.set_script_timeout(3)
+            
+            # Navigate main tab to vinted.co.uk and keep it as reference
+            print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
+            self.persistent_buying_driver.get("https://www.vinted.co.uk")
+            self.main_tab_handle = self.persistent_buying_driver.current_window_handle
+            
+            print("✅ SETUP: Persistent buying driver ready!")
+            return True
+            
+        except Exception as e:
+            print(f"❌ SETUP: Failed to create persistent buying driver: {e}")
+            self.persistent_buying_driver = None
+            self.main_tab_handle = None
+            return False
+
+    def test_url_collection_mode(self, driver, search_query):
+        """
+        Simple testing mode that only collects URLs and saves listing IDs
+        No bookmarking, no purchasing, no image downloading - just URL collection
+        """
+        print("🧪 TEST_NUMBER_OF_LISTINGS MODE: Starting URL collection only")
+        
+        # Setup search URL with parameters
+        params = {
+            "search_text": search_query,
+            "price_from": PRICE_FROM,
+            "price_to": PRICE_TO,
+            "currency": CURRENCY,
+            "order": ORDER,
+        }
+        driver.get(f"{BASE_URL}?{urlencode(params)}")
+        
+        refresh_cycle = 1
+        
+        while True:
+            print(end=" ")
+            
+            try:
+                # Wait for page to load
+                WebDriverWait(driver, 20).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                 )
             except TimeoutException:

@@ -1,4 +1,263 @@
 # Continuation from line 6601
+    def handle_oled_title_conversion_vinted(self, detected_objects, listing_title, listing_description):
+        """
+        Handle OLED title conversion logic (ported from Facebook)
+        """
+        listing_title_lower = listing_title.lower()
+        listing_description_lower = listing_description.lower()
+        
+        if (('oled' in listing_title_lower) or ('oled' in listing_description_lower)) and \
+        'not oled' not in listing_title_lower and 'not oled' not in listing_description_lower:
+            
+            for old, new in [('switch', 'oled'), ('switch_in_tv', 'oled_in_tv'), ('switch_box', 'oled_box')]:
+                if detected_objects.get(old, 0) > 0:
+                    detected_objects[old] = 0
+                    detected_objects[new] = 1
+        
+        return detected_objects
+    
+    def check_vinted_listing_suitability(self, listing_info):
+        """
+        Check if a Vinted listing meets all suitability criteria
+        FIXED: Properly extract review count from seller_reviews field
+        """
+        debug_function_call("check_vinted_listing_suitability")
+        import re  # FIXED: Import re at function level
+        
+        title = listing_info.get("title", "").lower()
+        description = listing_info.get("description", "").lower()
+        price = listing_info.get("price", 0)
+        seller_reviews = listing_info.get("seller_reviews", "No reviews yet")
+        
+        try:
+            price_float = float(price)
+        except (ValueError, TypeError):
+            return "Unsuitable: Unable to parse price"
+        
+        # FIXED: Extract number of reviews from seller_reviews - this was the bug!
+        reviews_count = 0
+        if seller_reviews and seller_reviews != "No reviews yet":
+            # Handle multiple formats that might come from scrape_item_details
+            reviews_text = str(seller_reviews).strip()
+            
+            # Debug print to see what we're getting
+            if print_debug:
+                print(f"DEBUG: Raw seller_reviews value: '{reviews_text}'")
+            
+            # Try multiple extraction methods
+            if reviews_text.startswith("Reviews: "):
+                # Format: "Reviews: 123"
+                try:
+                    reviews_count = int(reviews_text.replace("Reviews: ", ""))
+                except ValueError:
+                    reviews_count = 0
+            elif reviews_text.isdigit():
+                # Format: "123" (just the number)
+                reviews_count = int(reviews_text)
+            else:
+                # Try to extract any number from the string
+                match = re.search(r'\d+', reviews_text)
+                if match:
+                    reviews_count = int(match.group())
+                else:
+                    reviews_count = 0
+        
+        if print_debug:# Debug print to see final extracted count
+            print(f"DEBUG: Extracted reviews_count: {reviews_count} (review_min: {review_min})")
+        
+        checks = [
+            (lambda: reviews_count < review_min,
+            f"Lack of reviews (has {reviews_count}, needs {review_min}+)"),
+            (lambda: any(word in title for word in vinted_title_forbidden_words),
+            "Title contains forbidden words"),
+            (lambda: not any(word in title for word in vinted_title_must_contain),
+            "Title does not contain any required words"),
+            (lambda: any(word in description for word in vinted_description_forbidden_words),
+            "Description contains forbidden words"),
+            (lambda: price_float < vinted_min_price or price_float > vinted_max_price,
+            f"Price £{price_float} is outside the range £{vinted_min_price}-£{vinted_max_price}"),
+            (lambda: len(re.findall(r'[£$]\s*\d+|\d+\s*[£$]', description)) >= 3,
+            "Too many $ symbols in description"),
+            (lambda: price_float in vinted_banned_prices,
+            "Price in banned prices list")
+        ]
+        
+        for check, message in checks:
+            try:
+                if check():
+                    return f"Unsuitable: {message}"
+            except (ValueError, IndexError, AttributeError, TypeError):
+                continue
+        
+        return "Listing is suitable"
+
+    def scrape_item_details(self, driver):
+        """
+        Enhanced scraper with better price extraction and seller reviews
+        UPDATED: Now includes username collection AND stores price for threshold filtering
+        """
+        debug_function_call("scrape_item_details")
+        import re  # FIXED: Import re at function level
+        
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
+        )
+
+        fields = {
+            "title": "h1.web_ui__Text__title",
+            "price": "p.web_ui__Text__subtitle",  # Main price field for extraction
+            "second_price": "div.web_ui__Text__title.web_ui__Text__clickable.web_ui__Text__underline-none",
+            "postage": "h3[data-testid='item-shipping-banner-price']",
+            "description": "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span",
+            "uploaded": "span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold",
+            "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Main selector for seller reviews
+            "username": "span[data-testid='profile-username']",  # NEW: Username field
+        }
+
+        data = {}
+        for key, sel in fields.items():
+            try:
+                if key == "seller_reviews":
+                    # FIXED: Better handling for seller reviews with multiple selectors
+                    review_selectors = [
+                        "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Primary selector
+                        "span[class*='caption'][class*='left']",  # Broader selector
+                        "div[class*='reviews'] span",  # Alternative selector
+                        "*[class*='review']",  # Very broad selector as fallback
+                    ]
+                    
+                    reviews_text = None
+                    for review_sel in review_selectors:
+                        try:
+                            elements = driver.find_elements(By.CSS_SELECTOR, review_sel)
+                            for element in elements:
+                                text = element.text.strip()
+                                # Look for text that contains digits (likely review count)
+                                if text and (text.isdigit() or "review" in text.lower() or re.search(r'\d+', text)):
+                                    reviews_text = text
+                                    if print_debug:
+                                        print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
+                                    break
+                            if reviews_text:
+                                break
+                        except Exception as e:
+                            if print_debug:
+                                print(f"DEBUG: Selector '{review_sel}' failed: {e}")
+                            continue
+                    
+                    # Process the found reviews text
+                    if reviews_text:
+                        if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
+                            data[key] = "No reviews yet"
+                        elif reviews_text.isdigit():
+                            # Just a number like "123"
+                            data[key] = reviews_text  # Keep as string for consistency
+                            if print_debug:
+                                print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
+                        else:
+                            # Try to extract number from text like "123 reviews" or "(123)"
+                            match = re.search(r'(\d+)', reviews_text)
+                            if match:
+                                data[key] = match.group(1)  # Just the number as string
+                                if print_debug:
+                                    print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
+                            else:
+                                data[key] = "No reviews yet"
+                    else:
+                        data[key] = "No reviews yet"
+                        if print_debug:
+                            print("DEBUG: No seller reviews found with any selector")
+                        
+                elif key == "username":
+                    # NEW: Handle username extraction with careful error handling
+                    try:
+                        username_element = driver.find_element(By.CSS_SELECTOR, sel)
+                        username_text = username_element.text.strip()
+                        if username_text:
+                            data[key] = username_text
+                            if print_debug:
+                                print(f"DEBUG: Found username: '{username_text}'")
+                        else:
+                            data[key] = "Username not found"
+                            if print_debug:
+                                print("DEBUG: Username element found but no text")
+                    except NoSuchElementException:
+                        # Try alternative selectors for username
+                        alternative_username_selectors = [
+                            "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__amplified.web_ui__Text__bold[data-testid='profile-username']",
+                            "span[data-testid='profile-username']",
+                            "*[data-testid='profile-username']",
+                            "span.web_ui__Text__amplified.web_ui__Text__bold",  # Broader fallback
+                        ]
+                        
+                        username_found = False
+                        for alt_sel in alternative_username_selectors:
+                            try:
+                                alt_username_element = driver.find_element(By.CSS_SELECTOR, alt_sel)
+                                alt_username_text = alt_username_element.text.strip()
+                                if alt_username_text:
+                                    data[key] = alt_username_text
+                                    print(f"DEBUG: Found username with alternative selector '{alt_sel}': '{alt_username_text}'")
+                                    username_found = True
+                                    break
+                            except NoSuchElementException:
+                                continue
+                        
+                        if not username_found:
+                            data[key] = "Username not found"
+                            if print_debug:
+                                print("DEBUG: Username not found with any selector")
+                            
+                else:
+                    # Handle all other fields normally
+                    data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
+                    
+            except NoSuchElementException:
+                if key == "seller_reviews":
+                    data[key] = "No reviews yet"
+                    if print_debug:
+                        print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
+                elif key == "username":
+                    data[key] = "Username not found"
+                    if print_debug:
+                        print("DEBUG: NoSuchElementException - set username to 'Username not found'")
+                else:
+                    data[key] = None
+
+        # Keep title formatting for pygame display
+        if data["title"]:
+            data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
+
+        # NEW: Calculate and store the total price for threshold filtering
+        second_price = self.extract_price(data.get("second_price", "0"))
+        postage = self.extract_price(data.get("postage", "0"))
+        total_price = second_price + postage
+        
+        # Store the calculated price for use in object detection
+        self.current_listing_price_float = total_price
+        
+        # DEBUG: Print final scraped data for seller_reviews and username
+        if print_debug:
+            print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
+            print(f"DEBUG: Final scraped username: '{data.get('username')}'")
+            print(f"DEBUG: Total price calculated: £{total_price:.2f} (stored for threshold filtering)")
+            
+        return data
+
+    def clear_download_folder(self):
+        if os.path.exists(DOWNLOAD_ROOT):
+            shutil.rmtree(DOWNLOAD_ROOT)
+        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
+
+    # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
+
+    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
+        """
+        Enhanced processing with comprehensive filtering and analysis - UPDATED with ULTRA-FAST bookmark functionality
+        FIXED: Now passes username to bookmark_driver
+        MODIFIED: Separate logic for pygame and website display - pygame shows all suitable listings with bookmark failure notices
+        UPDATED: Now includes time tracking when items are added to pygame
+        """
         global suitable_listings, current_listing_index, recent_listings
 
         # Extract username from details
@@ -1940,262 +2199,3 @@
                 continue
             except Exception as e:
                 if step_log:
-                    self._log_step(step_log, f"selector_{selector_set_name}_{i+1}_error", False, str(e))
-                continue
-        
-        if step_log:
-            self._log_step(step_log, f"all_selectors_{selector_set_name}_failed", False, f"All {len(selectors)} selectors failed")
-        return None, None
-
-    def _perform_element_click(self, driver, element, click_method, step_log, selector_set_name):
-        """Perform element click with specified method(s)"""
-        click_success = False
-        click_methods = ['standard', 'javascript', 'actionchains'] if click_method == 'all' else [click_method]
-        
-        for method in click_methods:
-            try:
-                if method == 'standard':
-                    element.click()
-                elif method == 'javascript':
-                    driver.execute_script("arguments[0].click();", element)
-                elif method == 'actionchains':
-                    ActionChains(driver).move_to_element(element).click().perform()
-                
-                click_success = True
-                if step_log:
-                    self._log_step(step_log, f"click_{selector_set_name}_{method}", True)
-                break
-            except Exception as click_error:
-                if step_log:
-                    self._log_step(step_log, f"click_{selector_set_name}_{method}", False, str(click_error))
-                continue
-        
-        return click_success
-
-    def _log_step(self, step_log, step_name, success=True, error_msg=None):
-        """Log each step for debugging and success rate analysis"""
-        if success:
-            step_log['steps_completed'].append(f"{step_name} - {time.time() - step_log['start_time']:.2f}s")
-            print(f"✅ DRIVER {step_log['driver_number']}: {step_name}")
-        else:
-            step_log['failures'].append(f"{step_name}: {error_msg} - {time.time() - step_log['start_time']:.2f}s")
-            print(f"❌ DRIVER {step_log['driver_number']}: {step_name} - {error_msg}")
-
-    def _log_final_bookmark_result(self, step_log):
-        """Log comprehensive results for success rate analysis"""
-        total_time = time.time() - step_log['start_time']
-        print(f"\n📊 BOOKMARK ANALYSIS - Driver {step_log['driver_number']}")
-        print(f"🔗 URL: {step_log.get('actual_url', 'N/A')[:60]}...")
-        print(f"⏱️  Total time: {total_time:.2f}s")
-        print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
-        print(f"❌ Failures: {len(step_log['failures'])}")
-        print(f"🎯 Critical sequence: {'YES' if step_log['critical_sequence_completed'] else 'NO'}")
-        print(f"🏆 Overall success: {'YES' if step_log['success'] else 'NO'}")
-        
-        # Log failures for analysis
-        if step_log['failures']:
-            print("🔍 FAILURE DETAILS:")
-            for failure in step_log['failures'][:3]:  # Show first 3 failures
-                print(f"  • {failure}")
-    def cleanup_all_cycling_bookmark_drivers(self):
-        """
-        Clean up any remaining cycling bookmark driver when program exits
-        """
-        if self.current_bookmark_driver is not None:
-            try:
-                self.current_bookmark_driver.quit()
-                print("🔖 CLEANUP: Cycling bookmark driver closed")
-            except:
-                pass
-            finally:
-                self.current_bookmark_driver = None
-
-    def cleanup_persistent_bookmark_driver(self):
-        """
-        Call this method to clean up the persistent bookmark driver when done
-        """
-        if hasattr(self, 'persistent_bookmark_driver') and self.persistent_bookmark_driver is not None:
-            try:
-                self.persistent_bookmark_driver.quit()
-                print("🔖 CLEANUP: Persistent bookmark driver closed")
-            except:
-                pass
-            finally:
-                self.persistent_bookmark_driver = None
-
-    def check_chrome_processes(self):
-        """
-        Debug function to check for running Chrome processes
-        """
-        import psutil
-        chrome_processes = []
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                if 'chrome' in proc.info['name'].lower():
-                    chrome_processes.append({
-                        'pid': proc.info['pid'],
-                        'name': proc.info['name'],
-                        'cmdline': ' '.join(proc.info['cmdline'][:3]) if proc.info['cmdline'] else ''
-                    })
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        
-        print(f"🔖 CHROME PROCESSES: Found {len(chrome_processes)} running Chrome processes")
-        for proc in chrome_processes[:5]:  # Show first 5
-            print(f"  • PID: {proc['pid']}, Name: {proc['name']}")
-        
-        return len(chrome_processes)
-
-    def setup_driver_enhanced_debug(self):
-        """
-        Enhanced setup_driver with comprehensive debugging
-        """
-        print("🚀 ENHANCED DRIVER SETUP: Starting...")
-        
-        # Check for existing Chrome processes
-        self.check_chrome_processes()
-        
-        chrome_opts = Options()
-        
-        # Basic preferences
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,
-            "profile.default_content_setting_values.popups": 0,
-            "download.prompt_for_download": False,
-        }
-        chrome_opts.add_experimental_option("prefs", prefs)
-        
-        # User data directory setup
-        print(f"🚀 USER DATA DIR: {PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--profile-directory=Default")
-        
-        # Check if user data directory exists and is accessible
-        try:
-            if not os.path.exists(PERMANENT_USER_DATA_DIR):
-                os.makedirs(PERMANENT_USER_DATA_DIR, exist_ok=True)
-                print(f"🚀 CREATED: User data directory")
-            else:
-                print(f"🚀 EXISTS: User data directory found")
-        except Exception as dir_error:
-            print(f"🚀 DIR ERROR: {dir_error}")
-        
-        # Core stability arguments (minimal set)
-        chrome_opts.add_argument("--no-sandbox")
-        chrome_opts.add_argument("--disable-dev-shm-usage")
-        chrome_opts.add_argument("--disable-gpu")
-        chrome_opts.add_argument("--disable-software-rasterizer")
-        
-        # Remove potentially problematic arguments
-        chrome_opts.add_argument("--headless")  # Try without headless first
-        
-        # Keep some logging for debugging
-        chrome_opts.add_argument("--log-level=3")  # More detailed logging
-        chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-        
-        try:
-            service = Service(
-                ChromeDriverManager().install()
-            )
-            
-            print("🚀 CREATING: Chrome driver...")
-            driver = webdriver.Chrome(service=service, options=chrome_opts)
-            
-            # Set timeouts
-            driver.implicitly_wait(10)
-            driver.set_page_load_timeout(30)
-            driver.set_script_timeout(30)
-            
-            print("✅ SUCCESS: Chrome driver initialized successfully")
-            return driver
-            
-        except Exception as e:
-            print(f"❌ CRITICAL ERROR: Chrome driver failed: {e}")
-            print(f"❌ ERROR TYPE: {type(e).__name__}")
-            
-            import traceback
-            print(f"❌ TRACEBACK:\n{traceback.format_exc()}")
-            
-            # Show system info for debugging
-            print("🔧 SYSTEM INFO:")
-            print(f"  • Python: {sys.version}")
-            print(f"  • OS: {os.name}")
-            print(f"  • Chrome processes: {self.check_chrome_processes()}")
-            
-            return None
-
-    def setup_persistent_buying_driver(self):
-        
-        """
-        Set up the persistent buying driver that stays open throughout the program
-        """
-        if self.persistent_buying_driver is not None:
-            return True  # Already set up
-            
-        print("🚀 SETUP: Initializing persistent buying driver...")
-        
-        try:
-            print('USING SETUP_PRSISTENT_BUYING_DRIVER')
-
-            service = Service(
-                ChromeDriverManager().install(),
-                log_path=os.devnull
-            )
-            
-            chrome_opts = Options()
-            #chrome_opts.add_argument("--headless")
-            chrome_opts.add_argument("--user-data-dir=C:\VintedBuyer1")
-            chrome_opts.add_argument("--profile-directory=Default")
-            chrome_opts.add_argument("--no-sandbox")
-            chrome_opts.add_argument("--disable-dev-shm-usage")
-            chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument("--window-size=800,600")
-            chrome_opts.add_argument("--log-level=3")
-            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-                                
-            self.persistent_buying_driver = webdriver.Chrome(service=service, options=chrome_opts)
-            
-            # Set fast timeouts for quick processing
-            self.persistent_buying_driver.implicitly_wait(1)
-            self.persistent_buying_driver.set_page_load_timeout(8)
-            self.persistent_buying_driver.set_script_timeout(3)
-            
-            # Navigate main tab to vinted.co.uk and keep it as reference
-            print("🚀 SETUP: Navigating main tab to vinted.co.uk...")
-            self.persistent_buying_driver.get("https://www.vinted.co.uk")
-            self.main_tab_handle = self.persistent_buying_driver.current_window_handle
-            
-            print("✅ SETUP: Persistent buying driver ready!")
-            return True
-            
-        except Exception as e:
-            print(f"❌ SETUP: Failed to create persistent buying driver: {e}")
-            self.persistent_buying_driver = None
-            self.main_tab_handle = None
-            return False
-
-    def test_url_collection_mode(self, driver, search_query):
-        """
-        Simple testing mode that only collects URLs and saves listing IDs
-        No bookmarking, no purchasing, no image downloading - just URL collection
-        """
-        print("🧪 TEST_NUMBER_OF_LISTINGS MODE: Starting URL collection only")
-        
-        # Setup search URL with parameters
-        params = {
-            "search_text": search_query,
-            "price_from": PRICE_FROM,
-            "price_to": PRICE_TO,
-            "currency": CURRENCY,
-            "order": ORDER,
-        }
-        driver.get(f"{BASE_URL}?{urlencode(params)}")
-        
-        refresh_cycle = 1
-        
-        while True:
-            print(end=" ")
-            
-            try:
-                # Wait for page to load
-                WebDriverWait(driver, 20).until(

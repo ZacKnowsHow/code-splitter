@@ -1,4 +1,262 @@
 # Continuation from line 2201
+        try:
+            if selector.startswith('//'):
+                buy_button = driver.find_element(By.XPATH, selector)
+            else:
+                buy_button = driver.find_element(By.CSS_SELECTOR, selector)
+            
+            print(f"✅ FOUND: Buy button with: {selector}")
+            
+            # IMMEDIATELY click with JavaScript - no other methods tried
+            try:
+                driver.execute_script("arguments[0].click();", buy_button)
+                print(f"✅ JAVASCRIPT-FIRST: Buy button clicked immediately with JavaScript")
+                return buy_button, selector
+            except Exception as js_error:
+                print(f"❌ JAVASCRIPT-FIRST: JavaScript click failed: {js_error}")
+                continue
+                
+        except:
+            continue
+    
+    # Method 2: Shadow DOM traversal using JavaScript
+    print("🌊 SHADOW DOM: Standard selectors failed, trying Shadow DOM traversal...")
+    
+    shadow_dom_script = """
+    function findBuyButtonInShadowDOM() {
+        // Function to recursively search through shadow roots
+        function searchInShadowRoot(element) {
+            if (!element) return null;
+            
+            // Check if this element has a shadow root
+            if (element.shadowRoot) {
+                // Search within the shadow root
+                let shadowButton = element.shadowRoot.querySelector('button[data-testid="item-buy-button"]');
+                if (shadowButton) {
+                    console.log('Found buy button in shadow root of:', element.tagName);
+                    return shadowButton;
+                }
+                
+                // Try other selectors in shadow root
+                let shadowButtonAlt = element.shadowRoot.querySelector('button.web_ui__Button__primary');
+                if (shadowButtonAlt) {
+                    let span = shadowButtonAlt.querySelector('span');
+                    if (span && span.textContent.includes('Buy now')) {
+                        console.log('Found buy button (alternative) in shadow root of:', element.tagName);
+                        return shadowButtonAlt;
+                    }
+                }
+                
+                // Recursively search child elements in shadow root
+                let shadowChildren = element.shadowRoot.querySelectorAll('*');
+                for (let child of shadowChildren) {
+                    let result = searchInShadowRoot(child);
+                    if (result) return result;
+                }
+            }
+            
+            return null;
+        }
+        
+        // Search all elements in the main document
+        let allElements = document.querySelectorAll('*');
+        for (let element of allElements) {
+            let result = searchInShadowRoot(element);
+            if (result) {
+                return result;
+            }
+        }
+        
+        return null;
+    }
+    
+    return findBuyButtonInShadowDOM();
+    """
+    
+    try:
+        shadow_button = driver.execute_script(shadow_dom_script)
+        if shadow_button:
+            print("✅ SHADOW DOM: Found buy button via Shadow DOM traversal!")
+            return shadow_button, "shadow_dom_traversal"
+    except Exception as e:
+        print(f"❌ SHADOW DOM: Shadow DOM search failed: {e}")
+    
+    # Method 3: Alternative Shadow DOM approach - search by text content
+    print("🔍 SHADOW DOM: Trying text-based Shadow DOM search...")
+    
+    text_based_script = """
+    function findBuyButtonByText() {
+        function searchForBuyNowText(element) {
+            if (!element) return null;
+            
+            // Check shadow root
+            if (element.shadowRoot) {
+                // Look for any button with "Buy now" text in shadow root
+                let buttons = element.shadowRoot.querySelectorAll('button');
+                for (let button of buttons) {
+                    if (button.textContent && button.textContent.includes('Buy now')) {
+                        console.log('Found "Buy now" button in shadow root via text search');
+                        return button;
+                    }
+                }
+                
+                // Recursively search in shadow root
+                let shadowChildren = element.shadowRoot.querySelectorAll('*');
+                for (let child of shadowChildren) {
+                    let result = searchForBuyNowText(child);
+                    if (result) return result;
+                }
+            }
+            
+            return null;
+        }
+        
+        let allElements = document.querySelectorAll('*');
+        for (let element of allElements) {
+            let result = searchForBuyNowText(element);
+            if (result) return result;
+        }
+        
+        return null;
+    }
+    
+    return findBuyButtonByText();
+    """
+    
+    try:
+        text_button = driver.execute_script(text_based_script)
+        if text_button:
+            print("✅ SHADOW DOM: Found buy button via text-based Shadow DOM search!")
+            return text_button, "shadow_dom_text_search"
+    except Exception as e:
+        print(f"❌ SHADOW DOM: Text-based Shadow DOM search failed: {e}")
+    
+    # Method 4: Deep Shadow DOM inspection - log what's actually in shadow roots
+    print("🔍 SHADOW DOM: Performing deep inspection to debug...")
+    
+    inspection_script = """
+    function inspectShadowRoots() {
+        let findings = [];
+        
+        function inspectElement(element, path = '') {
+            if (!element) return;
+            
+            if (element.shadowRoot) {
+                let shadowButtons = element.shadowRoot.querySelectorAll('button');
+                if (shadowButtons.length > 0) {
+                    findings.push({
+                        path: path + ' > ' + element.tagName + '[shadow]',
+                        buttonCount: shadowButtons.length,
+                        buttons: Array.from(shadowButtons).map(btn => ({
+                            tagName: btn.tagName,
+                            className: btn.className,
+                            textContent: btn.textContent?.substring(0, 50),
+                            testId: btn.getAttribute('data-testid'),
+                            id: btn.id
+                        }))
+                    });
+                }
+                
+                // Inspect children in shadow root
+                let shadowChildren = element.shadowRoot.querySelectorAll('*');
+                for (let i = 0; i < Math.min(shadowChildren.length, 10); i++) {
+                    inspectElement(shadowChildren[i], path + ' > ' + element.tagName + '[shadow]');
+                }
+            }
+        }
+        
+        let allElements = document.querySelectorAll('*');
+        for (let i = 0; i < Math.min(allElements.length, 20); i++) {
+            inspectElement(allElements[i], 'root');
+        }
+        
+        return findings;
+    }
+    
+    return inspectShadowRoots();
+    """
+    
+    try:
+        inspection_results = driver.execute_script(inspection_script)
+        if inspection_results:
+            print("🔍 SHADOW DOM INSPECTION RESULTS:")
+            for result in inspection_results[:3]:  # Show first 3 results
+                print(f"  📍 Path: {result['path']}")
+                print(f"  🔘 Button count: {result['buttonCount']}")
+                for btn in result['buttons'][:2]:  # Show first 2 buttons
+                    print(f"    - {btn['tagName']}: '{btn['textContent']}' (testId: {btn['testId']})")
+    except Exception as e:
+        print(f"❌ SHADOW DOM: Inspection failed: {e}")
+    
+    print("❌ SHADOW DOM: All Shadow DOM methods failed to find buy button")
+    return None, None
+
+
+
+class HIDKeyboard:
+    """
+    True OS-level keyboard input using Windows SendInput API
+    Generates hardware-level events indistinguishable from real keyboard
+    """
+    
+    # Windows API constants
+    INPUT_KEYBOARD = 1
+    KEYEVENTF_KEYUP = 0x0002
+    KEYEVENTF_UNICODE = 0x0004
+    
+    # Virtual Key Codes for common keys
+    VK_CODES = {
+        '0': 0x30, '1': 0x31, '2': 0x32, '3': 0x33, '4': 0x34,
+        '5': 0x35, '6': 0x36, '7': 0x37, '8': 0x38, '9': 0x39,
+        'right': 0x27,  # Right arrow key
+        'left': 0x25,   # Left arrow key
+        'tab': 0x09,    # Tab key
+        'enter': 0x0D,  # Enter key
+        'space': 0x20,  # Space key
+        'backspace': 0x08  # Backspace key
+    }
+    
+    def __init__(self):
+        """Initialize the HID keyboard with Windows API structures"""
+        self.user32 = ctypes.windll.user32
+        self.kernel32 = ctypes.windll.kernel32
+        
+        # Define Windows structures
+        class KEYBDINPUT(ctypes.Structure):
+            _fields_ = [
+                ("wVk", ctypes.wintypes.WORD),
+                ("wScan", ctypes.wintypes.WORD),
+                ("dwFlags", ctypes.wintypes.DWORD),
+                ("time", ctypes.wintypes.DWORD),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.wintypes.ULONG))
+            ]
+        
+        class HARDWAREINPUT(ctypes.Structure):
+            _fields_ = [
+                ("uMsg", ctypes.wintypes.DWORD),
+                ("wParamL", ctypes.wintypes.WORD),
+                ("wParamH", ctypes.wintypes.WORD)
+            ]
+        
+        class MOUSEINPUT(ctypes.Structure):
+            _fields_ = [
+                ("dx", ctypes.wintypes.LONG),
+                ("dy", ctypes.wintypes.LONG),
+                ("mouseData", ctypes.wintypes.DWORD),
+                ("dwFlags", ctypes.wintypes.DWORD),
+                ("time", ctypes.wintypes.DWORD),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.wintypes.ULONG))
+            ]
+        
+        class INPUT_UNION(ctypes.Union):
+            _fields_ = [
+                ("ki", KEYBDINPUT),
+                ("mi", MOUSEINPUT),
+                ("hi", HARDWAREINPUT)
+            ]
+        
+        class INPUT(ctypes.Structure):
+            _fields_ = [
                 ("type", ctypes.wintypes.DWORD),
                 ("ii", INPUT_UNION)
             ]
@@ -305,6 +563,7 @@ class AudioNumberDetector:
                     return ''.join(sequence)
         
         return None
+
 
     def input_captcha_solution(self, sequence):
         """Input the 6-digit sequence into the captcha form using trusted events"""
@@ -1940,262 +2199,3 @@ class VintedScraper:
                 
                 # Validate inputs
                 if not self._validate_bookmark_inputs(listing_url, username, step_log):
-                    print(f"❌ {thread_name}: Input validation failed")
-                    return
-                
-                # Execute bookmark sequences
-                success = self._execute_bookmark_sequences_with_monitoring(
-                    driver, listing_url, username, step_log
-                )
-                
-                if success:
-                    print(f"✅ {thread_name}: Bookmark process completed successfully")
-                else:
-                    print(f"❌ {thread_name}: Bookmark process failed")
-                    
-            except Exception as e:
-                print(f"❌ {thread_name}: Thread error: {e}")
-                import traceback
-                traceback.print_exc()
-                
-            finally:
-                # Clean up driver
-                try:
-                    if 'driver' in locals() and driver:
-                        driver.quit()
-                        print(f"🗑️ {thread_name}: Driver cleaned up")
-                except Exception as cleanup_error:
-                    print(f"⚠️ {thread_name}: Cleanup error: {cleanup_error}")
-                
-                print(f"🏁 {thread_name}: Thread completed")
-
-    def _create_bookmark_driver(self, config, driver_index):
-        """
-        Create a bookmark driver with the specified configuration
-        """
-        try:
-            # Ensure ChromeDriver is cached
-            if not hasattr(self, '_cached_chromedriver_path'):
-                self._cached_chromedriver_path = ChromeDriverManager().install()
-            
-            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
-            
-            chrome_opts = Options()
-            chrome_opts.add_argument(f"--user-data-dir={config['user_data_dir']}")
-            chrome_opts.add_argument(f"--profile-directory={config['profile_directory']}")
-            chrome_opts.add_argument("--no-sandbox")
-            chrome_opts.add_argument("--headless")
-            chrome_opts.add_argument("--disable-dev-shm-usage")
-            chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument("--window-size=800,600")
-            chrome_opts.add_argument("--log-level=3")
-            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-            chrome_opts.add_experimental_option('useAutomationExtension', False)
-            
-            # Create the driver
-            driver = webdriver.Chrome(service=service, options=chrome_opts)
-            
-            # Set timeouts
-            driver.implicitly_wait(1)
-            driver.set_page_load_timeout(8)
-            driver.set_script_timeout(3)
-            
-            print(f"✅ DRIVER {driver_index + 1}: Created successfully")
-            return driver
-            
-        except Exception as e:
-            print(f"❌ DRIVER {driver_index + 1}: Creation failed: {e}")
-            return None
-                
-    def get_next_bookmark_driver(self):
-        """
-        Get the current ready bookmark driver (already created and waiting)
-        If no driver exists (first call), create the first one
-        """
-        # If no driver exists yet (program startup), create the first one
-        if self.current_bookmark_driver is None:
-            print(f"🚀 CYCLING: Creating FIRST bookmark driver {self.current_bookmark_driver_index + 1}/5")
-            config = self.bookmark_driver_configs[self.current_bookmark_driver_index]
-            
-            try:
-                # Ensure ChromeDriver is cached
-                if not hasattr(self, '_cached_chromedriver_path'):
-                    self._cached_chromedriver_path = ChromeDriverManager().install()
-                
-                service = Service(self._cached_chromedriver_path, log_path=os.devnull)
-                
-                chrome_opts = Options()
-                chrome_opts.add_argument(f"--user-data-dir={config['user_data_dir']}")
-                chrome_opts.add_argument(f"--profile-directory={config['profile_directory']}")
-                chrome_opts.add_argument("--no-sandbox")
-                chrome_opts.add_argument("--disable-dev-shm-usage")
-                chrome_opts.add_argument("--disable-gpu")
-                chrome_opts.add_argument("--window-size=800,600")
-                chrome_opts.add_argument("--log-level=3")
-                chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-                chrome_opts.add_experimental_option('useAutomationExtension', False)
-                
-                # Create the driver
-                self.current_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
-                
-                # Set timeouts
-                self.current_bookmark_driver.implicitly_wait(1)
-                self.current_bookmark_driver.set_page_load_timeout(8)
-                self.current_bookmark_driver.set_script_timeout(3)
-                
-                # DON'T navigate anywhere - leave it blank as requested
-                print(f"✅ CYCLING: First driver {self.current_bookmark_driver_index + 1}/5 created and ready (blank page)")
-                
-            except Exception as e:
-                print(f"❌ CYCLING: Failed to create first bookmark driver: {e}")
-                return None
-        
-        # Return the current ready driver (either just created or already waiting from previous close)
-        print(f"📋 CYCLING: Using ready driver {self.current_bookmark_driver_index + 1}/5")
-        return self.current_bookmark_driver
-
-    def close_current_bookmark_driver(self):
-        """
-        Close the current bookmark driver, advance to next index, and IMMEDIATELY open the next driver
-        """
-        if self.current_bookmark_driver is not None:
-            try:
-                print(f"🗑️ CYCLING: Closing bookmark driver {self.current_bookmark_driver_index + 1}")
-                self.current_bookmark_driver.quit()
-                time.sleep(0.5)  # Brief pause for cleanup
-                print(f"✅ CYCLING: Closed bookmark driver {self.current_bookmark_driver_index + 1}")
-            except Exception as e:
-                print(f"⚠️ CYCLING: Error closing driver {self.current_bookmark_driver_index + 1}: {e}")
-            finally:
-                self.current_bookmark_driver = None
-        
-        # Advance to next driver (cycle back to 0 after 4)
-        self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
-        
-        # IMMEDIATELY open the next driver and keep it ready
-        print(f"🚀 CYCLING: IMMEDIATELY opening next driver {self.current_bookmark_driver_index + 1}/5")
-        next_config = self.bookmark_driver_configs[self.current_bookmark_driver_index]
-        
-        try:
-            # Ensure ChromeDriver is cached
-            if not hasattr(self, '_cached_chromedriver_path'):
-                self._cached_chromedriver_path = ChromeDriverManager().install()
-            
-            service = Service(self._cached_chromedriver_path, log_path=os.devnull)
-            
-            chrome_opts = Options()
-            chrome_opts.add_argument(f"--user-data-dir={next_config['user_data_dir']}")
-            chrome_opts.add_argument(f"--profile-directory={next_config['profile_directory']}")
-            chrome_opts.add_argument("--no-sandbox")
-            chrome_opts.add_argument("--disable-dev-shm-usage")
-            chrome_opts.add_argument("--disable-gpu")
-            chrome_opts.add_argument("--window-size=800,600")
-            chrome_opts.add_argument("--log-level=3")
-            chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-            chrome_opts.add_experimental_option('useAutomationExtension', False)
-            
-            # Create the NEXT driver immediately
-            self.current_bookmark_driver = webdriver.Chrome(service=service, options=chrome_opts)
-            
-            # Set timeouts
-            self.current_bookmark_driver.implicitly_wait(1)
-            self.current_bookmark_driver.set_page_load_timeout(8)
-            self.current_bookmark_driver.set_script_timeout(3)
-            
-            # DON'T navigate anywhere - leave it blank as requested
-            print(f"✅ CYCLING: Driver {self.current_bookmark_driver_index + 1}/5 is now open and ready (blank page)")
-            
-        except Exception as e:
-            print(f"❌ CYCLING: Failed to open next driver {self.current_bookmark_driver_index + 1}: {e}")
-            self.current_bookmark_driver = None
-    def get_available_driver(self):
-        """
-        FIXED: Find and reserve the first available driver with proper initialization
-        Driver 1 uses the persistent_buying_driver, drivers 2-5 are created on demand
-        """
-        with self.driver_lock:
-            for driver_num in range(1, 6):  # Check drivers 1-5
-                # Skip drivers that are currently busy
-                if self.driver_status[driver_num] == 'busy':
-                    continue
-                    
-                # Reserve this driver slot
-                self.driver_status[driver_num] = 'busy'
-                
-                # SPECIAL HANDLING FOR DRIVER 1 - use persistent_buying_driver
-                if driver_num == 1:
-                    print(f"🚗 DRIVER 1: Using persistent buying driver")
-                    
-                    # Check if persistent driver exists and is alive
-                    if self.persistent_buying_driver is None or self.is_persistent_driver_dead():
-                        print(f"🚗 DRIVER 1: Persistent driver is dead, recreating...")
-                        if not self.setup_persistent_buying_driver():
-                            print(f"❌ DRIVER 1: Failed to recreate persistent driver")
-                            self.driver_status[driver_num] = 'not_created'
-                            continue
-                    
-                    print(f"✅ RESERVED: Persistent buying driver (driver 1)")
-                    return driver_num, self.persistent_buying_driver
-                    
-                # For drivers 2-5, create on demand as before
-                else:
-                    if self.buying_drivers[driver_num] is None or self.is_driver_dead(driver_num):
-                        print(f"🚗 CREATING: Buying driver {driver_num}")
-                        new_driver = self.setup_buying_driver(driver_num)
-                        
-                        if new_driver is None:
-                            print(f"❌ FAILED: Could not create buying driver {driver_num}")
-                            self.driver_status[driver_num] = 'not_created'
-                            continue
-                            
-                        self.buying_drivers[driver_num] = new_driver
-                        print(f"✅ CREATED: Buying driver {driver_num} successfully")
-                    
-                    print(f"✅ RESERVED: Buying driver {driver_num}")
-                    return driver_num, self.buying_drivers[driver_num]
-            
-            print("❌ ERROR: All 5 buying drivers are currently busy")
-            return None, None
-    
-    def is_persistent_driver_dead(self):
-        """
-        Check if the persistent buying driver is dead/unresponsive
-        """
-        if self.persistent_buying_driver is None:
-            return True
-            
-        try:
-            # Try to access current_url to test if driver is alive
-            _ = self.persistent_buying_driver.current_url
-            return False
-        except:
-            print(f"💀 DEAD: Persistent buying driver is unresponsive")
-            return True
-
-    def is_driver_dead(self, driver_num):
-        """
-        Check if a driver is dead/unresponsive
-        """
-        if self.buying_drivers[driver_num] is None:
-            return True
-            
-        try:
-            # Try to access current_url to test if driver is alive
-            _ = self.buying_drivers[driver_num].current_url
-            return False
-        except:
-            print(f"💀 DEAD: Driver {driver_num} is unresponsive")
-            return True
-
-    def release_driver(self, driver_num):
-        """
-        FIXED: Release a driver back to the free pool with special handling for driver 1
-        """
-        with self.driver_lock:
-            print(f"🔓 RELEASING: Buying driver {driver_num}")
-            
-            if driver_num == 1:
-                # Driver 1 is the persistent driver - keep it alive, just mark as free
-                self.driver_status[driver_num] = 'not_created'  # Allow it to be reused
-                print(f"🔄 KEPT ALIVE: Persistent buying driver (driver 1) marked as available")
-            else:
