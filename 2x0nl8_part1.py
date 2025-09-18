@@ -70,8 +70,8 @@ VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7111523772-mario-strikers-switch?homepage_session_id=8b1fd43a-ecff-4f30-8c66-9445047e5673", 
-    "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
+    "https://www.vinted.co.uk/items/7113701017-fc24-fc-24-nintendo-switch-game-cart-only?homepage_session_id=49a67370-630c-4c7a-9a4c-06bdfc6a7f5c", 
+    "https://www.vinted.co.uk/items/7113347362-super-mario-odyssey?homepage_session_id=2642b495-9821-4077-b0b5-f862bf24c61d",
     "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
     "https://www.vinted.co.uk/items/7097706534-just-dance-2022-nintendo-switch-game-cartridge?homepage_session_id=6c527539-91d8-4297-8e48-f96581b761d3"
 ]
@@ -1614,7 +1614,7 @@ background_monitors = {}
 
 # ADD THIS HELPER FUNCTION ANYWHERE IN YOUR FILE:
 def monitor_purchase_unsuccessful_background(driver, driver_id, step_log):
-    """Background monitoring thread function"""
+    """Background monitoring thread function - Enhanced with periodic status updates"""
     try:
         purchase_unsuccessful_selectors = [
             "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
@@ -1626,14 +1626,23 @@ def monitor_purchase_unsuccessful_background(driver, driver_id, step_log):
         
         max_wait_time = 25 * 60  # 25 minutes
         check_interval = 0.1  # 100ms
+        status_report_interval = 10  # Report status every 10 seconds
         start_monitor_time = time.time()
         purchase_unsuccessful_found = False
         driver_session_ended = False
         
+        # Status tracking variables
+        last_status_report = start_monitor_time
+        check_count = 0
+        
         print(f"🔍 BACKGROUND-{driver_id}: Starting 25-minute background monitoring...")
+        print(f"🔍 BACKGROUND-{driver_id}: Will report status every {status_report_interval} seconds")
         
         while time.time() - start_monitor_time < max_wait_time:
             try:
+                current_time = time.time()
+                check_count += 1
+                
                 # Check if driver is still valid
                 try:
                     driver.current_url
@@ -1642,12 +1651,13 @@ def monitor_purchase_unsuccessful_background(driver, driver_id, step_log):
                     driver_session_ended = True
                     break
                 
+                # Check for purchase unsuccessful elements
                 for selector in purchase_unsuccessful_selectors:
                     try:
                         unsuccessful_element = driver.find_element(By.XPATH, selector)
                         if unsuccessful_element and unsuccessful_element.is_displayed():
                             purchase_unsuccessful_found = True
-                            elapsed_time = time.time() - start_monitor_time
+                            elapsed_time = current_time - start_monitor_time
                             print(f"❌ BACKGROUND-{driver_id}: 'Purchase unsuccessful' found after {elapsed_time:.2f} seconds!")
                             step_log['steps_completed'].append(f"purchase_unsuccessful_found - {time.time() - step_log['start_time']:.2f}s")
                             break
@@ -1656,47 +1666,80 @@ def monitor_purchase_unsuccessful_background(driver, driver_id, step_log):
                 
                 if purchase_unsuccessful_found:
                     break
+                
+                # Periodic status reporting
+                if current_time - last_status_report >= status_report_interval:
+                    elapsed_time = current_time - start_monitor_time
+                    remaining_time = max_wait_time - elapsed_time
+                    checks_per_second = check_count / elapsed_time if elapsed_time > 0 else 0
+                    
+                    print(f"🔍 BACKGROUND-{driver_id}: MONITORING ACTIVE - "
+                          f"Elapsed: {elapsed_time:.1f}s, "
+                          f"Remaining: {remaining_time:.1f}s, "
+                          f"Checks: {check_count} ({checks_per_second:.1f}/sec), "
+                          f"Status: Still searching for 'Purchase unsuccessful'")
+                    
+                    last_status_report = current_time
                     
                 time.sleep(check_interval)
                 
             except Exception as e:
-                print(f"⚠️ BACKGROUND-{driver_id}: Error during monitoring: {e}")
+                current_time = time.time()
+                # Still report periodic status even during errors
+                if current_time - last_status_report >= status_report_interval:
+                    elapsed_time = current_time - start_monitor_time
+                    remaining_time = max_wait_time - elapsed_time
+                    print(f"⚠️ BACKGROUND-{driver_id}: MONITORING ACTIVE (with errors) - "
+                          f"Elapsed: {elapsed_time:.1f}s, "
+                          f"Remaining: {remaining_time:.1f}s, "
+                          f"Last error: {str(e)[:50]}...")
+                    last_status_report = current_time
+                
                 time.sleep(check_interval)
         
-        # Close driver appropriately
+        # Final status and cleanup
         elapsed_time = time.time() - start_monitor_time
         
         if driver_session_ended:
-            print(f"🚪 BACKGROUND-{driver_id}: Driver was closed externally after {elapsed_time:.2f}s - no action needed")
+            print(f"🚪 BACKGROUND-{driver_id}: MONITORING ENDED - Driver was closed externally after {elapsed_time:.2f}s")
+            print(f"🚪 BACKGROUND-{driver_id}: Total checks performed: {check_count}")
         elif purchase_unsuccessful_found:
-            print(f"🚪 BACKGROUND-{driver_id}: Closing driver - 'Purchase unsuccessful' detected after {elapsed_time:.2f}s")
+            print(f"🚪 BACKGROUND-{driver_id}: MONITORING ENDED - 'Purchase unsuccessful' detected after {elapsed_time:.2f}s")
+            print(f"🚪 BACKGROUND-{driver_id}: Total checks performed: {check_count}")
+            print(f"🚪 BACKGROUND-{driver_id}: Closing driver due to unsuccessful purchase...")
             try:
                 driver.quit()
                 print(f"✅ BACKGROUND-{driver_id}: Driver closed successfully")
             except Exception as close_error:
                 print(f"⚠️ BACKGROUND-{driver_id}: Error closing driver (may already be closed): {close_error}")
         else:
-            print(f"🚪 BACKGROUND-{driver_id}: Closing driver - 25 minute timeout reached ({elapsed_time:.2f}s)")
+            print(f"🚪 BACKGROUND-{driver_id}: MONITORING ENDED - 25 minute timeout reached ({elapsed_time:.2f}s)")
+            print(f"🚪 BACKGROUND-{driver_id}: Total checks performed: {check_count}")
+            print(f"🚪 BACKGROUND-{driver_id}: No 'Purchase unsuccessful' message found during entire monitoring period")
+            print(f"🚪 BACKGROUND-{driver_id}: Closing driver due to timeout...")
             try:
                 driver.quit()
                 print(f"✅ BACKGROUND-{driver_id}: Driver closed successfully")
             except Exception as close_error:
                 print(f"⚠️ BACKGROUND-{driver_id}: Error closing driver (may already be closed): {close_error}")
             
-        # Clean up
+        # Clean up from background monitors tracking
         if driver_id in background_monitors:
             del background_monitors[driver_id]
-            print(f"📊 BACKGROUND-{driver_id}: Removed from active monitors. Remaining: {len(background_monitors)}")
+            print(f"📊 BACKGROUND-{driver_id}: Removed from active monitors. Remaining active monitors: {len(background_monitors)}")
             
     except Exception as e:
-        print(f"❌ BACKGROUND-{driver_id}: Critical error: {e}")
+        elapsed_time = time.time() - start_monitor_time if 'start_monitor_time' in locals() else 0
+        print(f"❌ BACKGROUND-{driver_id}: MONITORING CRASHED after {elapsed_time:.2f}s - Critical error: {e}")
         try:
             if not driver_session_ended:
                 driver.quit()
+                print(f"🚪 BACKGROUND-{driver_id}: Driver closed due to monitoring crash")
         except:
             pass
         if driver_id in background_monitors:
             del background_monitors[driver_id]
+            print(f"📊 BACKGROUND-{driver_id}: Removed from active monitors due to crash")
 
 # REPLACE YOUR ENTIRE execute_vm_second_sequence_with_javascript_first FUNCTION WITH THIS:
 def execute_vm_second_sequence_with_javascript_first(driver, actual_url, step_log):
@@ -2050,7 +2093,11 @@ def clear_browser_data_universal(vm_ip_address, config):
         chrome_options.add_experimental_option('useAutomationExtension', False)
         chrome_options.add_argument('--force-device-scale-factor=1')
         chrome_options.add_argument('--high-dpi-support=1')
-        chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
+        
+        clearing_port = config['port'] + 1000  # e.g., 9226 -> 10226
+        
+        chrome_options.add_argument(f"--remote-debugging-port={clearing_port}")
+        
         chrome_options.add_argument('--remote-allow-origins=*')
         chrome_options.add_argument('--disable-features=VizDisplayCompositor')
         chrome_options.add_argument('--disable-dev-shm-usage')
@@ -2151,50 +2198,3 @@ def clear_browser_data_universal(vm_ip_address, config):
             console.log('Clear button not found in any shadow root');
             return false;
         }
-        
-        return findAndClickClearButton();
-        """
-        
-        # Execute the Shadow DOM navigation script
-        result = clear_driver.execute_script(shadow_dom_script)
-        
-        if result:
-            print("✓ Successfully clicked clear data button via Shadow DOM!")
-            print("Step 5: Waiting for data clearing to complete...")
-            time.sleep(2)  # Wait for clearing process
-            print("✓ Browser data clearing completed successfully!")
-        else:
-            print("✗ Failed to find clear button in Shadow DOM")
-            
-            # Fallback: Try to trigger clear via keyboard shortcut
-            print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
-            try:
-                from selenium.webdriver.common.keys import Keys
-                body = clear_driver.find_element(By.TAG_NAME, "body")
-                body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
-                time.sleep(1)
-                # Try to press Enter to confirm
-                body.send_keys(Keys.ENTER)
-                time.sleep(1)
-                print("✓ Fallback keyboard shortcut attempted")
-            except Exception as fallback_error:
-                print(f"✗ Fallback also failed: {fallback_error}")
-        
-    except Exception as e:
-        print(f"✗ Browser data clearing failed: {str(e)}")
-        print("Continuing with main execution anyway...")
-        import traceback
-        traceback.print_exc()
-    
-    finally:
-        if clear_driver:
-            try:
-                print("Step 6: Closing temporary driver...")
-                clear_driver.quit()
-                print("✓ Temporary driver closed successfully")
-            except Exception as e:
-                print(f"Warning: Failed to close temporary driver: {e}")
-        
-        print("=" * 50)
-        print("BROWSER DATA CLEAR COMPLETE")
-        print("=" * 50)

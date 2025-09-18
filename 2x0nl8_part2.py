@@ -1,4 +1,51 @@
 # Continuation from line 2201
+        
+        return findAndClickClearButton();
+        """
+        
+        # Execute the Shadow DOM navigation script
+        result = clear_driver.execute_script(shadow_dom_script)
+        
+        if result:
+            print("✓ Successfully clicked clear data button via Shadow DOM!")
+            print("Step 5: Waiting for data clearing to complete...")
+            time.sleep(2)  # Wait for clearing process
+            print("✓ Browser data clearing completed successfully!")
+        else:
+            print("✗ Failed to find clear button in Shadow DOM")
+            
+            # Fallback: Try to trigger clear via keyboard shortcut
+            print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
+            try:
+                from selenium.webdriver.common.keys import Keys
+                body = clear_driver.find_element(By.TAG_NAME, "body")
+                body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
+                time.sleep(1)
+                # Try to press Enter to confirm
+                body.send_keys(Keys.ENTER)
+                time.sleep(1)
+                print("✓ Fallback keyboard shortcut attempted")
+            except Exception as fallback_error:
+                print(f"✗ Fallback also failed: {fallback_error}")
+        
+    except Exception as e:
+        print(f"✗ Browser data clearing failed: {str(e)}")
+        print("Continuing with main execution anyway...")
+        import traceback
+        traceback.print_exc()
+    
+    finally:
+        if clear_driver:
+            try:
+                print("Step 6: Closing temporary driver...")
+                clear_driver.quit()
+                print("✓ Temporary driver closed successfully")
+            except Exception as e:
+                print(f"Warning: Failed to close temporary driver: {e}")
+        
+        print("=" * 50)
+        print("BROWSER DATA CLEAR COMPLETE")
+        print("=" * 50)
         time.sleep(0.5)  # Brief pause before continuing
 
 def setup_driver_universal(vm_ip_address, config):
