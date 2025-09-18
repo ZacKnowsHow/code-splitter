@@ -70,7 +70,7 @@ VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7102546985-fc24-nintendo-switch?homepage_session_id=6e3fa7fa-65d1-4aef-a0da-dda652e1c311", 
+    "https://www.vinted.co.uk/items/7111523772-mario-strikers-switch?homepage_session_id=8b1fd43a-ecff-4f30-8c66-9445047e5673", 
     "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
     "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
     "https://www.vinted.co.uk/items/7097706534-just-dance-2022-nintendo-switch-game-cartridge?homepage_session_id=6c527539-91d8-4297-8e48-f96581b761d3"
@@ -124,6 +124,7 @@ test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1
 should_send_fail_bookmark_notification = True
 
 
+background_monitors = {}
 purchase_unsuccessful_detected_urls = {}  # Track URLs waiting for "Purchase unsuccessful" detection
 # Config
 PROFILE_DIR = "Default"
@@ -1450,8 +1451,9 @@ def main_vm_driver():
                     pass
             # Close current driver
             try:
-                driver.quit()
-                print(f"Driver {i} closed successfully")
+                print(f"Driver {i} will be closed by background monitoring")
+                #driver.quit()
+                #print(f"Driver {i} closed successfully")
             except:
                 print(f"Error closing driver {i}")
     
@@ -1461,6 +1463,7 @@ def main_vm_driver():
     print("="*60)
 
 # 3. New function to execute bookmark process for VM drivers
+# REPLACE YOUR ENTIRE execute_vm_bookmark_process FUNCTION WITH THIS:
 def execute_vm_bookmark_process(driver, url, driver_number):
     """
     Execute the bookmark process for a VM driver using existing bookmark logic
@@ -1507,6 +1510,7 @@ def execute_vm_bookmark_process(driver, url, driver_number):
         print(f"❌ DRIVER {driver_number}: Bookmark execution error: {e}")
         return False
 
+
 # 4. VM-specific bookmark sequences (adapted from existing VintedScraper methods)
 def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
     """
@@ -1530,25 +1534,26 @@ def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
         if success:
             print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence completed")
             
-            # Execute second sequence with monitoring (if needed)
+            # Execute second sequence with monitoring (if needed) - DON'T CLOSE DRIVER HERE
             execute_vm_second_sequence(driver, listing_url, step_log)
             
+            # DON'T CLOSE DRIVER HERE - LET THE BACKGROUND MONITORING HANDLE IT
+            print(f"🔖 DRIVER {step_log['driver_number']}: Background monitoring will handle driver cleanup")
             return True
         else:
             print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence failed")
+            # Only close if first sequence failed
+            try:
+                if len(driver.window_handles) > 1:
+                    driver.close()  # Close bookmark tab
+                    driver.switch_to.window(driver.window_handles[0])  # Return to main tab
+            except:
+                pass
             return False
             
     except Exception as e:
         print(f"❌ DRIVER {step_log['driver_number']}: Sequence execution error: {e}")
         return False
-    finally:
-        # Always switch back to main tab
-        try:
-            if len(driver.window_handles) > 1:
-                driver.close()  # Close bookmark tab
-                driver.switch_to.window(driver.window_handles[0])  # Return to main tab
-        except:
-            pass
 
 def execute_vm_first_buy_sequence(driver, step_log):
     """
@@ -1604,9 +1609,100 @@ def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log):
         print(f"❌ JAVASCRIPT-FIRST: First buy sequence error: {e}")
         return False
 
+# ADD THIS GLOBAL VARIABLE AT THE TOP OF YOUR FILE (around line 100):
+background_monitors = {}
+
+# ADD THIS HELPER FUNCTION ANYWHERE IN YOUR FILE:
+def monitor_purchase_unsuccessful_background(driver, driver_id, step_log):
+    """Background monitoring thread function"""
+    try:
+        purchase_unsuccessful_selectors = [
+            "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+            "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+            "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+            "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+            "//*[text()='Purchase unsuccessful']"
+        ]
+        
+        max_wait_time = 25 * 60  # 25 minutes
+        check_interval = 0.1  # 100ms
+        start_monitor_time = time.time()
+        purchase_unsuccessful_found = False
+        driver_session_ended = False
+        
+        print(f"🔍 BACKGROUND-{driver_id}: Starting 25-minute background monitoring...")
+        
+        while time.time() - start_monitor_time < max_wait_time:
+            try:
+                # Check if driver is still valid
+                try:
+                    driver.current_url
+                except:
+                    print(f"⚠️ BACKGROUND-{driver_id}: Driver session ended externally, stopping monitoring")
+                    driver_session_ended = True
+                    break
+                
+                for selector in purchase_unsuccessful_selectors:
+                    try:
+                        unsuccessful_element = driver.find_element(By.XPATH, selector)
+                        if unsuccessful_element and unsuccessful_element.is_displayed():
+                            purchase_unsuccessful_found = True
+                            elapsed_time = time.time() - start_monitor_time
+                            print(f"❌ BACKGROUND-{driver_id}: 'Purchase unsuccessful' found after {elapsed_time:.2f} seconds!")
+                            step_log['steps_completed'].append(f"purchase_unsuccessful_found - {time.time() - step_log['start_time']:.2f}s")
+                            break
+                    except:
+                        continue
+                
+                if purchase_unsuccessful_found:
+                    break
+                    
+                time.sleep(check_interval)
+                
+            except Exception as e:
+                print(f"⚠️ BACKGROUND-{driver_id}: Error during monitoring: {e}")
+                time.sleep(check_interval)
+        
+        # Close driver appropriately
+        elapsed_time = time.time() - start_monitor_time
+        
+        if driver_session_ended:
+            print(f"🚪 BACKGROUND-{driver_id}: Driver was closed externally after {elapsed_time:.2f}s - no action needed")
+        elif purchase_unsuccessful_found:
+            print(f"🚪 BACKGROUND-{driver_id}: Closing driver - 'Purchase unsuccessful' detected after {elapsed_time:.2f}s")
+            try:
+                driver.quit()
+                print(f"✅ BACKGROUND-{driver_id}: Driver closed successfully")
+            except Exception as close_error:
+                print(f"⚠️ BACKGROUND-{driver_id}: Error closing driver (may already be closed): {close_error}")
+        else:
+            print(f"🚪 BACKGROUND-{driver_id}: Closing driver - 25 minute timeout reached ({elapsed_time:.2f}s)")
+            try:
+                driver.quit()
+                print(f"✅ BACKGROUND-{driver_id}: Driver closed successfully")
+            except Exception as close_error:
+                print(f"⚠️ BACKGROUND-{driver_id}: Error closing driver (may already be closed): {close_error}")
+            
+        # Clean up
+        if driver_id in background_monitors:
+            del background_monitors[driver_id]
+            print(f"📊 BACKGROUND-{driver_id}: Removed from active monitors. Remaining: {len(background_monitors)}")
+            
+    except Exception as e:
+        print(f"❌ BACKGROUND-{driver_id}: Critical error: {e}")
+        try:
+            if not driver_session_ended:
+                driver.quit()
+        except:
+            pass
+        if driver_id in background_monitors:
+            del background_monitors[driver_id]
+
+# REPLACE YOUR ENTIRE execute_vm_second_sequence_with_javascript_first FUNCTION WITH THIS:
 def execute_vm_second_sequence_with_javascript_first(driver, actual_url, step_log):
     """
     Execute second sequence using the same JavaScript-first approach for buy button
+    NOW WITH BACKGROUND MONITORING - NON-BLOCKING
     """
     print(f"🔍 JAVASCRIPT-FIRST: Executing second sequence...")
     
@@ -1644,64 +1740,35 @@ def execute_vm_second_sequence_with_javascript_first(driver, actual_url, step_lo
                 step_log['steps_completed'].append(f"processing_payment_found - {time.time() - step_log['start_time']:.2f}s")
                 print('✅ JAVASCRIPT-FIRST: SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
                 
-                # Define purchase unsuccessful selectors
-                purchase_unsuccessful_selectors = [
-                    "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                    "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                    "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                    "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
-                    "//*[text()='Purchase unsuccessful']"
-                ]
+                # START BACKGROUND MONITORING INSTEAD OF BLOCKING
+                driver_id = step_log.get('driver_number', 'unknown')
+                print(f"🚀 Starting background monitoring for driver {driver_id}...")
                 
-                print("🔍 JAVASCRIPT-FIRST: Monitoring for 'Purchase unsuccessful' message for up to 25 minutes...")
-                print("⏰ JAVASCRIPT-FIRST: Checking every 100ms for purchase status...")
+                # Create and start background thread
+                monitor_thread = threading.Thread(
+                    target=monitor_purchase_unsuccessful_background,
+                    args=(driver, driver_id, step_log),
+                    daemon=True
+                )
+                monitor_thread.start()
                 
-                # Monitor for purchase unsuccessful for up to 25 minutes (1500 seconds)
-                max_wait_time = 25 * 60  # 25 minutes in seconds
-                check_interval = 0.1  # 100ms
-                start_monitor_time = time.time()
-                purchase_unsuccessful_found = False
+                # Store thread reference
+                background_monitors[driver_id] = {
+                    'thread': monitor_thread,
+                    'start_time': time.time(),
+                    'driver_session': driver.session_id,  # ADD THIS LINE
+                    'url': actual_url
+                }
                 
-                while time.time() - start_monitor_time < max_wait_time:
-                    try:
-                        # Check each selector for purchase unsuccessful
-                        for selector in purchase_unsuccessful_selectors:
-                            try:
-                                unsuccessful_element = driver.find_element(By.XPATH, selector)
-                                if unsuccessful_element and unsuccessful_element.is_displayed():
-                                    purchase_unsuccessful_found = True
-                                    elapsed_time = time.time() - start_monitor_time
-                                    print(f"❌ JAVASCRIPT-FIRST: 'Purchase unsuccessful' found after {elapsed_time:.2f} seconds!")
-                                    step_log['steps_completed'].append(f"purchase_unsuccessful_found - {time.time() - step_log['start_time']:.2f}s")
-                                    break
-                            except:
-                                continue  # Selector not found, continue checking
-                        
-                        if purchase_unsuccessful_found:
-                            break
-                            
-                        time.sleep(check_interval)  # Wait 100ms before next check
-                        
-                    except Exception as e:
-                        print(f"⚠️ JAVASCRIPT-FIRST: Error during purchase status monitoring: {e}")
-                        time.sleep(check_interval)
+                print(f"✅ Driver {driver_id} monitoring started in background. Active monitors: {len(background_monitors)}")
                 
-                # Determine why we're closing the tab
-                if purchase_unsuccessful_found:
-                    print("🚪 JAVASCRIPT-FIRST: Closing tab due to 'Purchase unsuccessful' message detected")
-                else:
-                    elapsed_time = time.time() - start_monitor_time
-                    print(f"🚪 JAVASCRIPT-FIRST: Closing tab after {elapsed_time:.2f} seconds (25 minute timeout reached)")
-                    step_log['steps_completed'].append(f"purchase_monitoring_timeout - {time.time() - step_log['start_time']:.2f}s")
+                # IMMEDIATELY return - don't wait for monitoring to complete
+                return True
                 
-                # Close second tab
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
         else:
             print(f"❌ JAVASCRIPT-FIRST: Second buy button not found")
             
-        # Close second tab
+        # Close second tab if no monitoring was started
         driver.close()
         if len(driver.window_handles) > 0:
             driver.switch_to.window(driver.window_handles[0])
@@ -2134,9 +2201,9 @@ def clear_browser_data_universal(vm_ip_address, config):
         time.sleep(0.5)  # Brief pause before continuing
 
 def setup_driver_universal(vm_ip_address, config):
-    """Universal setup function for any driver configuration"""
+    """Universal setup function for any driver configuration - DON'T KILL ACTIVE MONITORING SESSIONS"""
     
-    # Session cleanup (existing code)
+    # Session cleanup - ONLY clean up sessions that aren't being monitored
     try:
         import requests
         status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
@@ -2148,12 +2215,24 @@ def setup_driver_universal(vm_ip_address, config):
                     for slot in node['slots']:
                         if slot.get('session'):
                             session_id = slot['session']['sessionId']
-                            print(f"Found existing session: {session_id}")
-                            delete_response = requests.delete(
-                                f"http://{vm_ip_address}:4444/session/{session_id}",
-                                timeout=10
-                            )
-                            print(f"Cleaned up session: {session_id}")
+                            
+                            # CHECK IF THIS SESSION IS BEING MONITORED - DON'T KILL IT
+                            session_is_monitored = False
+                            for driver_id, monitor_info in background_monitors.items():
+                                if monitor_info.get('driver_session') == session_id:
+                                    session_is_monitored = True
+                                    print(f"Keeping active monitoring session: {session_id} (Driver {driver_id})")
+                                    break
+                            
+                            if not session_is_monitored:
+                                print(f"Cleaning up inactive session: {session_id}")
+                                delete_response = requests.delete(
+                                    f"http://{vm_ip_address}:4444/session/{session_id}",
+                                    timeout=10
+                                )
+                                print(f"Cleaned up session: {session_id}")
+                            else:
+                                print(f"Skipping active monitoring session: {session_id}")
     
     except Exception as e:
         print(f"Session cleanup failed: {e}")
