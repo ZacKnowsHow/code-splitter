@@ -70,7 +70,7 @@ VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7102594041-minecraft-switch-game?homepage_session_id=1dd1106e-5c8b-46c0-b8be-c27742ca7391", 
+    "https://www.vinted.co.uk/items/7102546985-fc24-nintendo-switch?homepage_session_id=6e3fa7fa-65d1-4aef-a0da-dda652e1c311", 
     "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
     "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
     "https://www.vinted.co.uk/items/7097706534-just-dance-2022-nintendo-switch-game-cartridge?homepage_session_id=6c527539-91d8-4297-8e48-f96581b761d3"
@@ -1508,291 +1508,47 @@ def execute_vm_bookmark_process(driver, url, driver_number):
         return False
 
 # 4. VM-specific bookmark sequences (adapted from existing VintedScraper methods)
-def monitor_purchase_unsuccessful_vm(driver, step_log, current_url, monitoring_tab_handle):
-    """
-    VM VERSION of the Purchase Unsuccessful monitoring
-    EXACT SAME LOGIC as VintedScraper._monitor_purchase_unsuccessful but for VM drivers
-    """
-    print(f"⏱️ VM MONITORING: Started monitoring at {time.strftime('%H:%M:%S')}")
-    
-    # Maximum wait time: 25 minutes (1500 seconds) - SAME as main scraper
-    max_wait_time = 25 * 60  
-    monitoring_start_time = time.time()
-    
-    # SAME selectors as main VintedScraper
-    unsuccessful_selectors = [
-        "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-        "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-        "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
-        "//*[text()='Purchase unsuccessful']"
-    ]
-    
-    print(f"🔍 VM MONITORING: Watching for 'Purchase unsuccessful' for up to {max_wait_time/60:.0f} minutes...")
-    
-    try:
-        # CRITICAL FIX: Switch to the correct tab for monitoring
-        driver.switch_to.window(monitoring_tab_handle)
-        print(f"🔍 VM MONITORING: Switched to monitoring tab")
-        
-        while True:
-            elapsed_time = time.time() - monitoring_start_time
-            
-            # Check if we've exceeded the maximum wait time (SAME as main scraper)
-            if elapsed_time >= max_wait_time:
-                print(f"⏰ VM MONITORING: Maximum wait time of {max_wait_time/60:.0f} minutes reached")
-                print(f"⏱️ VM MONITORING: Monitoring ended after {elapsed_time/60:.2f} minutes (TIMEOUT)")
-                break
-            
-            # Check if driver is still alive and tab still exists
-            try:
-                # Verify we're still on the right tab
-                if driver.current_window_handle != monitoring_tab_handle:
-                    driver.switch_to.window(monitoring_tab_handle)
-                
-                # Test that the tab is still alive by getting the URL
-                current_page_url = driver.current_url
-                
-            except Exception as driver_dead:
-                print(f"💀 VM MONITORING: Driver/tab died during monitoring: {driver_dead}")
-                print(f"⏱️ VM MONITORING: Monitoring ended after {elapsed_time/60:.2f} minutes (DRIVER/TAB DIED)")
-                break
-            
-            # Try each selector to find "Purchase unsuccessful" (SAME logic as main scraper)
-            found_unsuccessful = False
-            for selector in unsuccessful_selectors:
-                try:
-                    element = WebDriverWait(driver, 1).until(
-                        EC.presence_of_element_located((By.XPATH, selector))
-                    )
-                    
-                    # Found it!
-                    end_time = time.time()
-                    total_elapsed = end_time - monitoring_start_time
-                    
-                    print(f"🎯 VM MONITORING: FOUND! 'Purchase unsuccessful' detected!")
-                    print(f"📍 VM MONITORING: Found using selector: {selector}")
-                    print(f"⏱️ VM MONITORING: Monitoring completed in {total_elapsed/60:.2f} minutes ({total_elapsed:.2f} seconds)")
-                    print(f"🕒 VM MONITORING: Found at {time.strftime('%H:%M:%S')}")
-                    
-                    # TRIGGER THE BUYING LOGIC HERE
-                    # You can integrate with your existing buying driver logic
-                    trigger_vm_buying_drivers(current_url)
-                    
-                    found_unsuccessful = True
-                    break
-                    
-                except TimeoutException:
-                    continue
-                except Exception as selector_error:
-                    print(f"⚠️ VM MONITORING: Error with selector {selector}: {selector_error}")
-                    continue
-            
-            if found_unsuccessful:
-                break
-                
-            # Wait a bit before checking again (SAME as main scraper)
-            time.sleep(0.5)  # Check every 500ms for faster response
-    
-    except Exception as monitoring_error:
-        end_time = time.time()
-        total_elapsed = end_time - monitoring_start_time
-        print(f"❌ VM MONITORING ERROR: {monitoring_error}")
-        print(f"⏱️ VM MONITORING: Monitoring ended after {total_elapsed/60:.2f} minutes (ERROR)")
-    
-    finally:
-        # Clean up monitoring (SAME cleanup as main scraper)
-        print(f"🗑️ VM MONITORING: Cleanup - closing monitoring tab...")
-        try:
-            # Close the monitoring tab
-            driver.switch_to.window(monitoring_tab_handle)
-            driver.close()
-            print(f"✅ VM MONITORING: Closed monitoring tab")
-            
-            # Switch back to main tab (driver.window_handles[0])
-            if len(driver.window_handles) > 0:
-                driver.switch_to.window(driver.window_handles[0])
-                print(f"🔄 VM MONITORING: Switched back to main tab")
-            
-        except Exception as tab_close_error:
-            print(f"⚠️ VM MONITORING: Error during cleanup: {tab_close_error}")
-        
-        # Mark monitoring as complete
-        step_log['monitoring_active'] = False
-        print(f"🔄 VM MONITORING: Monitoring complete, marked inactive")
-
-
-def trigger_vm_buying_drivers(current_url):
-    """
-    Trigger buying drivers when "Purchase unsuccessful" is detected
-    You can integrate this with your existing buying driver logic
-    """
-    print(f"🚀 VM TRIGGER: Purchase unsuccessful detected for {current_url[:50]}...")
-    print(f"🚀 VM TRIGGER: This is where you would trigger buying drivers to click pay immediately!")
-    
-    # Add your buying driver logic here
-    # For example, if you have a global dictionary tracking waiting drivers:
-    global purchase_unsuccessful_detected_urls
-    if current_url in purchase_unsuccessful_detected_urls:
-        entry = purchase_unsuccessful_detected_urls[current_url]
-        entry['waiting'] = False  # Signal the buying driver to click pay NOW
-        print(f"🎯 VM TRIGGER: Signaled buying driver for {current_url}")
-
-# Replace your execute_vm_bookmark_sequences function with this version:
 def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
     """
-    UPDATED: Execute bookmark sequences with Purchase Unsuccessful monitoring
-    """
-    return execute_vm_bookmark_sequences_with_monitoring(driver, listing_url, username, step_log)
-
-def execute_vm_second_sequence_with_purchase_monitoring(driver, actual_url, step_log):
-    """
-    Execute second sequence with Purchase Unsuccessful monitoring
-    SAME MONITORING LOGIC as main VintedScraper._monitor_purchase_unsuccessful
-    """
-    print(f"🔍 VM DRIVER {step_log['driver_number']}: Executing second sequence WITH monitoring...")
-    
-    try:
-        # Open new tab for second sequence
-        driver.execute_script("window.open('');")
-        second_tab = driver.window_handles[-1]
-        driver.switch_to.window(second_tab)
-        step_log['steps_completed'].append(f"second_tab_created - {time.time() - step_log['start_time']:.2f}s")
-        
-        # Navigate again
-        driver.get(actual_url)
-        step_log['steps_completed'].append(f"second_navigation - {time.time() - step_log['start_time']:.2f}s")
-        
-        # Look for buy button again using SAME JavaScript-first approach
-        print(f"🔍 VM DRIVER {step_log['driver_number']}: Looking for second buy button...")
-        second_buy_button, second_buy_selector = find_buy_button_with_shadow_dom(driver)
-        
-        if second_buy_button:
-            print(f"✅ VM DRIVER {step_log['driver_number']}: Second buy button found and clicked using: {second_buy_selector}")
-            step_log['steps_completed'].append(f"second_buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
-            
-            # CHECK FOR PROCESSING PAYMENT SUCCESS
-            print(f"🔍 VM DRIVER {step_log['driver_number']}: Waiting for processing payment message...")
-            processing_element, _ = vm_try_selectors(
-                driver,
-                'processing_payment',
-                operation='find',
-                timeout=15,
-                step_log=step_log
-            )
-            
-            if processing_element:
-                element_text = processing_element.text.strip()
-                step_log['steps_completed'].append(f"processing_payment_found - {time.time() - step_log['start_time']:.2f}s")
-                print('✅ VM DRIVER: SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
-                
-                # KEY ADDITION: START MONITORING FOR "Purchase unsuccessful"
-                print('🔍 VM MONITORING: Starting "Purchase unsuccessful" detection for 25 minutes...')
-                
-                # CRITICAL FIX: Mark that monitoring is active so main function doesn't close tabs
-                step_log['monitoring_active'] = True
-                
-                # Start monitoring in separate thread (SAME as main VintedScraper)
-                monitoring_thread = threading.Thread(
-                    target=monitor_purchase_unsuccessful_vm,
-                    args=(driver, step_log, actual_url, second_tab)  # Pass the tab handle
-                )
-                monitoring_thread.daemon = True
-                monitoring_thread.start()
-                
-                # DON'T close second tab - monitoring thread will handle it
-                print(f"🔍 VM MONITORING: Thread started, keeping tab open for monitoring...")
-                
-                # IMPORTANT: Don't switch back to main tab yet - let monitoring thread handle cleanup
-                return True
-            else:
-                print('⚠️ VM DRIVER: Processing payment message not found')
-                # Close second tab
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-                
-        else:
-            print(f"❌ VM DRIVER {step_log['driver_number']}: Second buy button not found")
-            # Close second tab
-            driver.close()
-            if len(driver.window_handles) > 0:
-                driver.switch_to.window(driver.window_handles[0])
-            
-        return True  # Return true as this isn't a critical failure
-            
-    except Exception as second_sequence_error:
-        print(f"❌ VM DRIVER {step_log['driver_number']}: Second sequence error: {second_sequence_error}")
-        # Clean up second tab only if monitoring isn't active
-        if not step_log.get('monitoring_active', False):
-            try:
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        return True
-    
-def execute_vm_bookmark_sequences_with_monitoring(driver, listing_url, username, step_log):
-    """
-    Execute bookmark sequences for VM drivers with Purchase Unsuccessful monitoring
-    SAME LOGIC as main VintedScraper but adapted for VM drivers
+    Execute bookmark sequences for VM drivers using existing bookmark logic
     """
     try:
-        # Create new tab and navigate
-        print(f"🔖 VM DRIVER {step_log['driver_number']}: Creating new tab...")
+        # Create new tab and navigate (using existing logic)
+        print(f"🔖 DRIVER {step_log['driver_number']}: Creating new tab...")
         stopwatch_start = time.time()
         driver.execute_script("window.open('');")
         new_tab = driver.window_handles[-1]
         driver.switch_to.window(new_tab)
         
         # Navigate to listing
-        print(f"🔖 VM DRIVER {step_log['driver_number']}: Navigating to listing...")
+        print(f"🔖 DRIVER {step_log['driver_number']}: Navigating to listing...")
         driver.get(listing_url)
         
         # Execute first buy sequence (critical for bookmarking)
         success = execute_vm_first_buy_sequence(driver, step_log)
         
         if success:
-            print(f"🔖 VM DRIVER {step_log['driver_number']}: First buy sequence completed")
+            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence completed")
             
-            # Execute second sequence WITH MONITORING (KEY CHANGE)
-            execute_vm_second_sequence_with_purchase_monitoring(driver, listing_url, step_log)
-            
-            # CRITICAL FIX: Check if monitoring is active before closing tabs
-            if not step_log.get('monitoring_active', False):
-                # Only close tab if monitoring is NOT active
-                try:
-                    if len(driver.window_handles) > 1:
-                        driver.close()  # Close bookmark tab
-                        driver.switch_to.window(driver.window_handles[0])  # Return to main tab
-                except:
-                    pass
-            else:
-                print(f"🔍 VM MONITORING: Tab cleanup will be handled by monitoring thread")
+            # Execute second sequence with monitoring (if needed)
+            execute_vm_second_sequence(driver, listing_url, step_log)
             
             return True
         else:
-            print(f"🔖 VM DRIVER {step_log['driver_number']}: First buy sequence failed")
-            # Close tab on failure
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
+            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence failed")
             return False
             
     except Exception as e:
-        print(f"❌ VM DRIVER {step_log['driver_number']}: Sequence execution error: {e}")
-        # Cleanup on error (only if monitoring not active)
-        if not step_log.get('monitoring_active', False):
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
+        print(f"❌ DRIVER {step_log['driver_number']}: Sequence execution error: {e}")
         return False
+    finally:
+        # Always switch back to main tab
+        try:
+            if len(driver.window_handles) > 1:
+                driver.close()  # Close bookmark tab
+                driver.switch_to.window(driver.window_handles[0])  # Return to main tab
+        except:
+            pass
 
 def execute_vm_first_buy_sequence(driver, step_log):
     """
@@ -1888,15 +1644,60 @@ def execute_vm_second_sequence_with_javascript_first(driver, actual_url, step_lo
                 step_log['steps_completed'].append(f"processing_payment_found - {time.time() - step_log['start_time']:.2f}s")
                 print('✅ JAVASCRIPT-FIRST: SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
                 
+                # Define purchase unsuccessful selectors
+                purchase_unsuccessful_selectors = [
+                    "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                    "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                    "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
+                    "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
+                    "//*[text()='Purchase unsuccessful']"
+                ]
+                
+                print("🔍 JAVASCRIPT-FIRST: Monitoring for 'Purchase unsuccessful' message for up to 25 minutes...")
+                print("⏰ JAVASCRIPT-FIRST: Checking every 100ms for purchase status...")
+                
+                # Monitor for purchase unsuccessful for up to 25 minutes (1500 seconds)
+                max_wait_time = 25 * 60  # 25 minutes in seconds
+                check_interval = 0.1  # 100ms
+                start_monitor_time = time.time()
+                purchase_unsuccessful_found = False
+                
+                while time.time() - start_monitor_time < max_wait_time:
+                    try:
+                        # Check each selector for purchase unsuccessful
+                        for selector in purchase_unsuccessful_selectors:
+                            try:
+                                unsuccessful_element = driver.find_element(By.XPATH, selector)
+                                if unsuccessful_element and unsuccessful_element.is_displayed():
+                                    purchase_unsuccessful_found = True
+                                    elapsed_time = time.time() - start_monitor_time
+                                    print(f"❌ JAVASCRIPT-FIRST: 'Purchase unsuccessful' found after {elapsed_time:.2f} seconds!")
+                                    step_log['steps_completed'].append(f"purchase_unsuccessful_found - {time.time() - step_log['start_time']:.2f}s")
+                                    break
+                            except:
+                                continue  # Selector not found, continue checking
+                        
+                        if purchase_unsuccessful_found:
+                            break
+                            
+                        time.sleep(check_interval)  # Wait 100ms before next check
+                        
+                    except Exception as e:
+                        print(f"⚠️ JAVASCRIPT-FIRST: Error during purchase status monitoring: {e}")
+                        time.sleep(check_interval)
+                
+                # Determine why we're closing the tab
+                if purchase_unsuccessful_found:
+                    print("🚪 JAVASCRIPT-FIRST: Closing tab due to 'Purchase unsuccessful' message detected")
+                else:
+                    elapsed_time = time.time() - start_monitor_time
+                    print(f"🚪 JAVASCRIPT-FIRST: Closing tab after {elapsed_time:.2f} seconds (25 minute timeout reached)")
+                    step_log['steps_completed'].append(f"purchase_monitoring_timeout - {time.time() - step_log['start_time']:.2f}s")
+                
                 # Close second tab
                 driver.close()
                 if len(driver.window_handles) > 0:
                     driver.switch_to.window(driver.window_handles[0])
-                
-                return True
-            else:
-                print('⚠️ JAVASCRIPT-FIRST: Processing payment message not found')
-                
         else:
             print(f"❌ JAVASCRIPT-FIRST: Second buy button not found")
             
@@ -2198,3 +1999,202 @@ def clear_browser_data_universal(vm_ip_address, config):
             options=chrome_options
         )
         
+        print(f"✓ Temporary driver created successfully (Session: {clear_driver.session_id})")
+        
+        print("Step 2: Navigating to Chrome settings...")
+        clear_driver.get("chrome://settings/clearBrowserData")
+        print("✓ Navigated to clear browser data page")
+        
+        print("Step 3: Waiting for page to load...")
+        time.sleep(2)  # Wait for Shadow DOM to initialize
+        
+        print("Step 4: Accessing Shadow DOM to find clear button...")
+        
+        # JavaScript to navigate Shadow DOM and click the clear button
+        shadow_dom_script = """
+        function findAndClickClearButton() {
+            // Multiple strategies to find the clear button in Shadow DOM
+            
+            // Strategy 1: Direct access via settings-ui
+            let settingsUi = document.querySelector('settings-ui');
+            if (settingsUi && settingsUi.shadowRoot) {
+                let clearBrowserData = settingsUi.shadowRoot.querySelector('settings-main')?.shadowRoot
+                    ?.querySelector('settings-basic-page')?.shadowRoot
+                    ?.querySelector('settings-section[section="privacy"]')?.shadowRoot
+                    ?.querySelector('settings-clear-browsing-data-dialog');
+                
+                if (clearBrowserData && clearBrowserData.shadowRoot) {
+                    let clearButton = clearBrowserData.shadowRoot.querySelector('#clearButton');
+                    if (clearButton) {
+                        console.log('Found clear button via strategy 1');
+                        clearButton.click();
+                        return true;
+                    }
+                }
+            }
+            
+            // Strategy 2: Search all shadow roots recursively
+            function searchShadowRoots(element) {
+                if (element.shadowRoot) {
+                    let clearButton = element.shadowRoot.querySelector('#clearButton');
+                    if (clearButton) {
+                        console.log('Found clear button via recursive search');
+                        clearButton.click();
+                        return true;
+                    }
+                    
+                    // Search nested shadow roots
+                    let shadowElements = element.shadowRoot.querySelectorAll('*');
+                    for (let el of shadowElements) {
+                        if (searchShadowRoots(el)) return true;
+                    }
+                }
+                return false;
+            }
+            
+            let allElements = document.querySelectorAll('*');
+            for (let el of allElements) {
+                if (searchShadowRoots(el)) return true;
+            }
+            
+            // Strategy 3: Look for cr-button elements in shadow roots
+            function findCrButton(element) {
+                if (element.shadowRoot) {
+                    let crButtons = element.shadowRoot.querySelectorAll('cr-button');
+                    for (let btn of crButtons) {
+                        if (btn.id === 'clearButton' || btn.textContent.includes('Delete data')) {
+                            console.log('Found cr-button via strategy 3');
+                            btn.click();
+                            return true;
+                        }
+                    }
+                    
+                    let shadowElements = element.shadowRoot.querySelectorAll('*');
+                    for (let el of shadowElements) {
+                        if (findCrButton(el)) return true;
+                    }
+                }
+                return false;
+            }
+            
+            for (let el of allElements) {
+                if (findCrButton(el)) return true;
+            }
+            
+            console.log('Clear button not found in any shadow root');
+            return false;
+        }
+        
+        return findAndClickClearButton();
+        """
+        
+        # Execute the Shadow DOM navigation script
+        result = clear_driver.execute_script(shadow_dom_script)
+        
+        if result:
+            print("✓ Successfully clicked clear data button via Shadow DOM!")
+            print("Step 5: Waiting for data clearing to complete...")
+            time.sleep(2)  # Wait for clearing process
+            print("✓ Browser data clearing completed successfully!")
+        else:
+            print("✗ Failed to find clear button in Shadow DOM")
+            
+            # Fallback: Try to trigger clear via keyboard shortcut
+            print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
+            try:
+                from selenium.webdriver.common.keys import Keys
+                body = clear_driver.find_element(By.TAG_NAME, "body")
+                body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
+                time.sleep(1)
+                # Try to press Enter to confirm
+                body.send_keys(Keys.ENTER)
+                time.sleep(1)
+                print("✓ Fallback keyboard shortcut attempted")
+            except Exception as fallback_error:
+                print(f"✗ Fallback also failed: {fallback_error}")
+        
+    except Exception as e:
+        print(f"✗ Browser data clearing failed: {str(e)}")
+        print("Continuing with main execution anyway...")
+        import traceback
+        traceback.print_exc()
+    
+    finally:
+        if clear_driver:
+            try:
+                print("Step 6: Closing temporary driver...")
+                clear_driver.quit()
+                print("✓ Temporary driver closed successfully")
+            except Exception as e:
+                print(f"Warning: Failed to close temporary driver: {e}")
+        
+        print("=" * 50)
+        print("BROWSER DATA CLEAR COMPLETE")
+        print("=" * 50)
+        time.sleep(0.5)  # Brief pause before continuing
+
+def setup_driver_universal(vm_ip_address, config):
+    """Universal setup function for any driver configuration"""
+    
+    # Session cleanup (existing code)
+    try:
+        import requests
+        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+        status_data = status_response.json()
+        
+        if 'value' in status_data and 'nodes' in status_data['value']:
+            for node in status_data['value']['nodes']:
+                if 'slots' in node:
+                    for slot in node['slots']:
+                        if slot.get('session'):
+                            session_id = slot['session']['sessionId']
+                            print(f"Found existing session: {session_id}")
+                            delete_response = requests.delete(
+                                f"http://{vm_ip_address}:4444/session/{session_id}",
+                                timeout=10
+                            )
+                            print(f"Cleaned up session: {session_id}")
+    
+    except Exception as e:
+        print(f"Session cleanup failed: {e}")
+    
+    # Chrome options for the VM instance
+    chrome_options = ChromeOptions()
+    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
+    chrome_options.add_argument(f"--profile-directory={config['profile']}")
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    
+    # VM-specific optimizations
+    chrome_options.add_argument('--force-device-scale-factor=1')
+    chrome_options.add_argument('--high-dpi-support=1')
+    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
+    chrome_options.add_argument('--remote-allow-origins=*')
+    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--disable-web-security')
+    chrome_options.add_argument('--allow-running-insecure-content')
+
+    
+    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
+    
+    driver = None
+    
+    try:
+        print("Attempting to connect to remote WebDriver...")
+        
+        driver = webdriver.Remote(
+            command_executor=f'http://{vm_ip_address}:4444',
+            options=chrome_options
+        )
+        
+        print(f"✓ Successfully created remote WebDriver connection")
+        print(f"Session ID: {driver.session_id}")
+        
+        print("Applying stealth modifications...")
+        stealth_script = """
+        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
