@@ -1,4 +1,83 @@
 # Continuation from line 2201
+        time.sleep(0.5)  # Brief pause before continuing
+
+def setup_driver_universal(vm_ip_address, config):
+    """Universal setup function for any driver configuration - DON'T KILL ACTIVE MONITORING SESSIONS"""
+    
+    # Session cleanup - ONLY clean up sessions that aren't being monitored
+    try:
+        import requests
+        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+        status_data = status_response.json()
+        
+        if 'value' in status_data and 'nodes' in status_data['value']:
+            for node in status_data['value']['nodes']:
+                if 'slots' in node:
+                    for slot in node['slots']:
+                        if slot.get('session'):
+                            session_id = slot['session']['sessionId']
+                            
+                            # CHECK IF THIS SESSION IS BEING MONITORED - DON'T KILL IT
+                            session_is_monitored = False
+                            for driver_id, monitor_info in background_monitors.items():
+                                if monitor_info.get('driver_session') == session_id:
+                                    session_is_monitored = True
+                                    print(f"Keeping active monitoring session: {session_id} (Driver {driver_id})")
+                                    break
+                            
+                            if not session_is_monitored:
+                                print(f"Cleaning up inactive session: {session_id}")
+                                delete_response = requests.delete(
+                                    f"http://{vm_ip_address}:4444/session/{session_id}",
+                                    timeout=10
+                                )
+                                print(f"Cleaned up session: {session_id}")
+                            else:
+                                print(f"Skipping active monitoring session: {session_id}")
+    
+    except Exception as e:
+        print(f"Session cleanup failed: {e}")
+    
+    # Chrome options for the VM instance
+    chrome_options = ChromeOptions()
+    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
+    chrome_options.add_argument(f"--profile-directory={config['profile']}")
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    
+    # VM-specific optimizations
+    chrome_options.add_argument('--force-device-scale-factor=1')
+    chrome_options.add_argument('--high-dpi-support=1')
+    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
+    chrome_options.add_argument('--remote-allow-origins=*')
+    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--disable-web-security')
+    chrome_options.add_argument('--allow-running-insecure-content')
+
+    
+    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
+    
+    driver = None
+    
+    try:
+        print("Attempting to connect to remote WebDriver...")
+        
+        driver = webdriver.Remote(
+            command_executor=f'http://{vm_ip_address}:4444',
+            options=chrome_options
+        )
+        
+        print(f"✓ Successfully created remote WebDriver connection")
+        print(f"Session ID: {driver.session_id}")
+        
+        print("Applying stealth modifications...")
+        stealth_script = """
+        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
         Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
         Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
         window.chrome = {runtime: {}};
