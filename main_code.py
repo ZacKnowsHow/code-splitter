@@ -70,12 +70,12 @@ VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7113701017-fc24-fc-24-nintendo-switch-game-cart-only?homepage_session_id=49a67370-630c-4c7a-9a4c-06bdfc6a7f5c", 
-    "https://www.vinted.co.uk/items/7113347362-super-mario-odyssey?homepage_session_id=2642b495-9821-4077-b0b5-f862bf24c61d",
-    "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
-    "https://www.vinted.co.uk/items/7097706534-just-dance-2022-nintendo-switch-game-cartridge?homepage_session_id=6c527539-91d8-4297-8e48-f96581b761d3"
+    "https://www.vinted.co.uk/items/7115249261-garfield-gets-real-for-nintendo-ds-checked-working?homepage_session_id=322b81cf-1a31-4fb0-bcb3-860aba3cde91", 
+    "https://www.vinted.co.uk/items/7113366944-mario-3d-all-stars?homepage_session_id=618a9efa-4aea-4daf-8e51-2f6d4836bbd7",
+    "https://www.vinted.co.uk/items/7118058630-r36s-retro-game?homepage_session_id=618a9efa-4aea-4daf-8e51-2f6d4836bbd7",
+    "https://www.vinted.co.uk/items/7116747338-nintendogs-nintendo-ds-game?homepage_session_id=618a9efa-4aea-4daf-8e51-2f6d4836bbd7",
+    "https://www.vinted.co.uk/items/7117123795-captain-toad-treasure-tracker?homepage_session_id=618a9efa-4aea-4daf-8e51-2f6d4836bbd7"
 ]
-
 # tests whether the listing is suitable for buying based on URL rather than scanning
 TEST_WHETHER_SUITABLE = False
 TEST_SUITABLE_URLS = [
@@ -1601,7 +1601,7 @@ def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log):
         
         # Handle shipping options (same as main scraper)
         handle_vm_shipping_options(driver, step_log)
-        
+
         # Execute critical pay sequence (same timing as main scraper)
         return execute_vm_critical_pay_sequence(driver, pay_button, step_log)
         
