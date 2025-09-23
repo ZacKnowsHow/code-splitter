@@ -1,5 +1,53 @@
 # Continuation from line 2201
-        
+                if (element.shadowRoot) {
+                    let clearButton = element.shadowRoot.querySelector('#clearButton');
+                    if (clearButton) {
+                        console.log('Found clear button via recursive search');
+                        clearButton.click();
+                        return true;
+                    }
+                    
+                    // Search nested shadow roots
+                    let shadowElements = element.shadowRoot.querySelectorAll('*');
+                    for (let el of shadowElements) {
+                        if (searchShadowRoots(el)) return true;
+                    }
+                }
+                return false;
+            }
+            
+            let allElements = document.querySelectorAll('*');
+            for (let el of allElements) {
+                if (searchShadowRoots(el)) return true;
+            }
+            
+            // Strategy 3: Look for cr-button elements in shadow roots
+            function findCrButton(element) {
+                if (element.shadowRoot) {
+                    let crButtons = element.shadowRoot.querySelectorAll('cr-button');
+                    for (let btn of crButtons) {
+                        if (btn.id === 'clearButton' || btn.textContent.includes('Delete data')) {
+                            console.log('Found cr-button via strategy 3');
+                            btn.click();
+                            return true;
+                        }
+                    }
+                    
+                    let shadowElements = element.shadowRoot.querySelectorAll('*');
+                    for (let el of shadowElements) {
+                        if (findCrButton(el)) return true;
+                    }
+                }
+                return false;
+            }
+            
+            for (let el of allElements) {
+                if (findCrButton(el)) return true;
+            }
+            
+            console.log('Clear button not found in any shadow root');
+            return false;
+        }
         return findAndClickClearButton();
         """
         
@@ -1273,3 +1321,4 @@ if __name__ == "__main__":
             print("WARNING: pyaudiowpatch not available - audio features may not work")
             print("Install with: pip install PyAudioWPatch")
         main_vm_driver()
+        
