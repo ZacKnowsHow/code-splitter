@@ -1,4 +1,40 @@
 # Continuation from line 2201
+                        console.log('Found buy button (alternative) in shadow root of:', element.tagName);
+                        return shadowButtonAlt;
+                    }
+                }
+                
+                // Recursively search child elements in shadow root
+                let shadowChildren = element.shadowRoot.querySelectorAll('*');
+                for (let child of shadowChildren) {
+                    let result = searchInShadowRoot(child);
+                    if (result) return result;
+                }
+            }
+            
+            return null;
+        }
+        
+        // Search all elements in the main document
+        let allElements = document.querySelectorAll('*');
+        for (let element of allElements) {
+            let result = searchInShadowRoot(element);
+            if (result) {
+                return result;
+            }
+        }
+        
+        return null;
+    }
+    
+    return findBuyButtonInShadowDOM();
+    """
+    
+    try:
+        shadow_button = driver.execute_script(shadow_dom_script)
+        if shadow_button:
+            print("✅ SHADOW DOM: Found buy button via Shadow DOM traversal!")
+            return shadow_button, "shadow_dom_traversal"
     except Exception as e:
         print(f"❌ SHADOW DOM: Shadow DOM search failed: {e}")
     
