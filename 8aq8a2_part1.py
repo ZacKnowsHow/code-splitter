@@ -1528,11 +1528,7 @@ def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
         success = execute_vm_first_buy_sequence(driver, step_log)
         
         if success:
-            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence completed")
-            
-            # Execute second sequence with monitoring (if needed)
-            execute_vm_second_sequence(driver, listing_url, step_log)
-            
+            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence completed - moving to next driver")
             return True
         else:
             print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence failed")
@@ -1604,120 +1600,7 @@ def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log):
         print(f"❌ JAVASCRIPT-FIRST: First buy sequence error: {e}")
         return False
 
-def execute_vm_second_sequence_with_javascript_first(driver, actual_url, step_log):
-    """
-    Execute second sequence using the same JavaScript-first approach for buy button
-    """
-    print(f"🔍 JAVASCRIPT-FIRST: Executing second sequence...")
-    
-    try:
-        # Open new tab for second sequence
-        driver.execute_script("window.open('');")
-        second_tab = driver.window_handles[-1]
-        driver.switch_to.window(second_tab)
-        step_log['steps_completed'].append(f"second_tab_created - {time.time() - step_log['start_time']:.2f}s")
-        
-        # Navigate again
-        driver.get(actual_url)
-        step_log['steps_completed'].append(f"second_navigation - {time.time() - step_log['start_time']:.2f}s")
-        
-        # Look for buy button again using SAME JavaScript-first approach
-        print(f"🔍 JAVASCRIPT-FIRST: Looking for second buy button...")
-        second_buy_button, second_buy_selector = find_buy_button_with_shadow_dom(driver)
-        
-        if second_buy_button:
-            print(f"✅ JAVASCRIPT-FIRST: Second buy button found and clicked using: {second_buy_selector}")
-            step_log['steps_completed'].append(f"second_buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
-            
-            # Check for processing payment success with extended timeout
-            print(f"🔍 JAVASCRIPT-FIRST: Waiting up to 15 seconds for processing payment message...")
-            processing_element, VM_SELECTOR_SETS = vm_try_selectors(
-                driver,
-                'processing_payment',
-                operation='find',
-                timeout=15,  # Extended timeout to 15 seconds
-                step_log=step_log
-            )
-            
-            if processing_element:
-                element_text = processing_element.text.strip()
-                step_log['steps_completed'].append(f"processing_payment_found - {time.time() - step_log['start_time']:.2f}s")
-                print('✅ JAVASCRIPT-FIRST: SUCCESSFUL BOOKMARK! CONFIRMED VIA PROCESSING PAYMENT!')
-                
-                # Define purchase unsuccessful selectors
-                purchase_unsuccessful_selectors = [
-                    "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                    "//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                    "//div[@class='web_uiCellheading']//div[@class='web_uiCelltitle'][@data-testid='conversation-message--status-message--title']//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
-                    "//*[contains(@class, 'web_uiTextwarning') and text()='Purchase unsuccessful']",
-                    "//*[text()='Purchase unsuccessful']"
-                ]
-                
-                print("🔍 JAVASCRIPT-FIRST: Monitoring for 'Purchase unsuccessful' message for up to 25 minutes...")
-                print("⏰ JAVASCRIPT-FIRST: Checking every 100ms for purchase status...")
-                
-                # Monitor for purchase unsuccessful for up to 25 minutes (1500 seconds)
-                max_wait_time = 5  # 25 minutes in seconds
-                check_interval = 0.1  # 100ms
-                start_monitor_time = time.time()
-                purchase_unsuccessful_found = False
-                
-                while time.time() - start_monitor_time < max_wait_time:
-                    try:
-                        # Check each selector for purchase unsuccessful
-                        for selector in purchase_unsuccessful_selectors:
-                            try:
-                                unsuccessful_element = driver.find_element(By.XPATH, selector)
-                                if unsuccessful_element and unsuccessful_element.is_displayed():
-                                    purchase_unsuccessful_found = True
-                                    elapsed_time = time.time() - start_monitor_time
-                                    print(f"❌ JAVASCRIPT-FIRST: 'Purchase unsuccessful' found after {elapsed_time:.2f} seconds!")
-                                    step_log['steps_completed'].append(f"purchase_unsuccessful_found - {time.time() - step_log['start_time']:.2f}s")
-                                    break
-                            except:
-                                continue  # Selector not found, continue checking
-                        
-                        if purchase_unsuccessful_found:
-                            break
-                            
-                        time.sleep(check_interval)  # Wait 100ms before next check
-                        
-                    except Exception as e:
-                        print(f"⚠️ JAVASCRIPT-FIRST: Error during purchase status monitoring: {e}")
-                        time.sleep(check_interval)
-                
-                # Determine why we're closing the tab
-                if purchase_unsuccessful_found:
-                    print("🚪 JAVASCRIPT-FIRST: Closing tab due to 'Purchase unsuccessful' message detected")
-                else:
-                    elapsed_time = time.time() - start_monitor_time
-                    print(f"🚪 JAVASCRIPT-FIRST: Closing tab after {elapsed_time:.2f} seconds (25 minute timeout reached)")
-                    step_log['steps_completed'].append(f"purchase_monitoring_timeout - {time.time() - step_log['start_time']:.2f}s")
-                
-                # Close second tab
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-        else:
-            print(f"❌ JAVASCRIPT-FIRST: Second buy button not found")
-            
-        # Close second tab
-        driver.close()
-        if len(driver.window_handles) > 0:
-            driver.switch_to.window(driver.window_handles[0])
-            
-        return True  # Return true as this isn't a critical failure
-            
-    except Exception as second_sequence_error:
-        print(f"❌ JAVASCRIPT-FIRST: Second sequence error: {second_sequence_error}")
-        # Clean up second tab
-        try:
-            driver.close()
-            if len(driver.window_handles) > 0:
-                driver.switch_to.window(driver.window_handles[0])
-        except:
-            pass
-        return True
+
 
 # NEW: Add the EXACT selector system from main program
 def vm_try_selectors(driver, selector_set_name, operation='find', timeout=5, click_method='standard', step_log=None):
@@ -1894,22 +1777,22 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
         
         # Method 1: Direct click
         try:
-            #pay_button.click()
+            pay_button.click()
             pay_clicked = True
             print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (direct)")
         except:
             # Method 2: JavaScript click
             try:
-                #driver.execute_script("arguments[0].click();", pay_button)
+                driver.execute_script("arguments[0].click();", pay_button)
                 pay_clicked = True
                 print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (JavaScript)")
             except:
                 # Method 3: Force enable and click
                 try:
-                    #driver.execute_script("""
-                    #    arguments[0].disabled = false;
-                    #    arguments[0].click();
-                    #""", pay_button)
+                    driver.execute_script("""
+                        arguments[0].disabled = false;
+                        arguments[0].click();
+                    """, pay_button)
                     pay_clicked = True
                     print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (force)")
                 except Exception as final_error:
@@ -1917,12 +1800,12 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                     return False
         
         if pay_clicked:
-            # CRITICAL: Exact 0.25 second wait (same as main scraper)
-            print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Waiting exactly 0.25 seconds...")
-            time.sleep(5)
+            # Wait the specified time from buying_driver_click_pay_wait_time
+            print(f"🔖 DRIVER {step_log['driver_number']}: Waiting {buying_driver_click_pay_wait_time} seconds after pay button click...")
+            time.sleep(buying_driver_click_pay_wait_time)
             
-            # CRITICAL: Immediate tab close (same as main scraper)
-            print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Closing tab immediately...")
+            # Close tab immediately after wait
+            print(f"🔖 DRIVER {step_log['driver_number']}: Closing tab and moving to next driver...")
             driver.close()
             
             step_log['critical_sequence_completed'] = True
@@ -1941,13 +1824,6 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
     except Exception as e:
         print(f"❌ DRIVER {step_log['driver_number']}: Critical pay sequence error: {e}")
         return False
-
-# 8. VM-specific second sequence (for completeness - monitors for success)
-def execute_vm_second_sequence(driver, listing_url, step_log):
-    """
-    Execute second sequence for VM driver using JavaScript-first approach
-    """
-    return execute_vm_second_sequence_with_javascript_first(driver, listing_url, step_log)
 
 
 # Additional selector sets needed for the vm_try_selectors function
@@ -2198,3 +2074,127 @@ def setup_driver_universal(vm_ip_address, config):
         print("Applying stealth modifications...")
         stealth_script = """
         Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+        window.chrome = {runtime: {}};
+        Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+        
+        Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
+        Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+        Object.defineProperty(screen, 'colorDepth', {get: () => 24});
+        """
+        driver.execute_script(stealth_script)
+        print("✓ Stealth script applied successfully")
+        
+        print(f"✓ Successfully connected to VM Chrome with clean profile")
+        return driver
+        
+    except Exception as e:
+        print(f"✗ Failed to connect to VM WebDriver")
+        print(f"Error: {str(e)}")
+        
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
+        
+        return None
+
+def find_buy_button_with_shadow_dom(driver):
+    """
+    Enhanced buy now button finder - JavaScript click first approach
+    Finds button and immediately clicks with JavaScript for reliability
+    """
+    print("🔍 SHADOW DOM: Starting buy button search with JavaScript-first approach...")
+    
+    # Method 1: Find button and immediately click with JavaScript
+    print("⚡ JAVASCRIPT-FIRST: Finding and clicking buy button with JavaScript...")
+    buy_selectors = [
+        'button[data-testid="item-buy-button"]',
+        'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+        '//button[@data-testid="item-buy-button"]',
+        '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+        '//span[text()="Buy now"]/parent::button'
+    ]
+    
+    for selector in buy_selectors:
+        try:
+            if selector.startswith('//'):
+                buy_button = driver.find_element(By.XPATH, selector)
+            else:
+                buy_button = driver.find_element(By.CSS_SELECTOR, selector)
+            
+            print(f"✅ FOUND: Buy button with: {selector}")
+            
+            # IMMEDIATELY click with JavaScript - no other methods tried
+            try:
+                driver.execute_script("arguments[0].click();", buy_button)
+                print(f"✅ JAVASCRIPT-FIRST: Buy button clicked immediately with JavaScript")
+                return buy_button, selector
+            except Exception as js_error:
+                print(f"❌ JAVASCRIPT-FIRST: JavaScript click failed: {js_error}")
+                continue
+                
+        except:
+            continue
+    
+    # Method 2: Shadow DOM traversal using JavaScript
+    print("🌊 SHADOW DOM: Standard selectors failed, trying Shadow DOM traversal...")
+    
+    shadow_dom_script = """
+    function findBuyButtonInShadowDOM() {
+        // Function to recursively search through shadow roots
+        function searchInShadowRoot(element) {
+            if (!element) return null;
+            
+            // Check if this element has a shadow root
+            if (element.shadowRoot) {
+                // Search within the shadow root
+                let shadowButton = element.shadowRoot.querySelector('button[data-testid="item-buy-button"]');
+                if (shadowButton) {
+                    console.log('Found buy button in shadow root of:', element.tagName);
+                    return shadowButton;
+                }
+                
+                // Try other selectors in shadow root
+                let shadowButtonAlt = element.shadowRoot.querySelector('button.web_ui__Button__primary');
+                if (shadowButtonAlt) {
+                    let span = shadowButtonAlt.querySelector('span');
+                    if (span && span.textContent.includes('Buy now')) {
+                        console.log('Found buy button (alternative) in shadow root of:', element.tagName);
+                        return shadowButtonAlt;
+                    }
+                }
+                
+                // Recursively search child elements in shadow root
+                let shadowChildren = element.shadowRoot.querySelectorAll('*');
+                for (let child of shadowChildren) {
+                    let result = searchInShadowRoot(child);
+                    if (result) return result;
+                }
+            }
+            
+            return null;
+        }
+        
+        // Search all elements in the main document
+        let allElements = document.querySelectorAll('*');
+        for (let element of allElements) {
+            let result = searchInShadowRoot(element);
+            if (result) {
+                return result;
+            }
+        }
+        
+        return null;
+    }
+    
+    return findBuyButtonInShadowDOM();
+    """
+    
+    try:
+        shadow_button = driver.execute_script(shadow_dom_script)
+        if shadow_button:
+            print("✅ SHADOW DOM: Found buy button via Shadow DOM traversal!")
+            return shadow_button, "shadow_dom_traversal"
