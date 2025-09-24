@@ -70,11 +70,11 @@ VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7115249261-garfield-gets-real-for-nintendo-ds-checked-working?homepage_session_id=322b81cf-1a31-4fb0-bcb3-860aba3cde91", 
-    "https://www.vinted.co.uk/items/7113366944-mario-3d-all-stars?homepage_session_id=618a9efa-4aea-4daf-8e51-2f6d4836bbd7",
-    "https://www.vinted.co.uk/items/7118058630-r36s-retro-game?homepage_session_id=618a9efa-4aea-4daf-8e51-2f6d4836bbd7",
-    "https://www.vinted.co.uk/items/7116747338-nintendogs-nintendo-ds-game?homepage_session_id=618a9efa-4aea-4daf-8e51-2f6d4836bbd7",
-    "https://www.vinted.co.uk/items/7117123795-captain-toad-treasure-tracker?homepage_session_id=618a9efa-4aea-4daf-8e51-2f6d4836bbd7"
+    "https://www.vinted.co.uk/items/7147148296-nintendo-switch-crash-team-racing-nitro-fuelled-game?homepage_session_id=d51258d6-39c5-4166-b920-01a0b266d59a", 
+    "https://www.vinted.co.uk/items/7146217612-nintendo-switch-hello-neighbour?homepage_session_id=d51258d6-39c5-4166-b920-01a0b266d59a",
+    "https://www.vinted.co.uk/items/7145885719-nintendo-switch-sports-game?homepage_session_id=d51258d6-39c5-4166-b920-01a0b266d59a",
+    "https://www.vinted.co.uk/items/7147165868-fifa-21-legacy-edition-nintendo-switch?homepage_session_id=d51258d6-39c5-4166-b920-01a0b266d59a",
+    "https://www.vinted.co.uk/items/7146055135-minecraft-nintendo-switch-game?homepage_session_id=d51258d6-39c5-4166-b920-01a0b266d59a"
 ]
 # tests whether the listing is suitable for buying based on URL rather than scanning
 TEST_WHETHER_SUITABLE = False
@@ -124,6 +124,9 @@ test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1
 should_send_fail_bookmark_notification = True
 
 
+
+# Global tracking for active drivers
+active_drivers = {}
 background_monitors = {}
 purchase_unsuccessful_detected_urls = {}  # Track URLs waiting for "Purchase unsuccessful" detection
 # Config
@@ -746,7 +749,7 @@ def clear_browser_data(vm_ip_address="192.168.56.101"):
         # Use same Chrome options as main driver for consistency
         chrome_options = ChromeOptions()
         chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
-        chrome_options.add_argument('--profile-directory=Profile 4')
+        chrome_options.add_argument('--profile-directory=Profile 6')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
@@ -929,7 +932,7 @@ def setup_driver(vm_ip_address="192.168.56.101"):
     # Chrome options for the VM instance (existing code continues...)
     chrome_options = ChromeOptions()
     chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
-    chrome_options.add_argument('--profile-directory=Profile 4')
+    chrome_options.add_argument('--profile-directory=Profile 6')
     chrome_options.add_argument('--disable-blink-features=AutomationControlled')
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
@@ -1251,17 +1254,23 @@ def move_to_element_naturally(driver, element):
 
 # 2. Modified main_vm_driver function (replace your existing main_vm_driver function)
 def main_vm_driver():
-    """Main VM driver function - Enhanced to run 5 drivers sequentially with URL bookmarking"""
+    """Main VM driver function - Enhanced to run 5 drivers sequentially with URL bookmarking and driver tracking"""
+    global active_drivers, background_monitors
+    
+    # Initialize tracking dictionaries
+    active_drivers = {}
+    background_monitors = {}
+    
     # VM IP address - change this to your VM's IP
     vm_ip_address = "192.168.56.101"
     
     # Driver configurations
     driver_configs = [
-        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9223},
-        {"user_data_dir": "C:\\VintedScraper_Default2_Bookmark", "profile": "Profile 17", "port": 9224},
+        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 6", "port": 9223},
+        {"user_data_dir": "C:\\VintedScraper_Default2_Bookmark", "profile": "Profile 6", "port": 9224},
         {"user_data_dir": "C:\\VintedScraper_Default3_Bookmark", "profile": "Profile 6", "port": 9226},
-        {"user_data_dir": "C:\\VintedScraper_Default4_Bookmark", "profile": "Profile 12", "port": 9227},
-        {"user_data_dir": "C:\\VintedScraper_Default5_Bookmark", "profile": "Profile 18", "port": 9228}
+        {"user_data_dir": "C:\\VintedScraper_Default4_Bookmark", "profile": "Profile 6", "port": 9227},
+        {"user_data_dir": "C:\\VintedScraper_Default5_Bookmark", "profile": "Profile 6", "port": 9228}
     ]
     
     print(f"\n🔖 BOOKMARKING: Will bookmark {len(VM_BOOKMARK_URLS)} URLs across 5 drivers:")
@@ -1288,6 +1297,14 @@ def main_vm_driver():
         if not driver:
             print(f"Failed to create VM driver {i} - continuing to next")
             continue
+        
+        # Add driver to active tracking
+        active_drivers[i] = {
+            'driver': driver,
+            'config': config,
+            'start_time': time.time()
+        }
+        print(f"📊 DRIVER-{i}: Added to active drivers. Total active: {len(active_drivers)}")
         
         detector = None
         
@@ -1449,20 +1466,37 @@ def main_vm_driver():
                     detector.stop()
                 except:
                     pass
-            # Close current driver
-            try:
-                print(f"Driver {i} will be closed by background monitoring")
-                #driver.quit()
-                #print(f"Driver {i} closed successfully")
-            except:
-                print(f"Error closing driver {i}")
+            # Don't close driver here - let background monitoring handle it
+            print(f"Driver {i} handed over to background monitoring")
+    
+    # Wait for all drivers to be closed by background monitoring
+    print(f"\n📊 WAITING: All 5 drivers created. Waiting for background monitoring to close all drivers...")
+    print(f"📊 WAITING: Currently active drivers: {list(active_drivers.keys())}")
+    
+    wait_start_time = time.time()
+    status_report_interval = 30  # Report status every 30 seconds
+    last_status_report = wait_start_time
+    
+    while len(active_drivers) > 0:
+        current_time = time.time()
+        
+        # Periodic status reporting
+        if current_time - last_status_report >= status_report_interval:
+            elapsed_wait_time = current_time - wait_start_time
+            print(f"📊 WAITING: Still waiting for {len(active_drivers)} drivers to be closed by background monitoring...")
+            print(f"📊 WAITING: Active drivers: {list(active_drivers.keys())} (waiting for {elapsed_wait_time:.1f}s)")
+            last_status_report = current_time
+        
+        time.sleep(1)  # Check every second
+    
+    total_wait_time = time.time() - wait_start_time
+    print(f"✅ WAITING: All drivers have been closed by background monitoring (waited {total_wait_time:.2f}s)")
     
     print("\n" + "="*60)
     print("ALL 5 DRIVERS COMPLETED SUCCESSFULLY")
     print("URL BOOKMARKING PROCESS COMPLETE")
     print("="*60)
 
-# 3. New function to execute bookmark process for VM drivers
 # REPLACE YOUR ENTIRE execute_vm_bookmark_process FUNCTION WITH THIS:
 def execute_vm_bookmark_process(driver, url, driver_number):
     """
@@ -1614,7 +1648,7 @@ background_monitors = {}
 
 # ADD THIS HELPER FUNCTION ANYWHERE IN YOUR FILE:
 def monitor_purchase_unsuccessful_background(driver, driver_id, step_log):
-    """Background monitoring thread function - Enhanced with periodic status updates"""
+    """Background monitoring thread function - Enhanced with driver tracking"""
     try:
         purchase_unsuccessful_selectors = [
             "//h2[@class='web_uiTexttext web_uiTexttitle web_uiTextleft web_uiTextwarning' and text()='Purchase unsuccessful']",
@@ -1722,7 +1756,12 @@ def monitor_purchase_unsuccessful_background(driver, driver_id, step_log):
                 print(f"✅ BACKGROUND-{driver_id}: Driver closed successfully")
             except Exception as close_error:
                 print(f"⚠️ BACKGROUND-{driver_id}: Error closing driver (may already be closed): {close_error}")
-            
+        
+        # Remove driver from active tracking
+        if driver_id in active_drivers:
+            del active_drivers[driver_id]
+            print(f"📊 BACKGROUND-{driver_id}: Removed from active drivers. Remaining active: {list(active_drivers.keys())}")
+        
         # Clean up from background monitors tracking
         if driver_id in background_monitors:
             del background_monitors[driver_id]
@@ -1737,9 +1776,16 @@ def monitor_purchase_unsuccessful_background(driver, driver_id, step_log):
                 print(f"🚪 BACKGROUND-{driver_id}: Driver closed due to monitoring crash")
         except:
             pass
+        
+        # Remove driver from active tracking even on crash
+        if driver_id in active_drivers:
+            del active_drivers[driver_id]
+            print(f"📊 BACKGROUND-{driver_id}: Removed from active drivers due to crash. Remaining: {list(active_drivers.keys())}")
+        
         if driver_id in background_monitors:
             del background_monitors[driver_id]
             print(f"📊 BACKGROUND-{driver_id}: Removed from active monitors due to crash")
+
 
 # REPLACE YOUR ENTIRE execute_vm_second_sequence_with_javascript_first FUNCTION WITH THIS:
 def execute_vm_second_sequence_with_javascript_first(driver, actual_url, step_log):
@@ -2001,6 +2047,9 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
         
         # Click pay button using multiple methods (same as main scraper)
         pay_clicked = False
+
+        print('sleeping 7.5s before click so you can click card.')
+        time.sleep(7.5)
         
         # Method 1: Direct click
         try:
@@ -2029,7 +2078,7 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
         if pay_clicked:
             # CRITICAL: Exact 0.25 second wait (same as main scraper)
             print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Waiting exactly 0.25 seconds...")
-            time.sleep(0.25)
+            time.sleep(0.15)
             
             # CRITICAL: Immediate tab close (same as main scraper)
             print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Closing tab immediately...")
@@ -2149,52 +2198,3 @@ def clear_browser_data_universal(vm_ip_address, config):
             
             // Strategy 2: Search all shadow roots recursively
             function searchShadowRoots(element) {
-                if (element.shadowRoot) {
-                    let clearButton = element.shadowRoot.querySelector('#clearButton');
-                    if (clearButton) {
-                        console.log('Found clear button via recursive search');
-                        clearButton.click();
-                        return true;
-                    }
-                    
-                    // Search nested shadow roots
-                    let shadowElements = element.shadowRoot.querySelectorAll('*');
-                    for (let el of shadowElements) {
-                        if (searchShadowRoots(el)) return true;
-                    }
-                }
-                return false;
-            }
-            
-            let allElements = document.querySelectorAll('*');
-            for (let el of allElements) {
-                if (searchShadowRoots(el)) return true;
-            }
-            
-            // Strategy 3: Look for cr-button elements in shadow roots
-            function findCrButton(element) {
-                if (element.shadowRoot) {
-                    let crButtons = element.shadowRoot.querySelectorAll('cr-button');
-                    for (let btn of crButtons) {
-                        if (btn.id === 'clearButton' || btn.textContent.includes('Delete data')) {
-                            console.log('Found cr-button via strategy 3');
-                            btn.click();
-                            return true;
-                        }
-                    }
-                    
-                    let shadowElements = element.shadowRoot.querySelectorAll('*');
-                    for (let el of shadowElements) {
-                        if (findCrButton(el)) return true;
-                    }
-                }
-                return false;
-            }
-            
-            for (let el of allElements) {
-                if (findCrButton(el)) return true;
-            }
-            
-            console.log('Clear button not found in any shadow root');
-            return false;
-        }
