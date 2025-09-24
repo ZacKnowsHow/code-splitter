@@ -1777,22 +1777,22 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
         
         # Method 1: Direct click
         try:
-            pay_button.click()
+            #pay_button.click()
             pay_clicked = True
             print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (direct)")
         except:
             # Method 2: JavaScript click
             try:
-                driver.execute_script("arguments[0].click();", pay_button)
+                #driver.execute_script("arguments[0].click();", pay_button)
                 pay_clicked = True
                 print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (JavaScript)")
             except:
                 # Method 3: Force enable and click
                 try:
-                    driver.execute_script("""
-                        arguments[0].disabled = false;
-                        arguments[0].click();
-                    """, pay_button)
+                    #driver.execute_script("""
+                    #    arguments[0].disabled = false;
+                    #    arguments[0].click();
+                    #""", pay_button)
                     pay_clicked = True
                     print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (force)")
                 except Exception as final_error:
@@ -1800,12 +1800,12 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                     return False
         
         if pay_clicked:
-            # Wait the specified time from buying_driver_click_pay_wait_time
-            print(f"🔖 DRIVER {step_log['driver_number']}: Waiting {buying_driver_click_pay_wait_time} seconds after pay button click...")
-            time.sleep(buying_driver_click_pay_wait_time)
+            # CRITICAL: Exact 0.25 second wait (same as main scraper)
+            print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Waiting exactly 0.25 seconds...")
+            time.sleep(5)
             
-            # Close tab immediately after wait
-            print(f"🔖 DRIVER {step_log['driver_number']}: Closing tab and moving to next driver...")
+            # CRITICAL: Immediate tab close (same as main scraper)
+            print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Closing tab immediately...")
             driver.close()
             
             step_log['critical_sequence_completed'] = True
