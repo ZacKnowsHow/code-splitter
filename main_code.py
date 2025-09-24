@@ -749,7 +749,7 @@ def clear_browser_data(vm_ip_address="192.168.56.101"):
         # Use same Chrome options as main driver for consistency
         chrome_options = ChromeOptions()
         chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
-        chrome_options.add_argument('--profile-directory=Profile 6')
+        chrome_options.add_argument('--profile-directory=Profile 17')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
@@ -932,7 +932,7 @@ def setup_driver(vm_ip_address="192.168.56.101"):
     # Chrome options for the VM instance (existing code continues...)
     chrome_options = ChromeOptions()
     chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
-    chrome_options.add_argument('--profile-directory=Profile 6')
+    chrome_options.add_argument('--profile-directory=Profile 17')
     chrome_options.add_argument('--disable-blink-features=AutomationControlled')
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
@@ -1266,11 +1266,11 @@ def main_vm_driver():
     
     # Driver configurations
     driver_configs = [
-        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 6", "port": 9223},
-        {"user_data_dir": "C:\\VintedScraper_Default2_Bookmark", "profile": "Profile 6", "port": 9224},
-        {"user_data_dir": "C:\\VintedScraper_Default3_Bookmark", "profile": "Profile 6", "port": 9226},
-        {"user_data_dir": "C:\\VintedScraper_Default4_Bookmark", "profile": "Profile 6", "port": 9227},
-        {"user_data_dir": "C:\\VintedScraper_Default5_Bookmark", "profile": "Profile 6", "port": 9228}
+        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 17", "port": 9223},
+        {"user_data_dir": "C:\\VintedScraper_Default2_Bookmark", "profile": "Profile 17", "port": 9224},
+        {"user_data_dir": "C:\\VintedScraper_Default3_Bookmark", "profile": "Profile 17", "port": 9226},
+        {"user_data_dir": "C:\\VintedScraper_Default4_Bookmark", "profile": "Profile 17", "port": 9227},
+        {"user_data_dir": "C:\\VintedScraper_Default5_Bookmark", "profile": "Profile 17", "port": 9228}
     ]
     
     print(f"\n🔖 BOOKMARKING: Will bookmark {len(VM_BOOKMARK_URLS)} URLs across 5 drivers:")
