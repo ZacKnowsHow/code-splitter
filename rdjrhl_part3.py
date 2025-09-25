@@ -1,22 +1,4 @@
 # Continuation from line 4401
-            grid_size = 1
-        elif 2 <= num_images <= 4:
-            grid_size = 2
-        else:
-            grid_size = 3
-
-        cell_width = rect.width // grid_size
-        cell_height = rect.height // grid_size
-
-        for i, img in enumerate(images):
-            if i >= grid_size * grid_size:
-                break
-            row = i // grid_size
-            col = i % grid_size
-            img = img.resize((cell_width, cell_height))
-            img_surface = pygame.image.fromstring(img.tobytes(), img.size, img.mode)
-            screen.blit(img_surface, (rect.left + col * cell_width, rect.top + row * cell_height))
-
         # Display suitability reason
         if FAILURE_REASON_LISTED:
             font = pygame.font.Font(None, 24)
@@ -836,7 +818,7 @@
             print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
 
         # MODIFIED: Send suitable listings to VM bookmark system
-        if is_suitable:
+        if is_suitable or VINTED_SHOW_ALL_LISTINGS:
             print(f"✅ SUITABLE LISTING FOUND: Sending to VM bookmark system")
             print(f"🔗 URL: {url}")
             
@@ -2199,3 +2181,21 @@
         # Initialize pygame display with default values
         self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
         
+        # Start Flask app in separate thread
+        flask_thread = threading.Thread(target=self.run_flask_app)
+        flask_thread.daemon = True
+        flask_thread.start()
+        
+        # Main scraping driver thread
+        def main_scraping_driver():
+            """Main scraping driver function that runs in its own thread"""
+            print("🚀 SCRAPING THREAD: Starting main scraping driver thread")
+            
+            # Clear download folder and start scraping
+            self.clear_download_folder()
+            driver = self.setup_driver()
+            
+            if driver is None:
+                print("❌ SCRAPING THREAD: Failed to setup main driver")
+                return
+                
