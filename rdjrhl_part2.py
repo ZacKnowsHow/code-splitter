@@ -1,22 +1,4 @@
 # Continuation from line 2201
-    function findBuyButtonInShadowDOM() {
-        // Function to recursively search through shadow roots
-        function searchInShadowRoot(element) {
-            if (!element) return null;
-            
-            // Check if this element has a shadow root
-            if (element.shadowRoot) {
-                // Search within the shadow root
-                let shadowButton = element.shadowRoot.querySelector('button[data-testid="item-buy-button"]');
-                if (shadowButton) {
-                    console.log('Found buy button in shadow root of:', element.tagName);
-                    return shadowButton;
-                }
-                
-                // Try other selectors in shadow root
-                let shadowButtonAlt = element.shadowRoot.querySelector('button.web_ui__Button__primary');
-                if (shadowButtonAlt) {
-                    let span = shadowButtonAlt.querySelector('span');
                     if (span && span.textContent.includes('Buy now')) {
                         console.log('Found buy button (alternative) in shadow root of:', element.tagName);
                         return shadowButtonAlt;
@@ -2199,3 +2181,21 @@ class VintedScraper:
 
         num_images = len(images)
         if num_images == 1:
+            grid_size = 1
+        elif 2 <= num_images <= 4:
+            grid_size = 2
+        else:
+            grid_size = 3
+
+        cell_width = rect.width // grid_size
+        cell_height = rect.height // grid_size
+
+        for i, img in enumerate(images):
+            if i >= grid_size * grid_size:
+                break
+            row = i // grid_size
+            col = i % grid_size
+            img = img.resize((cell_width, cell_height))
+            img_surface = pygame.image.fromstring(img.tobytes(), img.size, img.mode)
+            screen.blit(img_surface, (rect.left + col * cell_width, rect.top + row * cell_height))
+

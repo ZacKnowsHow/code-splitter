@@ -1,22 +1,4 @@
 # Continuation from line 6601
-        # Start Flask app in separate thread
-        flask_thread = threading.Thread(target=self.run_flask_app)
-        flask_thread.daemon = True
-        flask_thread.start()
-        
-        # Main scraping driver thread
-        def main_scraping_driver():
-            """Main scraping driver function that runs in its own thread"""
-            print("🚀 SCRAPING THREAD: Starting main scraping driver thread")
-            
-            # Clear download folder and start scraping
-            self.clear_download_folder()
-            driver = self.setup_driver()
-            
-            if driver is None:
-                print("❌ SCRAPING THREAD: Failed to setup main driver")
-                return
-                
             try:
                 print("🚀 SCRAPING THREAD: Starting Vinted search with refresh...")
                 self.search_vinted_with_refresh(driver, SEARCH_QUERY)
@@ -70,7 +52,7 @@
             print("🏁 MAIN: Program exit")
             sys.exit(0)
 
-if __name__ == "main":
+if __name__ == "__main__":
     if VM_DRIVER_USE:
         print("VM_DRIVER_USE = True - Running VM driver script instead of main scraper")
         if not HAS_PYAUDIO:
