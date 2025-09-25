@@ -1182,7 +1182,7 @@ def change_listing():
 
 @app.route('/vinted-button-clicked', methods=['POST'])
 def vinted_button_clicked():
-    """Handle Vinted scraper button clicks with enhanced functionality"""
+    """Handle Vinted scraper button clicks - send to VM system"""
     if print_debug:
         print("DEBUG: Received a Vinted button-click POST request")
     
@@ -1199,19 +1199,20 @@ def vinted_button_clicked():
         if action == 'buy_yes':
             print(f'✅ VINTED YES BUTTON: User wishes to buy listing: {url}')
             
-            # Access the Vinted scraper instance and trigger enhanced button functionality
+            # Send URL to VM bookmark system
             if 'vinted_scraper_instance' in globals():
-                vinted_scraper_instance.vinted_button_clicked_enhanced(url)
+                vinted_scraper_instance.send_to_vm_bookmark_system(url)
+                print(f'🚀 Sent to VM bookmark system: {url}')
             else:
                 print("WARNING: No Vinted scraper instance found")
-                print(f'Vinted button clicked on listing: {url}')
-                with open('vinted_clicked_listings.txt', 'a') as f:
-                    f.write(f"{action}: {url}\n")
+                # Fallback: just add to VM_BOOKMARK_URLS directly
+                if url not in VM_BOOKMARK_URLS:
+                    VM_BOOKMARK_URLS.append(url)
+                    print(f'📋 Added to VM_BOOKMARK_URLS: {url}')
                     
         elif action == 'buy_no':
             print(f'❌ VINTED NO BUTTON: User does not wish to buy listing: {url}')
-            # DO NOT CALL vinted_button_clicked_enhanced - just print message
-            # No navigation should happen for "No" button
+            # No action needed for "No" button
         else:
             print(f'🔘 VINTED BUTTON: Unknown action "{action}" for listing: {url}')
         
@@ -2006,8 +2007,9 @@ class VintedScraper:
             'anonymous_games': 5  # Add price for anonymous games
         })
         return all_prices
+    
     def __init__(self):
-
+        """Modified init - removed all booking/buying driver related initialization"""
         # Initialize pygame-related variables similar to FacebookScraper
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images
@@ -2034,20 +2036,11 @@ class VintedScraper:
         current_suitability = "Suitability unknown"
         suitable_listings = []
         current_listing_index = 0
-        self.monitoring_threads_active = threading.Event()
 
-        self.vinted_button_queue = queue.Queue()
-        self.vinted_processing_active = threading.Event()  # To track if we're currently processing
-        self.main_driver = None
-        self.persistent_buying_driver = None
-        self.main_tab_handle = None
-        self.clicked_yes_listings = set()
-        self.bookmark_timers = {}
-        self.buying_drivers = {}  # Dictionary to store drivers {1: driver_object, 2: driver_object, etc.}
-        self.driver_status = {}   # Track driver status {1: 'free'/'busy', 2: 'free'/'busy', etc.}
-        self.driver_lock = threading.Lock()  # Thread safety for driver management
-        # Check if CUDA is available
+        # Initialize VM connection flag
+        self.vm_bookmark_queue = []  # Queue of URLs to send to VM system
         
+        # Check if CUDA is available
         print(f"CUDA available: {torch.cuda.is_available()}")
         print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
 
@@ -2059,143 +2052,150 @@ class VintedScraper:
             model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
             print("⚠️ YOLO model loaded on CPU (no CUDA available)")
 
-        # Initialize all driver slots as not created
-        for i in range(1, 6):  # Drivers 1-5
-            self.buying_drivers[i] = None
-            self.driver_status[i] = 'not_created'
 
-        self.bookmark_driver_threads = {}  # Track threads for each driver
-        self.bookmark_driver_locks = {}    # Lock for each driver
-        
-        # Initialize locks for each bookmark driver
-        for i in range(5):
-            self.bookmark_driver_locks[i] = threading.Lock()
-
-
-        self.current_bookmark_driver_index = 0
-        self.bookmark_driver_configs = [
-            {
-                'user_data_dir': 'C:\\VintedScraper_Default_Bookmark',
-                'profile_directory': 'Profile 4'
-            },
-            {
-                'user_data_dir': 'C:\\VintedScraper_Default2_Bookmark', 
-                'profile_directory': 'Profile 17'
-            },
-            {
-                'user_data_dir': 'C:\\VintedScraper_Default3_Bookmark',
-                'profile_directory': 'Profile 6' 
-            },
-            {
-                'user_data_dir': 'C:\\VintedScraper_Default4_Bookmark',
-                'profile_directory': 'Profile 12'
-            },
-            {
-                'user_data_dir': 'C:\\VintedScraper_Default5_Bookmark',
-                'profile_directory': 'Profile 18'
-            }
+    def run_pygame_window(self):
+        global LOCK_POSITION, current_listing_index, suitable_listings
+        screen, clock = self.initialize_pygame_window()
+        rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
+            pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
+            pygame.Rect(0, 180, 240, 180), pygame.Rect(240, 180, 240, 180), pygame.Rect(480, 180, 320, 180),
+            pygame.Rect(0, 360, 240, 240), pygame.Rect(240, 360, 240, 120), pygame.Rect(240, 480, 240, 120),
+            pygame.Rect(480, 360, 160, 240), pygame.Rect(640, 360, 160, 240)
         ]
-        self.current_bookmark_driver = None
-        self.shutdown_event = threading.Event()
+        fonts = {
+            'number': pygame.font.Font(None, 24),
+            'price': pygame.font.Font(None, 36),
+            'title': pygame.font.Font(None, 40),
+            'description': pygame.font.Font(None, 28),
+            'join_date': pygame.font.Font(None, 28),
+            'revenue': pygame.font.Font(None, 36),
+            'profit': pygame.font.Font(None, 36),
+            'items': pygame.font.Font(None, 30),
+            'click': pygame.font.Font(None, 28),
+            'suitability': pygame.font.Font(None, 28),
+            'reviews': pygame.font.Font(None, 28),
+            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
+        }
+        dragging = False
+        resizing = False
+        drag_rect = None
+        drag_offset = (0, 0)
+        resize_edge = None
 
-
-    def cleanup_all_bookmark_threads(self):
-        """
-        Clean up all bookmark driver threads when program exits
-        """
-        print("🧹 CLEANUP: Stopping all bookmark driver threads...")
-        
-        active_threads = []
-        for driver_index, thread in self.bookmark_driver_threads.items():
-            if thread and thread.is_alive():
-                active_threads.append((driver_index + 1, thread))
-        
-        if active_threads:
-            print(f"🧹 CLEANUP: Found {len(active_threads)} active bookmark threads")
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_l:
+                        LOCK_POSITION = not LOCK_POSITION
+                    elif event.key == pygame.K_RIGHT:
+                        if suitable_listings:
+                            current_listing_index = (current_listing_index + 1) % len(suitable_listings)
+                            self.update_listing_details(**suitable_listings[current_listing_index])
+                    elif event.key == pygame.K_LEFT:
+                        if suitable_listings:
+                            current_listing_index = (current_listing_index - 1) % len(suitable_listings)
+                            self.update_listing_details(**suitable_listings[current_listing_index])
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Left mouse button
+                        # Check if rectangle 4 was clicked
+                        if rectangles[3].collidepoint(event.pos):
+                            if suitable_listings and 0 <= current_listing_index < len(suitable_listings):
+                                current_url = suitable_listings[current_listing_index].get('url')
+                                if current_url:
+                                    try:
+                                        import webbrowser
+                                        webbrowser.open(current_url)
+                                    except Exception as e:
+                                        print(f"Failed to open URL: {e}")
+                        elif not LOCK_POSITION:
+                            for i, rect in enumerate(rectangles):
+                                if rect.collidepoint(event.pos):
+                                    if event.pos[0] > rect.right - 10 and event.pos[1] > rect.bottom - 10:
+                                        resizing = True
+                                        drag_rect = i
+                                        resize_edge = 'bottom-right'
+                                    else:
+                                        dragging = True
+                                        drag_rect = i
+                                        drag_offset = (rect.x - event.pos[0], rect.y - event.pos[1])
+                                    break
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        dragging = False
+                        resizing = False
+                        drag_rect = None
             
-            # Give threads 10 seconds to finish naturally
-            print("⏳ CLEANUP: Waiting 10 seconds for threads to complete...")
-            for driver_num, thread in active_threads:
-                thread.join(timeout=10)
-                if thread.is_alive():
-                    print(f"⚠️ CLEANUP: BookmarkDriver-{driver_num} still running after timeout")
-                else:
-                    print(f"✅ CLEANUP: BookmarkDriver-{driver_num} completed")
-        
-        print("✅ CLEANUP: Bookmark thread cleanup completed")
-
-    def bookmark_driver_threaded(self, listing_url, username=None):
-        """
-        THREADED VERSION: Run each bookmark driver in its own thread
-        """
-        # Get the next available driver index (cycle through 0-4)
-        with threading.Lock():  # Ensure thread-safe driver selection
-            driver_index = self.current_bookmark_driver_index
-            self.current_bookmark_driver_index = (self.current_bookmark_driver_index + 1) % 5
-        
-        # Start the bookmark process in a separate thread for this driver
-        thread_name = f"BookmarkDriver-{driver_index + 1}"
-        bookmark_thread = threading.Thread(
-            target=self._bookmark_driver_thread_worker,
-            args=(driver_index, listing_url, username),
-            name=thread_name
-        )
-        bookmark_thread.daemon = True
-        bookmark_thread.start()
-        
-        # Track the thread
-        self.bookmark_driver_threads[driver_index] = bookmark_thread
-        
-        print(f"🧵 BOOKMARK: Started {thread_name} for URL: {listing_url[:50]}...")
-        return True
-
-    def _bookmark_driver_thread_worker(self, driver_index, listing_url, username):
-        """
-        Worker function that runs in each bookmark driver thread
-        """
-        thread_name = f"BookmarkDriver-{driver_index + 1}"
-        
-        with self.bookmark_driver_locks[driver_index]:
-            print(f"🔖 {thread_name}: Starting bookmark process...")
+            # Handle dragging and resizing
+            if dragging and drag_rect is not None:
+                rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
+                rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
+            elif resizing and drag_rect is not None:
+                if resize_edge == 'bottom-right':
+                    width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
+                    height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
+                    rectangles[drag_rect].size = (width, height)
             
-            try:
-                # Create driver for this specific thread
-                config = self.bookmark_driver_configs[driver_index]
-                driver = self._create_bookmark_driver(config, driver_index)
-                
-                if driver is None:
-                    print(f"❌ {thread_name}: Failed to create driver")
-                    return
-                
-                # Execute the bookmark process using existing logic
-                step_log = self._initialize_step_logging()
-                step_log['driver_number'] = driver_index + 1
-                
-                # Validate inputs
-                if not self._validate_bookmark_inputs(listing_url, username, step_log):
-                    print(f"❌ {thread_name}: Input validation failed")
-                    return
-                
-                # Execute bookmark sequences
-                success = self._execute_bookmark_sequences_with_monitoring(
-                    driver, listing_url, username, step_log
-                )
-                
-                if success:
-                    print(f"✅ {thread_name}: Bookmark process completed successfully")
-                else:
-                    print(f"❌ {thread_name}: Bookmark process failed")
-                    
-            except Exception as e:
-                print(f"❌ {thread_name}: Thread error: {e}")
-                import traceback
-                traceback.print_exc()
-                
-            finally:
-                # Clean up driver
-                try:
-                    if 'driver' in locals() and driver:
-                        driver.quit()
-                        print(f"🗑️ {thread_name}: Driver cleaned up")
-                except Exception as cleanup_error:
-                    print(f"⚠️ {thread_name}: Cleanup error: {cleanup_error}")
+            screen.fill((204, 210, 255))
+            for i, rect in enumerate(rectangles):
+                pygame.draw.rect(screen, (0, 0, 0), rect, 2)
+                number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
+                number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
+                screen.blit(number_text, number_rect)
+
+                if i == 2:  # Rectangle 3 (index 2) - Title
+                    self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
+                elif i == 1:  # Rectangle 2 (index 1) - Price
+                    self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
+                elif i == 7:  # Rectangle 8 (index 7) - Description
+                    self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
+                elif i == 8:  # Rectangle 9 (index 8) - CHANGED: Now shows exact time instead of upload date
+                    time_label = "Appended:"
+                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
+                elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
+                    self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
+                elif i == 9:  # Rectangle 10 (index 9) - Profit
+                    self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
+                elif i == 0:  # Rectangle 1 (index 0) - Detected Items
+                    self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
+                elif i == 10:  # Rectangle 11 (index 10) - Images
+                    self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
+                elif i == 3:  # Rectangle 4 (index 3) - Click to open
+                    click_text = "CLICK TO OPEN LISTING IN CHROME"
+                    self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
+                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
+                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+                elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
+                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
+
+            screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
+
+            if suitable_listings:
+                listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
+                screen.blit(listing_counter, (10, 40))
+
+            pygame.display.flip()
+            clock.tick(30)
+
+        self.save_rectangle_config(rectangles)
+        pygame.quit()
+        
+    def base64_encode_image(self, img):
+        """Convert PIL Image to base64 string, resizing if necessary"""
+        # Resize image while maintaining aspect ratio
+        max_size = (200, 200)
+        img.thumbnail(max_size, Image.LANCZOS)
+        
+        # Convert to base64
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode()
+
+    def render_images(self, screen, images, rect, bounding_boxes):
+        if not images:
+            return
+
+        num_images = len(images)
+        if num_images == 1:
