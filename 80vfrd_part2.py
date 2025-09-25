@@ -1,4 +1,28 @@
 # Continuation from line 2201
+    
+    # Method 2: Shadow DOM traversal using JavaScript
+    print("🌊 SHADOW DOM: Standard selectors failed, trying Shadow DOM traversal...")
+    
+    shadow_dom_script = """
+    function findBuyButtonInShadowDOM() {
+        // Function to recursively search through shadow roots
+        function searchInShadowRoot(element) {
+            if (!element) return null;
+            
+            // Check if this element has a shadow root
+            if (element.shadowRoot) {
+                // Search within the shadow root
+                let shadowButton = element.shadowRoot.querySelector('button[data-testid="item-buy-button"]');
+                if (shadowButton) {
+                    console.log('Found buy button in shadow root of:', element.tagName);
+                    return shadowButton;
+                }
+                
+                // Try other selectors in shadow root
+                let shadowButtonAlt = element.shadowRoot.querySelector('button.web_ui__Button__primary');
+                if (shadowButtonAlt) {
+                    let span = shadowButtonAlt.querySelector('span');
+                    if (span && span.textContent.includes('Buy now')) {
                         console.log('Found buy button (alternative) in shadow root of:', element.tagName);
                         return shadowButtonAlt;
                     }
