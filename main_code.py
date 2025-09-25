@@ -66,7 +66,13 @@ import wave
 import ctypes
 
 
-VM_DRIVER_USE = False
+VM_BOOKMARK_QUEUE = queue.Queue()  # Thread-safe queue for URLs
+VM_PROCESSING_ACTIVE = False
+VM_DRIVERS_READY = []  # List of available VM drivers
+VM_DRIVER_LOCK = Lock()
+VM_STOP_EVENT = Event()  # Event to signal stopping
+
+VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
@@ -419,6 +425,300 @@ def send_keypress_with_hid_keyboard(key, hold_time=None):
     except Exception as e:
         print(f"❌ HID: Keystroke failed for '{key}': {e}")
         return False
+
+def add_to_vm_bookmark_queue(url):
+    """
+    Add a URL to the VM bookmark queue for immediate processing
+    """
+    if url and url not in list(VM_BOOKMARK_QUEUE.queue):
+        VM_BOOKMARK_QUEUE.put(url)
+        print(f"🚀 VM QUEUE: Added {url} to queue (Queue size: {VM_BOOKMARK_QUEUE.qsize()})")
+        return True
+    return False
+
+def vm_bookmark_worker(vm_ip_address="192.168.56.101"):
+    """
+    Worker thread that continuously processes URLs from the queue
+    """
+    global VM_PROCESSING_ACTIVE
+    
+    # Driver configurations
+    driver_configs = [
+        {"user_data_dir": "C:\\VintedScraper_Default6_Bookmark", "profile": "Profile 17", "port": 9223, "id": 1},
+        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9224, "id": 2},
+        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9226, "id": 3},
+        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9227, "id": 4},
+        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9228, "id": 5}
+    ]
+    
+    # Initialize all VM drivers
+    print("📦 VM WORKER: Initializing VM drivers...")
+    drivers = []
+    
+    for config in driver_configs:
+        driver = initialize_vm_driver(vm_ip_address, config)
+        if driver:
+            drivers.append({"driver": driver, "config": config, "busy": False})
+            print(f"✅ VM WORKER: Driver {config['id']} initialized")
+        else:
+            print(f"❌ VM WORKER: Failed to initialize driver {config['id']}")
+    
+    if not drivers:
+        print("❌ VM WORKER: No drivers available, exiting worker thread")
+        return
+    
+    print(f"✅ VM WORKER: {len(drivers)} drivers ready for real-time processing")
+    VM_PROCESSING_ACTIVE = True
+    
+    # Main processing loop
+    while not VM_STOP_EVENT.is_set():
+        try:
+            # Wait for URL with timeout to allow checking stop event
+            try:
+                url = VM_BOOKMARK_QUEUE.get(timeout=1)
+            except queue.Empty:
+                continue
+            
+            print(f"\n🔔 VM WORKER: New URL received for processing: {url}")
+            
+            # Find an available driver
+            available_driver = None
+            
+            # First, try to find a non-busy driver
+            for driver_info in drivers:
+                if not driver_info["busy"]:
+                    available_driver = driver_info
+                    break
+            
+            if available_driver:
+                # Mark driver as busy
+                available_driver["busy"] = True
+                driver_id = available_driver["config"]["id"]
+                
+                print(f"🚗 VM WORKER: Assigning URL to driver {driver_id}")
+                
+                # Process the URL in a separate thread to avoid blocking
+                process_thread = threading.Thread(
+                    target=process_vm_bookmark_realtime,
+                    args=(available_driver["driver"], url, driver_id, available_driver),
+                    daemon=True
+                )
+                process_thread.start()
+                
+            else:
+                # All drivers busy, put URL back in queue
+                print(f"⏳ VM WORKER: All drivers busy, requeueing URL")
+                VM_BOOKMARK_QUEUE.put(url)
+                time.sleep(2)  # Wait before retrying
+                
+        except Exception as e:
+            print(f"❌ VM WORKER ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Cleanup
+    print("🧹 VM WORKER: Shutting down, closing all drivers...")
+    for driver_info in drivers:
+        try:
+            driver_info["driver"].quit()
+            print(f"✅ Closed driver {driver_info['config']['id']}")
+        except:
+            pass
+    
+    VM_PROCESSING_ACTIVE = False
+    print("✅ VM WORKER: Worker thread stopped")
+
+def process_vm_bookmark_realtime(driver, url, driver_id, driver_info):
+    """
+    Process a single URL bookmark in real-time
+    """
+    try:
+        print(f"🔖 DRIVER {driver_id}: Starting bookmark process for {url}")
+        
+        # Create new tab
+        driver.execute_script("window.open('');")
+        new_tab = driver.window_handles[-1]
+        driver.switch_to.window(new_tab)
+        
+        # Navigate to listing
+        driver.get(url)
+        time.sleep(2)  # Wait for page to load
+        
+        # Execute the buy button click sequence
+        success = execute_realtime_buy_sequence(driver, driver_id)
+        
+        if success:
+            print(f"✅ DRIVER {driver_id}: Successfully processed {url}")
+        else:
+            print(f"❌ DRIVER {driver_id}: Failed to process {url}")
+        
+        # Close the tab
+        driver.close()
+        driver.switch_to.window(driver.window_handles[0])
+        
+    except Exception as e:
+        print(f"❌ DRIVER {driver_id} ERROR: {e}")
+        try:
+            # Try to recover by closing tab
+            if len(driver.window_handles) > 1:
+                driver.close()
+                driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+    
+    finally:
+        # Mark driver as available again
+        driver_info["busy"] = False
+        print(f"🔓 DRIVER {driver_id}: Now available for next URL")
+
+def execute_realtime_buy_sequence(driver, driver_id):
+    """
+    Execute the buy button click sequence in real-time
+    """
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.common.by import By
+    
+    try:
+        # Look for buy button
+        buy_button = find_buy_button_realtime(driver)
+        
+        if not buy_button:
+            print(f"❌ DRIVER {driver_id}: Buy button not found - item likely sold")
+            return False
+        
+        # Click buy button
+        driver.execute_script("arguments[0].click();", buy_button)
+        print(f"✅ DRIVER {driver_id}: Buy button clicked")
+        
+        # Wait for pay button
+        time.sleep(3)
+        
+        # Look for pay button
+        pay_selectors = [
+            'button[data-testid="single-checkout-order-summary-purchase-button"]',
+            'button.web_ui__Button__primary[data-testid*="purchase"]',
+            '//button[contains(@data-testid, "purchase-button")]'
+        ]
+        
+        pay_button = None
+        for selector in pay_selectors:
+            try:
+                if selector.startswith('//'):
+                    pay_button = driver.find_element(By.XPATH, selector)
+                else:
+                    pay_button = driver.find_element(By.CSS_SELECTOR, selector)
+                
+                if pay_button:
+                    print(f"✅ DRIVER {driver_id}: Pay button found")
+                    break
+            except:
+                continue
+        
+        if not pay_button:
+            print(f"❌ DRIVER {driver_id}: Pay button not found")
+            return False
+        
+        # Wait exactly 2.5 seconds (critical timing)
+        print(f"⏰ DRIVER {driver_id}: Waiting 2.5 seconds before closing...")
+        time.sleep(2.5)
+        
+        print(f"✅ DRIVER {driver_id}: Bookmark sequence completed")
+        return True
+        
+    except Exception as e:
+        print(f"❌ DRIVER {driver_id}: Buy sequence error: {e}")
+        return False
+
+def find_buy_button_realtime(driver):
+    """
+    Find the buy button using multiple methods
+    """
+    from selenium.webdriver.common.by import By
+    
+    buy_selectors = [
+        'button[data-testid="item-buy-button"]',
+        'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+        '//button[@data-testid="item-buy-button"]',
+        '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]'
+    ]
+    
+    for selector in buy_selectors:
+        try:
+            if selector.startswith('//'):
+                return driver.find_element(By.XPATH, selector)
+            else:
+                return driver.find_element(By.CSS_SELECTOR, selector)
+        except:
+            continue
+    
+    return None
+
+def initialize_vm_driver(vm_ip_address, config):
+    """
+    Initialize a single VM driver
+    """
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options as ChromeOptions
+    
+    chrome_options = ChromeOptions()
+    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
+    chrome_options.add_argument(f"--profile-directory={config['profile']}")
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-gpu')
+    
+    try:
+        driver = webdriver.Remote(
+            command_executor=f'http://{vm_ip_address}:4444',
+            options=chrome_options
+        )
+        
+        # Navigate to Vinted and login if needed
+        driver.get("https://vinted.co.uk")
+        time.sleep(2)
+        
+        return driver
+        
+    except Exception as e:
+        print(f"❌ Failed to initialize driver {config['id']}: {e}")
+        return None
+
+def start_vm_realtime_processing():
+    """
+    Start the real-time VM bookmark processing system
+    """
+    global VM_STOP_EVENT
+    
+    print("\n" + "="*60)
+    print("🚀 STARTING REAL-TIME VM BOOKMARK PROCESSING")
+    print("="*60)
+    
+    # Reset stop event
+    VM_STOP_EVENT.clear()
+    
+    # Start the worker thread
+    worker_thread = threading.Thread(target=vm_bookmark_worker, daemon=True)
+    worker_thread.start()
+    
+    print("✅ VM real-time processing system started")
+    print("📡 Waiting for URLs to process...")
+    
+    return worker_thread
+
+def stop_vm_realtime_processing():
+    """
+    Stop the real-time VM bookmark processing system
+    """
+    global VM_STOP_EVENT
+    
+    print("\n🛑 Stopping VM real-time processing...")
+    VM_STOP_EVENT.set()
+    time.sleep(2)
+    print("✅ VM processing stopped")
 
 def input_captcha_solution_hid(self, sequence):
     """
@@ -2349,6 +2649,246 @@ def find_buy_button_with_shadow_dom(driver):
     return None, None
 
 
+class VMBookmarkProcessor:
+    """
+    Real-time VM bookmark processor that runs continuously in the background
+    """
+    def __init__(self, vm_ip_address="192.168.56.101"):
+        self.vm_ip = vm_ip_address
+        self.drivers = []
+        self.is_running = False
+        self.worker_thread = None
+        
+        # Driver configurations
+        self.driver_configs = [
+            {"user_data_dir": "C:\\VintedScraper_Default6_Bookmark", "profile": "Profile 17", "port": 9223, "id": 1},
+            {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9224, "id": 2},
+            {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9226, "id": 3},
+            {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9227, "id": 4},
+            {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9228, "id": 5}
+        ]
+    
+    def start(self):
+        """Start the real-time processor"""
+        if not self.is_running:
+            self.is_running = True
+            self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+            self.worker_thread.start()
+            print("✅ VM Real-time processor started")
+    
+    def stop(self):
+        """Stop the processor"""
+        self.is_running = False
+        if self.worker_thread:
+            self.worker_thread.join(timeout=5)
+        self._cleanup_drivers()
+        print("✅ VM Real-time processor stopped")
+    
+    def add_url(self, url):
+        """Add a URL to the processing queue"""
+        if url and not self._is_url_in_queue(url):
+            VM_BOOKMARK_QUEUE.put(url)
+            print(f"🚀 VM QUEUE: Added {url} (Queue size: {VM_BOOKMARK_QUEUE.qsize()})")
+            
+            # If processor not running, start it
+            if not self.is_running:
+                self.start()
+            return True
+        return False
+    
+    def _is_url_in_queue(self, url):
+        """Check if URL is already in queue"""
+        return url in list(VM_BOOKMARK_QUEUE.queue)
+    
+    def _worker_loop(self):
+        """Main worker loop that processes URLs"""
+        print("🔄 VM WORKER: Starting real-time processing loop...")
+        
+        # Initialize drivers
+        self._initialize_drivers()
+        
+        if not self.drivers:
+            print("❌ VM WORKER: No drivers available")
+            self.is_running = False
+            return
+        
+        print(f"✅ VM WORKER: {len(self.drivers)} drivers ready")
+        
+        # Main processing loop
+        while self.is_running:
+            try:
+                # Get URL from queue (with timeout for checking is_running)
+                try:
+                    url = VM_BOOKMARK_QUEUE.get(timeout=1)
+                except queue.Empty:
+                    continue
+                
+                print(f"\n🔔 VM WORKER: Processing URL: {url}")
+                
+                # Find available driver
+                available_driver = self._get_available_driver()
+                
+                if available_driver:
+                    # Process the URL
+                    available_driver['busy'] = True
+                    
+                    # Process in separate thread to not block
+                    process_thread = threading.Thread(
+                        target=self._process_bookmark,
+                        args=(available_driver, url),
+                        daemon=True
+                    )
+                    process_thread.start()
+                    
+                else:
+                    # All drivers busy, requeue
+                    print("⏳ VM WORKER: All drivers busy, requeueing")
+                    VM_BOOKMARK_QUEUE.put(url)
+                    time.sleep(2)
+                    
+            except Exception as e:
+                print(f"❌ VM WORKER ERROR: {e}")
+    
+    def _initialize_drivers(self):
+        """Initialize all VM drivers"""
+        for config in self.driver_configs:
+            driver = self._create_driver(config)
+            if driver:
+                self.drivers.append({
+                    'driver': driver,
+                    'config': config,
+                    'busy': False,
+                    'id': config['id']
+                })
+                print(f"✅ Driver {config['id']} initialized")
+    
+    def _create_driver(self, config):
+        """Create a single VM driver"""
+        try:
+            # Clear browser data first
+            clear_browser_data_universal(self.vm_ip, config)
+            
+            chrome_options = ChromeOptions()
+            chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
+            chrome_options.add_argument(f"--profile-directory={config['profile']}")
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-gpu')
+            
+            driver = webdriver.Remote(
+                command_executor=f'http://{self.vm_ip}:4444',
+                options=chrome_options
+            )
+            
+            # Navigate to Vinted
+            driver.get("https://vinted.co.uk")
+            time.sleep(2)
+            
+            # Handle login if needed (simplified - add your login logic here)
+            self._handle_login(driver, config['id'])
+            
+            return driver
+            
+        except Exception as e:
+            print(f"❌ Failed to create driver {config['id']}: {e}")
+            return None
+    
+    def _handle_login(self, driver, driver_id):
+        """Handle Vinted login (simplified version)"""
+        try:
+            # Check if already logged in
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="header-conversations-button"]'))
+            )
+            print(f"✅ Driver {driver_id}: Already logged in")
+        except:
+            print(f"⚠️ Driver {driver_id}: May need login")
+            # Add your login logic here if needed
+    
+    def _get_available_driver(self):
+        """Get an available driver"""
+        with VM_DRIVER_LOCK:
+            for driver_info in self.drivers:
+                if not driver_info['busy']:
+                    return driver_info
+        return None
+    
+    def _process_bookmark(self, driver_info, url):
+        """Process a single bookmark"""
+        driver = driver_info['driver']
+        driver_id = driver_info['id']
+        
+        try:
+            print(f"🔖 DRIVER {driver_id}: Processing {url}")
+            
+            # Open new tab
+            driver.execute_script("window.open('');")
+            new_tab = driver.window_handles[-1]
+            driver.switch_to.window(new_tab)
+            
+            # Navigate to URL
+            driver.get(url)
+            time.sleep(2)
+            
+            # Find and click buy button
+            buy_button = find_buy_button_with_shadow_dom(driver)
+            
+            if not buy_button or not buy_button[0]:
+                print(f"❌ DRIVER {driver_id}: Buy button not found - item sold")
+                return
+            
+            print(f"✅ DRIVER {driver_id}: Buy button found and clicked")
+            
+            # Wait for pay button
+            time.sleep(3)
+            
+            # Look for pay button
+            pay_button, _ = vm_try_selectors(
+                driver,
+                'pay_button',
+                operation='find',
+                timeout=10,
+                step_log={'driver_number': driver_id, 'start_time': time.time()}
+            )
+            
+            if pay_button:
+                print(f"✅ DRIVER {driver_id}: Pay button found")
+                
+                # Critical timing - wait exactly 2.5 seconds then close
+                print(f"⏰ DRIVER {driver_id}: Waiting 2.5 seconds...")
+                time.sleep(2.5)
+                
+                print(f"✅ DRIVER {driver_id}: Bookmark completed for {url}")
+            else:
+                print(f"❌ DRIVER {driver_id}: Pay button not found")
+            
+        except Exception as e:
+            print(f"❌ DRIVER {driver_id} ERROR: {e}")
+        
+        finally:
+            # Close tab and mark driver as available
+            try:
+                driver.close()
+                driver.switch_to.window(driver.window_handles[0])
+            except:
+                pass
+            
+            driver_info['busy'] = False
+            print(f"🔓 DRIVER {driver_id}: Available again")
+    
+    def _cleanup_drivers(self):
+        """Close all drivers"""
+        for driver_info in self.drivers:
+            try:
+                driver_info['driver'].quit()
+                print(f"✅ Closed driver {driver_info['id']}")
+            except:
+                pass
+        self.drivers.clear()
+
 
 class HIDKeyboard:
     """
@@ -4190,6 +4730,12 @@ class VintedScraper:
         return all_prices
     
     def __init__(self):
+        self.vm_processor = None
+        if VM_DRIVER_USE:
+            self.vm_processor = VMBookmarkProcessor()
+            self.vm_processor.start()
+            print("✅ VM Real-time processor initialized")
+    
         """Modified init - removed all booking/buying driver related initialization"""
         # Initialize pygame-related variables similar to FacebookScraper
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
@@ -5092,26 +5638,38 @@ class VintedScraper:
             shutil.rmtree(DOWNLOAD_ROOT)
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
-    
+    def initialize_vm_realtime_in_scraper(self):
+        """
+        Initialize the VM real-time processing at scraper startup
+        """
+        if VM_DRIVER_USE:
+            print("🚀 Initializing VM real-time bookmark processing...")
+            self.vm_worker_thread = start_vm_realtime_processing()
+            
+            # Replace the old send_to_vm_bookmark_system method
+            self.send_to_vm_bookmark_system = self.send_to_vm_bookmark_system_realtime
+            
+            print("✅ VM real-time system integrated with scraper")
+
     # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
     def send_to_vm_bookmark_system(self, url):
         """
-        Send a suitable listing URL to the VM bookmark system for processing
-        This connects to the existing VM bookmark infrastructure
+        Send a suitable listing URL to the real-time VM bookmark system
         """
-        global VM_BOOKMARK_URLS
+        if not self.vm_processor:
+            print("⚠️ VM processor not initialized")
+            if VM_DRIVER_USE:
+                self.vm_processor = VMBookmarkProcessor()
+                self.vm_processor.start()
+                time.sleep(3)
         
-        # Add URL to the VM bookmark queue (replacing the hardcoded URLs)
-        if url not in VM_BOOKMARK_URLS:
-            print(f"🚀 VM BOOKMARK: Adding {url} to VM bookmark queue")
-            VM_BOOKMARK_URLS.append(url)
-            
-            # If VM driver is active, it will automatically process this
-            # The VM system remains UTTERLY UNCHANGED - it just receives URLs from here
-            print(f"📋 VM BOOKMARK: Queue now has {len(VM_BOOKMARK_URLS)} URLs")
-            
-            # Note: The actual VM bookmark processing happens in main_vm_driver()
-            # which runs independently and processes URLs from VM_BOOKMARK_URLS
+        if self.vm_processor:
+            if self.vm_processor.add_url(url):
+                print(f"✅ Sent to real-time VM processing: {url}")
+            else:
+                print(f"⏭️ URL already queued: {url}")
+        else:
+            print(f"❌ VM processor not available for: {url}")
 
 
     def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
@@ -5226,6 +5784,8 @@ class VintedScraper:
             
             # Trigger VM bookmark processing
             self.send_to_vm_bookmark_system(url)
+            if self.vm_processor and VM_BOOKMARK_QUEUE.qsize() > 0:
+                print(f"📊 VM QUEUE STATUS: {VM_BOOKMARK_QUEUE.qsize()} URLs pending")
 
         # Generate exact UK time when creating listing info 
         from datetime import datetime
@@ -6608,6 +7168,9 @@ class VintedScraper:
                 traceback.print_exc()
                 
             finally:
+                if self.vm_processor:
+                    print("🛑 Stopping VM processor...")
+                    self.vm_processor.stop()
                 print("🧹 SCRAPING THREAD: Cleaning up...")
                 try:
                     driver.quit()
@@ -6653,13 +7216,12 @@ class VintedScraper:
 
 if __name__ == "__main__":
     if VM_DRIVER_USE:
-        print("VM_DRIVER_USE = True - Running VM driver script instead of main scraper")
-        if not HAS_PYAUDIO:
-            print("WARNING: pyaudiowpatch not available - audio features may not work")
-            print("Install with: pip install PyAudioWPatch")
-        main_vm_driver()
+        print("VM_DRIVER_USE = True - Running with real-time VM processing")
+        # VM processing will start automatically with the scraper
     else:
-        print("VM_DRIVER_USE = False - Running main Vinted scraper")
-        scraper = VintedScraper()
-        globals()['vinted_scraper_instance'] = scraper
-        scraper.run()
+        print("VM_DRIVER_USE = False - Running without VM processing")
+    
+    # Always run the main scraper
+    scraper = VintedScraper()
+    globals()['vinted_scraper_instance'] = scraper
+    scraper.run()
