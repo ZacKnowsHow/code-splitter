@@ -70,6 +70,9 @@ VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
+    "https://www.vinted.co.uk/items/7148324869-case-for-switch"
+    "https://www.vinted.co.uk/items/7159993196-nintendo-cases"
+    "https://www.vinted.co.uk/items/7159084364-ray-ban-aviators-gold-rim?referrer=catalog",
     "https://www.vinted.co.uk/items/7102546985-fc24-nintendo-switch?homepage_session_id=6e3fa7fa-65d1-4aef-a0da-dda652e1c311", 
     "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
     "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
@@ -1777,22 +1780,22 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
         
         # Method 1: Direct click
         try:
-            #pay_button.click()
+            pay_button.click()
             pay_clicked = True
             print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (direct)")
         except:
             # Method 2: JavaScript click
             try:
-                #driver.execute_script("arguments[0].click();", pay_button)
+                driver.execute_script("arguments[0].click();", pay_button)
                 pay_clicked = True
                 print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (JavaScript)")
             except:
                 # Method 3: Force enable and click
                 try:
-                    #driver.execute_script("""
-                    #    arguments[0].disabled = false;
-                    #    arguments[0].click();
-                    #""", pay_button)
+                    driver.execute_script("""
+                        arguments[0].disabled = false;
+                        arguments[0].click();
+                    """, pay_button)
                     pay_clicked = True
                     print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (force)")
                 except Exception as final_error:
@@ -1803,6 +1806,39 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
             # CRITICAL: Exact 0.25 second wait (same as main scraper)
             print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Waiting exactly 0.25 seconds...")
             time.sleep(5)
+            
+            # NEW: Wait for "Purchase successful" detection before closing tab
+            print(f"🔍 DRIVER {step_log['driver_number']}: Searching for 'Purchase successful' message...")
+            
+            purchase_successful = False
+            start_time = time.time()
+            timeout = 15  # 15 seconds timeout
+            
+            while (time.time() - start_time) < timeout:
+                try:
+                    # Look for the "Purchase successful" h2 element
+                    success_element = driver.find_element(
+                        By.CSS_SELECTOR, 
+                        'h2.web_ui__Text__text.web_ui__Text__title.web_ui__Text__left.web_ui__Text__muted'
+                    )
+                    
+                    if success_element and success_element.text == "Purchase successful":
+                        purchase_successful = True
+                        print(f"✅ DRIVER {step_log['driver_number']}: Purchase successful message found!")
+                        break
+                        
+                except:
+                    # Element not found yet, continue waiting
+                    pass
+                
+                # Wait 0.5 seconds before checking again
+                time.sleep(0.1)
+            
+            # Print result based on what was found
+            if purchase_successful:
+                print(f"🎉 DRIVER {step_log['driver_number']}: SUCCESSFUL - Purchase successful message detected!")
+            else:
+                print(f"⚠️ DRIVER {step_log['driver_number']}: UNSUCCESSFUL - Purchase successful message not found within 15 seconds")
             
             # CRITICAL: Immediate tab close (same as main scraper)
             print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Closing tab immediately...")
@@ -2162,39 +2198,3 @@ def find_buy_button_with_shadow_dom(driver):
                 if (shadowButtonAlt) {
                     let span = shadowButtonAlt.querySelector('span');
                     if (span && span.textContent.includes('Buy now')) {
-                        console.log('Found buy button (alternative) in shadow root of:', element.tagName);
-                        return shadowButtonAlt;
-                    }
-                }
-                
-                // Recursively search child elements in shadow root
-                let shadowChildren = element.shadowRoot.querySelectorAll('*');
-                for (let child of shadowChildren) {
-                    let result = searchInShadowRoot(child);
-                    if (result) return result;
-                }
-            }
-            
-            return null;
-        }
-        
-        // Search all elements in the main document
-        let allElements = document.querySelectorAll('*');
-        for (let element of allElements) {
-            let result = searchInShadowRoot(element);
-            if (result) {
-                return result;
-            }
-        }
-        
-        return null;
-    }
-    
-    return findBuyButtonInShadowDOM();
-    """
-    
-    try:
-        shadow_button = driver.execute_script(shadow_dom_script)
-        if shadow_button:
-            print("✅ SHADOW DOM: Found buy button via Shadow DOM traversal!")
-            return shadow_button, "shadow_dom_traversal"
