@@ -70,13 +70,11 @@ VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7148324869-case-for-switch"
-    "https://www.vinted.co.uk/items/7159993196-nintendo-cases"
+    "https://www.vinted.co.uk/items/7160371132-switch-case?referrer=catalog"
     "https://www.vinted.co.uk/items/7159084364-ray-ban-aviators-gold-rim?referrer=catalog",
     "https://www.vinted.co.uk/items/7102546985-fc24-nintendo-switch?homepage_session_id=6e3fa7fa-65d1-4aef-a0da-dda652e1c311", 
     "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
     "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
-    "https://www.vinted.co.uk/items/7097706534-just-dance-2022-nintendo-switch-game-cartridge?homepage_session_id=6c527539-91d8-4297-8e48-f96581b761d3"
 ]
 
 # tests whether the listing is suitable for buying based on URL rather than scanning
@@ -1259,7 +1257,7 @@ def main_vm_driver():
     
     # Driver configurations
     driver_configs = [
-        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9223},
+        {"user_data_dir": "C:\\VintedScraper_Default6_Bookmark", "profile": "Profile 17", "port": 9223},
         {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9224},
         {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9226},
         {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9227},
@@ -1804,22 +1802,22 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
         
         if pay_clicked:
             # CRITICAL: Exact 0.25 second wait (same as main scraper)
-            print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Waiting exactly 0.25 seconds...")
-            time.sleep(5)
+            print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Waiting exactly seconds...")
+            time.sleep(2.5)
             
             # NEW: Wait for "Purchase successful" detection before closing tab
             print(f"🔍 DRIVER {step_log['driver_number']}: Searching for 'Purchase successful' message...")
             
             purchase_successful = False
             start_time = time.time()
-            timeout = 15  # 15 seconds timeout
+            timeout = 30 
             
             while (time.time() - start_time) < timeout:
                 try:
-                    # Look for the "Purchase successful" h2 element
+                    # Method 1: Use the data-testid selector (most reliable)
                     success_element = driver.find_element(
                         By.CSS_SELECTOR, 
-                        'h2.web_ui__Text__text.web_ui__Text__title.web_ui__Text__left.web_ui__Text__muted'
+                        'div[data-testid="conversation-message--status-message--title"] h2'
                     )
                     
                     if success_element and success_element.text == "Purchase successful":
@@ -1828,10 +1826,36 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                         break
                         
                 except:
-                    # Element not found yet, continue waiting
-                    pass
+                    try:
+                        # Method 2: Use the corrected h2 selector (without the muted class)
+                        success_element = driver.find_element(
+                            By.CSS_SELECTOR, 
+                            'h2.web_ui__Text__text.web_ui__Text__title.web_ui__Text__left'
+                        )
+                        
+                        if success_element and success_element.text == "Purchase successful":
+                            purchase_successful = True
+                            print(f"✅ DRIVER {step_log['driver_number']}: Purchase successful message found!")
+                            break
+                            
+                    except:
+                        try:
+                            # Method 3: Use XPath for more flexibility
+                            success_element = driver.find_element(
+                                By.XPATH, 
+                                "//h2[text()='Purchase successful']"
+                            )
+                            
+                            if success_element:
+                                purchase_successful = True
+                                print(f"✅ DRIVER {step_log['driver_number']}: Purchase successful message found!")
+                                break
+                                
+                        except:
+                            # No element found yet, continue waiting
+                            pass
                 
-                # Wait 0.5 seconds before checking again
+                # Wait 0.1 seconds before checking again
                 time.sleep(0.1)
             
             # Print result based on what was found
