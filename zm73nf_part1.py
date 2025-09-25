@@ -1257,7 +1257,7 @@ def main_vm_driver():
     
     # Driver configurations
     driver_configs = [
-        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9223},
+        {"user_data_dir": "C:\\VintedScraper_Default6_Bookmark", "profile": "Profile 17", "port": 9223},
         {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9224},
         {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9226},
         {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9227},
@@ -1739,10 +1739,6 @@ def handle_vm_shipping_options(driver, step_log):
             
             # Check for "Choose a pick-up point" message
             try:
-                choose_pickup = driver.find_element(
-                    By.XPATH,
-                    '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Choose a pick-up point"]'
-                )
                 
                 print(f"🏠 DRIVER {step_log['driver_number']}: Switching to Ship to home...")
                 
@@ -1753,7 +1749,6 @@ def handle_vm_shipping_options(driver, step_log):
                 )
                 ship_home.click()
                 
-                # Wait 0.3 seconds as in main scraper
                 print(f"✅ DRIVER {step_log['driver_number']}: Switched to Ship to home, waiting 3 seconds...")
                 time.sleep(3)
             except:
@@ -1810,7 +1805,7 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
             
             purchase_successful = False
             start_time = time.time()
-            timeout = 30 
+            timeout = 1 
             
             while (time.time() - start_time) < timeout:
                 try:
@@ -2198,3 +2193,8 @@ def find_buy_button_with_shadow_dom(driver):
                 
         except:
             continue
+    
+    # Method 2: Shadow DOM traversal using JavaScript
+    print("🌊 SHADOW DOM: Standard selectors failed, trying Shadow DOM traversal...")
+    
+    shadow_dom_script = """
