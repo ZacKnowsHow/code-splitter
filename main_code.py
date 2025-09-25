@@ -66,15 +66,10 @@ import wave
 import ctypes
 
 
-VM_DRIVER_USE = True
+VM_DRIVER_USE = False
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7160371132-switch-case?referrer=catalog"
-    "https://www.vinted.co.uk/items/7159084364-ray-ban-aviators-gold-rim?referrer=catalog",
-    "https://www.vinted.co.uk/items/7102546985-fc24-nintendo-switch?homepage_session_id=6e3fa7fa-65d1-4aef-a0da-dda652e1c311", 
-    "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
-    "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
 ]
 
 # tests whether the listing is suitable for buying based on URL rather than scanning
@@ -87,19 +82,6 @@ TEST_SUITABLE_URLS = [
 
 # tests the number of listings found by the search
 TEST_NUMBER_OF_LISTINGS = False
-
-#tests the bookmark functionality
-BOOKMARK_TEST_MODE = False
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/7037950664-racer-jacket?referrer=catalog"
-BOOKMARK_TEST_USERNAME = "leah_lane" 
-
-#tests the buying functionality
-BUYING_TEST_MODE = False
-BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
-
-#tests both the bookmark and buying functionality
-TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6996290195-cider-with-rosie-pretty-decor-book?referrer=catalog"
 
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
@@ -5235,7 +5217,7 @@ class VintedScraper:
             print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
 
         # MODIFIED: Send suitable listings to VM bookmark system
-        if is_suitable:
+        if is_suitable or VINTED_SHOW_ALL_LISTINGS:
             print(f"✅ SUITABLE LISTING FOUND: Sending to VM bookmark system")
             print(f"🔗 URL: {url}")
             
@@ -6669,7 +6651,7 @@ class VintedScraper:
             print("🏁 MAIN: Program exit")
             sys.exit(0)
 
-if __name__ == "main":
+if __name__ == "__main__":
     if VM_DRIVER_USE:
         print("VM_DRIVER_USE = True - Running VM driver script instead of main scraper")
         if not HAS_PYAUDIO:
