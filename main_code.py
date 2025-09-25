@@ -1257,7 +1257,7 @@ def main_vm_driver():
     
     # Driver configurations
     driver_configs = [
-        {"user_data_dir": "C:\\VintedScraper_Default6_Bookmark", "profile": "Profile 17", "port": 9223},
+        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9223},
         {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9224},
         {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9226},
         {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9227},
@@ -1778,22 +1778,22 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
         
         # Method 1: Direct click
         try:
-            pay_button.click()
+            #pay_button.click()
             pay_clicked = True
             print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (direct)")
         except:
             # Method 2: JavaScript click
             try:
-                driver.execute_script("arguments[0].click();", pay_button)
+                #driver.execute_script("arguments[0].click();", pay_button)
                 pay_clicked = True
                 print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (JavaScript)")
             except:
                 # Method 3: Force enable and click
                 try:
-                    driver.execute_script("""
-                        arguments[0].disabled = false;
-                        arguments[0].click();
-                    """, pay_button)
+                    #driver.execute_script("""
+                    #    arguments[0].disabled = false;
+                    #    arguments[0].click();
+                    #""", pay_button)
                     pay_clicked = True
                     print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (force)")
                 except Exception as final_error:
