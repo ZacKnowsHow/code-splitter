@@ -66,7 +66,13 @@ import wave
 import ctypes
 
 
-VM_DRIVER_USE = False
+VM_BOOKMARK_QUEUE = queue.Queue()  # Thread-safe queue for URLs
+VM_PROCESSING_ACTIVE = False
+VM_DRIVERS_READY = []  # List of available VM drivers
+VM_DRIVER_LOCK = Lock()
+VM_STOP_EVENT = Event()  # Event to signal stopping
+
+VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
@@ -419,6 +425,300 @@ def send_keypress_with_hid_keyboard(key, hold_time=None):
     except Exception as e:
         print(f"❌ HID: Keystroke failed for '{key}': {e}")
         return False
+
+def add_to_vm_bookmark_queue(url):
+    """
+    Add a URL to the VM bookmark queue for immediate processing
+    """
+    if url and url not in list(VM_BOOKMARK_QUEUE.queue):
+        VM_BOOKMARK_QUEUE.put(url)
+        print(f"🚀 VM QUEUE: Added {url} to queue (Queue size: {VM_BOOKMARK_QUEUE.qsize()})")
+        return True
+    return False
+
+def vm_bookmark_worker(vm_ip_address="192.168.56.101"):
+    """
+    Worker thread that continuously processes URLs from the queue
+    """
+    global VM_PROCESSING_ACTIVE
+    
+    # Driver configurations
+    driver_configs = [
+        {"user_data_dir": "C:\\VintedScraper_Default6_Bookmark", "profile": "Profile 17", "port": 9223, "id": 1},
+        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9224, "id": 2},
+        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9226, "id": 3},
+        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9227, "id": 4},
+        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9228, "id": 5}
+    ]
+    
+    # Initialize all VM drivers
+    print("📦 VM WORKER: Initializing VM drivers...")
+    drivers = []
+    
+    for config in driver_configs:
+        driver = initialize_vm_driver(vm_ip_address, config)
+        if driver:
+            drivers.append({"driver": driver, "config": config, "busy": False})
+            print(f"✅ VM WORKER: Driver {config['id']} initialized")
+        else:
+            print(f"❌ VM WORKER: Failed to initialize driver {config['id']}")
+    
+    if not drivers:
+        print("❌ VM WORKER: No drivers available, exiting worker thread")
+        return
+    
+    print(f"✅ VM WORKER: {len(drivers)} drivers ready for real-time processing")
+    VM_PROCESSING_ACTIVE = True
+    
+    # Main processing loop
+    while not VM_STOP_EVENT.is_set():
+        try:
+            # Wait for URL with timeout to allow checking stop event
+            try:
+                url = VM_BOOKMARK_QUEUE.get(timeout=1)
+            except queue.Empty:
+                continue
+            
+            print(f"\n🔔 VM WORKER: New URL received for processing: {url}")
+            
+            # Find an available driver
+            available_driver = None
+            
+            # First, try to find a non-busy driver
+            for driver_info in drivers:
+                if not driver_info["busy"]:
+                    available_driver = driver_info
+                    break
+            
+            if available_driver:
+                # Mark driver as busy
+                available_driver["busy"] = True
+                driver_id = available_driver["config"]["id"]
+                
+                print(f"🚗 VM WORKER: Assigning URL to driver {driver_id}")
+                
+                # Process the URL in a separate thread to avoid blocking
+                process_thread = threading.Thread(
+                    target=process_vm_bookmark_realtime,
+                    args=(available_driver["driver"], url, driver_id, available_driver),
+                    daemon=True
+                )
+                process_thread.start()
+                
+            else:
+                # All drivers busy, put URL back in queue
+                print(f"⏳ VM WORKER: All drivers busy, requeueing URL")
+                VM_BOOKMARK_QUEUE.put(url)
+                time.sleep(2)  # Wait before retrying
+                
+        except Exception as e:
+            print(f"❌ VM WORKER ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Cleanup
+    print("🧹 VM WORKER: Shutting down, closing all drivers...")
+    for driver_info in drivers:
+        try:
+            driver_info["driver"].quit()
+            print(f"✅ Closed driver {driver_info['config']['id']}")
+        except:
+            pass
+    
+    VM_PROCESSING_ACTIVE = False
+    print("✅ VM WORKER: Worker thread stopped")
+
+def process_vm_bookmark_realtime(driver, url, driver_id, driver_info):
+    """
+    Process a single URL bookmark in real-time
+    """
+    try:
+        print(f"🔖 DRIVER {driver_id}: Starting bookmark process for {url}")
+        
+        # Create new tab
+        driver.execute_script("window.open('');")
+        new_tab = driver.window_handles[-1]
+        driver.switch_to.window(new_tab)
+        
+        # Navigate to listing
+        driver.get(url)
+        time.sleep(2)  # Wait for page to load
+        
+        # Execute the buy button click sequence
+        success = execute_realtime_buy_sequence(driver, driver_id)
+        
+        if success:
+            print(f"✅ DRIVER {driver_id}: Successfully processed {url}")
+        else:
+            print(f"❌ DRIVER {driver_id}: Failed to process {url}")
+        
+        # Close the tab
+        driver.close()
+        driver.switch_to.window(driver.window_handles[0])
+        
+    except Exception as e:
+        print(f"❌ DRIVER {driver_id} ERROR: {e}")
+        try:
+            # Try to recover by closing tab
+            if len(driver.window_handles) > 1:
+                driver.close()
+                driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+    
+    finally:
+        # Mark driver as available again
+        driver_info["busy"] = False
+        print(f"🔓 DRIVER {driver_id}: Now available for next URL")
+
+def execute_realtime_buy_sequence(driver, driver_id):
+    """
+    Execute the buy button click sequence in real-time
+    """
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.common.by import By
+    
+    try:
+        # Look for buy button
+        buy_button = find_buy_button_realtime(driver)
+        
+        if not buy_button:
+            print(f"❌ DRIVER {driver_id}: Buy button not found - item likely sold")
+            return False
+        
+        # Click buy button
+        driver.execute_script("arguments[0].click();", buy_button)
+        print(f"✅ DRIVER {driver_id}: Buy button clicked")
+        
+        # Wait for pay button
+        time.sleep(3)
+        
+        # Look for pay button
+        pay_selectors = [
+            'button[data-testid="single-checkout-order-summary-purchase-button"]',
+            'button.web_ui__Button__primary[data-testid*="purchase"]',
+            '//button[contains(@data-testid, "purchase-button")]'
+        ]
+        
+        pay_button = None
+        for selector in pay_selectors:
+            try:
+                if selector.startswith('//'):
+                    pay_button = driver.find_element(By.XPATH, selector)
+                else:
+                    pay_button = driver.find_element(By.CSS_SELECTOR, selector)
+                
+                if pay_button:
+                    print(f"✅ DRIVER {driver_id}: Pay button found")
+                    break
+            except:
+                continue
+        
+        if not pay_button:
+            print(f"❌ DRIVER {driver_id}: Pay button not found")
+            return False
+        
+        # Wait exactly 2.5 seconds (critical timing)
+        print(f"⏰ DRIVER {driver_id}: Waiting 2.5 seconds before closing...")
+        time.sleep(2.5)
+        
+        print(f"✅ DRIVER {driver_id}: Bookmark sequence completed")
+        return True
+        
+    except Exception as e:
+        print(f"❌ DRIVER {driver_id}: Buy sequence error: {e}")
+        return False
+
+def find_buy_button_realtime(driver):
+    """
+    Find the buy button using multiple methods
+    """
+    from selenium.webdriver.common.by import By
+    
+    buy_selectors = [
+        'button[data-testid="item-buy-button"]',
+        'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+        '//button[@data-testid="item-buy-button"]',
+        '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]'
+    ]
+    
+    for selector in buy_selectors:
+        try:
+            if selector.startswith('//'):
+                return driver.find_element(By.XPATH, selector)
+            else:
+                return driver.find_element(By.CSS_SELECTOR, selector)
+        except:
+            continue
+    
+    return None
+
+def initialize_vm_driver(vm_ip_address, config):
+    """
+    Initialize a single VM driver
+    """
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options as ChromeOptions
+    
+    chrome_options = ChromeOptions()
+    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
+    chrome_options.add_argument(f"--profile-directory={config['profile']}")
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-gpu')
+    
+    try:
+        driver = webdriver.Remote(
+            command_executor=f'http://{vm_ip_address}:4444',
+            options=chrome_options
+        )
+        
+        # Navigate to Vinted and login if needed
+        driver.get("https://vinted.co.uk")
+        time.sleep(2)
+        
+        return driver
+        
+    except Exception as e:
+        print(f"❌ Failed to initialize driver {config['id']}: {e}")
+        return None
+
+def start_vm_realtime_processing():
+    """
+    Start the real-time VM bookmark processing system
+    """
+    global VM_STOP_EVENT
+    
+    print("\n" + "="*60)
+    print("🚀 STARTING REAL-TIME VM BOOKMARK PROCESSING")
+    print("="*60)
+    
+    # Reset stop event
+    VM_STOP_EVENT.clear()
+    
+    # Start the worker thread
+    worker_thread = threading.Thread(target=vm_bookmark_worker, daemon=True)
+    worker_thread.start()
+    
+    print("✅ VM real-time processing system started")
+    print("📡 Waiting for URLs to process...")
+    
+    return worker_thread
+
+def stop_vm_realtime_processing():
+    """
+    Stop the real-time VM bookmark processing system
+    """
+    global VM_STOP_EVENT
+    
+    print("\n🛑 Stopping VM real-time processing...")
+    VM_STOP_EVENT.set()
+    time.sleep(2)
+    print("✅ VM processing stopped")
 
 def input_captcha_solution_hid(self, sequence):
     """
@@ -1898,303 +2198,3 @@ def clear_browser_data_universal(vm_ip_address, config):
         chrome_options.add_argument('--high-dpi-support=1')
         chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
         chrome_options.add_argument('--remote-allow-origins=*')
-        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-extensions')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--disable-web-security')
-        chrome_options.add_argument('--allow-running-insecure-content')
-        
-        # Create driver connection
-        clear_driver = webdriver.Remote(
-            command_executor=f'http://{vm_ip_address}:4444',
-            options=chrome_options
-        )
-        
-        print(f"✓ Temporary driver created successfully (Session: {clear_driver.session_id})")
-        
-        print("Step 2: Navigating to Chrome settings...")
-        clear_driver.get("chrome://settings/clearBrowserData")
-        print("✓ Navigated to clear browser data page")
-        
-        print("Step 3: Waiting for page to load...")
-        time.sleep(2)  # Wait for Shadow DOM to initialize
-        
-        print("Step 4: Accessing Shadow DOM to find clear button...")
-        
-        # JavaScript to navigate Shadow DOM and click the clear button
-        shadow_dom_script = """
-        function findAndClickClearButton() {
-            // Multiple strategies to find the clear button in Shadow DOM
-            
-            // Strategy 1: Direct access via settings-ui
-            let settingsUi = document.querySelector('settings-ui');
-            if (settingsUi && settingsUi.shadowRoot) {
-                let clearBrowserData = settingsUi.shadowRoot.querySelector('settings-main')?.shadowRoot
-                    ?.querySelector('settings-basic-page')?.shadowRoot
-                    ?.querySelector('settings-section[section="privacy"]')?.shadowRoot
-                    ?.querySelector('settings-clear-browsing-data-dialog');
-                
-                if (clearBrowserData && clearBrowserData.shadowRoot) {
-                    let clearButton = clearBrowserData.shadowRoot.querySelector('#clearButton');
-                    if (clearButton) {
-                        console.log('Found clear button via strategy 1');
-                        clearButton.click();
-                        return true;
-                    }
-                }
-            }
-            
-            // Strategy 2: Search all shadow roots recursively
-            function searchShadowRoots(element) {
-                if (element.shadowRoot) {
-                    let clearButton = element.shadowRoot.querySelector('#clearButton');
-                    if (clearButton) {
-                        console.log('Found clear button via recursive search');
-                        clearButton.click();
-                        return true;
-                    }
-                    
-                    // Search nested shadow roots
-                    let shadowElements = element.shadowRoot.querySelectorAll('*');
-                    for (let el of shadowElements) {
-                        if (searchShadowRoots(el)) return true;
-                    }
-                }
-                return false;
-            }
-            
-            let allElements = document.querySelectorAll('*');
-            for (let el of allElements) {
-                if (searchShadowRoots(el)) return true;
-            }
-            
-            // Strategy 3: Look for cr-button elements in shadow roots
-            function findCrButton(element) {
-                if (element.shadowRoot) {
-                    let crButtons = element.shadowRoot.querySelectorAll('cr-button');
-                    for (let btn of crButtons) {
-                        if (btn.id === 'clearButton' || btn.textContent.includes('Delete data')) {
-                            console.log('Found cr-button via strategy 3');
-                            btn.click();
-                            return true;
-                        }
-                    }
-                    
-                    let shadowElements = element.shadowRoot.querySelectorAll('*');
-                    for (let el of shadowElements) {
-                        if (findCrButton(el)) return true;
-                    }
-                }
-                return false;
-            }
-            
-            for (let el of allElements) {
-                if (findCrButton(el)) return true;
-            }
-            
-            console.log('Clear button not found in any shadow root');
-            return false;
-        }
-        
-        return findAndClickClearButton();
-        """
-        
-        # Execute the Shadow DOM navigation script
-        result = clear_driver.execute_script(shadow_dom_script)
-        
-        if result:
-            print("✓ Successfully clicked clear data button via Shadow DOM!")
-            print("Step 5: Waiting for data clearing to complete...")
-            time.sleep(2)  # Wait for clearing process
-            print("✓ Browser data clearing completed successfully!")
-        else:
-            print("✗ Failed to find clear button in Shadow DOM")
-            
-            # Fallback: Try to trigger clear via keyboard shortcut
-            print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
-            try:
-                from selenium.webdriver.common.keys import Keys
-                body = clear_driver.find_element(By.TAG_NAME, "body")
-                body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
-                time.sleep(1)
-                # Try to press Enter to confirm
-                body.send_keys(Keys.ENTER)
-                time.sleep(1)
-                print("✓ Fallback keyboard shortcut attempted")
-            except Exception as fallback_error:
-                print(f"✗ Fallback also failed: {fallback_error}")
-        
-    except Exception as e:
-        print(f"✗ Browser data clearing failed: {str(e)}")
-        print("Continuing with main execution anyway...")
-        import traceback
-        traceback.print_exc()
-    
-    finally:
-        if clear_driver:
-            try:
-                print("Step 6: Closing temporary driver...")
-                clear_driver.quit()
-                print("✓ Temporary driver closed successfully")
-            except Exception as e:
-                print(f"Warning: Failed to close temporary driver: {e}")
-        
-        print("=" * 50)
-        print("BROWSER DATA CLEAR COMPLETE")
-        print("=" * 50)
-        time.sleep(0.5)  # Brief pause before continuing
-
-def setup_driver_universal(vm_ip_address, config):
-    """Universal setup function for any driver configuration"""
-    
-    # Session cleanup (existing code)
-    try:
-        import requests
-        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
-        status_data = status_response.json()
-        
-        if 'value' in status_data and 'nodes' in status_data['value']:
-            for node in status_data['value']['nodes']:
-                if 'slots' in node:
-                    for slot in node['slots']:
-                        if slot.get('session'):
-                            session_id = slot['session']['sessionId']
-                            print(f"Found existing session: {session_id}")
-                            delete_response = requests.delete(
-                                f"http://{vm_ip_address}:4444/session/{session_id}",
-                                timeout=10
-                            )
-                            print(f"Cleaned up session: {session_id}")
-    
-    except Exception as e:
-        print(f"Session cleanup failed: {e}")
-    
-    # Chrome options for the VM instance
-    chrome_options = ChromeOptions()
-    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
-    chrome_options.add_argument(f"--profile-directory={config['profile']}")
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    
-    # VM-specific optimizations
-    chrome_options.add_argument('--force-device-scale-factor=1')
-    chrome_options.add_argument('--high-dpi-support=1')
-    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
-    chrome_options.add_argument('--remote-allow-origins=*')
-    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-extensions')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--disable-web-security')
-    chrome_options.add_argument('--allow-running-insecure-content')
-
-    
-    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
-    
-    driver = None
-    
-    try:
-        print("Attempting to connect to remote WebDriver...")
-        
-        driver = webdriver.Remote(
-            command_executor=f'http://{vm_ip_address}:4444',
-            options=chrome_options
-        )
-        
-        print(f"✓ Successfully created remote WebDriver connection")
-        print(f"Session ID: {driver.session_id}")
-        
-        print("Applying stealth modifications...")
-        stealth_script = """
-        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-        window.chrome = {runtime: {}};
-        Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
-        
-        Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
-        Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
-        Object.defineProperty(screen, 'colorDepth', {get: () => 24});
-        """
-        driver.execute_script(stealth_script)
-        print("✓ Stealth script applied successfully")
-        
-        print(f"✓ Successfully connected to VM Chrome with clean profile")
-        return driver
-        
-    except Exception as e:
-        print(f"✗ Failed to connect to VM WebDriver")
-        print(f"Error: {str(e)}")
-        
-        if driver:
-            try:
-                driver.quit()
-            except:
-                pass
-        
-        return None
-
-def find_buy_button_with_shadow_dom(driver):
-    """
-    Enhanced buy now button finder - JavaScript click first approach
-    Finds button and immediately clicks with JavaScript for reliability
-    """
-    print("🔍 SHADOW DOM: Starting buy button search with JavaScript-first approach...")
-    
-    # Method 1: Find button and immediately click with JavaScript
-    print("⚡ JAVASCRIPT-FIRST: Finding and clicking buy button with JavaScript...")
-    buy_selectors = [
-        'button[data-testid="item-buy-button"]',
-        'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
-        '//button[@data-testid="item-buy-button"]',
-        '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
-        '//span[text()="Buy now"]/parent::button'
-    ]
-    
-    for selector in buy_selectors:
-        try:
-            if selector.startswith('//'):
-                buy_button = driver.find_element(By.XPATH, selector)
-            else:
-                buy_button = driver.find_element(By.CSS_SELECTOR, selector)
-            
-            print(f"✅ FOUND: Buy button with: {selector}")
-            
-            # IMMEDIATELY click with JavaScript - no other methods tried
-            try:
-                driver.execute_script("arguments[0].click();", buy_button)
-                print(f"✅ JAVASCRIPT-FIRST: Buy button clicked immediately with JavaScript")
-                return buy_button, selector
-            except Exception as js_error:
-                print(f"❌ JAVASCRIPT-FIRST: JavaScript click failed: {js_error}")
-                continue
-                
-        except:
-            continue
-    
-    # Method 2: Shadow DOM traversal using JavaScript
-    print("🌊 SHADOW DOM: Standard selectors failed, trying Shadow DOM traversal...")
-    
-    shadow_dom_script = """
-    function findBuyButtonInShadowDOM() {
-        // Function to recursively search through shadow roots
-        function searchInShadowRoot(element) {
-            if (!element) return null;
-            
-            // Check if this element has a shadow root
-            if (element.shadowRoot) {
-                // Search within the shadow root
-                let shadowButton = element.shadowRoot.querySelector('button[data-testid="item-buy-button"]');
-                if (shadowButton) {
-                    console.log('Found buy button in shadow root of:', element.tagName);
-                    return shadowButton;
-                }
-                
-                // Try other selectors in shadow root
-                let shadowButtonAlt = element.shadowRoot.querySelector('button.web_ui__Button__primary');
-                if (shadowButtonAlt) {
-                    let span = shadowButtonAlt.querySelector('span');
