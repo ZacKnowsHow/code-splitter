@@ -65,6 +65,9 @@ from scipy import signal
 import wave
 import ctypes
 
+#uses custom url for buying in vm, for testing. works same as normal, just with custom url instead.
+
+CLICK_PAY_BUTTON = False
 
 VM_DRIVER_USE = False
 google_login = True
@@ -83,19 +86,6 @@ TEST_SUITABLE_URLS = [
 # tests the number of listings found by the search
 TEST_NUMBER_OF_LISTINGS = False
 
-#tests the bookmark functionality
-BOOKMARK_TEST_MODE = False
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/7037950664-racer-jacket?referrer=catalog"
-BOOKMARK_TEST_USERNAME = "leah_lane" 
-
-#tests the buying functionality
-BUYING_TEST_MODE = False
-BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
-
-#tests both the bookmark and buying functionality
-TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6996290195-cider-with-rosie-pretty-decor-book?referrer=catalog"
-
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
     'controller','tv_black', 
@@ -103,7 +93,7 @@ NINTENDO_SWITCH_CLASSES = [
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = True
+VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
 print_images_backend_info = False
 test_bookmark_function = False
@@ -215,7 +205,7 @@ recent_listings = {
 
 review_min = 3
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
-MAX_LISTINGS_VINTED_TO_SCAN = 5  # Maximum listings to scan before refresh
+MAX_LISTINGS_VINTED_TO_SCAN = 15  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 0  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
@@ -1387,7 +1377,6 @@ def main_vm_driver():
                 assigned_url = VM_BOOKMARK_URLS[i-1]  # Get URL for this driver (0-indexed)
                 print(f"\n🔖 BOOKMARKING: Driver {i} starting bookmark process for:")
                 print(f"🔗 URL: {assigned_url}")
-                
                 # Execute bookmark using existing logic
                 bookmark_success = execute_vm_bookmark_process(driver, assigned_url, i)
                 
@@ -1768,22 +1757,32 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
         
         # Method 1: Direct click
         try:
-            #pay_button.click()
+            if not VINTED_SHOW_ALL_LISTINGS:
+                if CLICK_PAY_BUTTON:
+                    print('1')
+            pay_button.click()
             pay_clicked = True
             print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (direct)")
         except:
             # Method 2: JavaScript click
             try:
-                #driver.execute_script("arguments[0].click();", pay_button)
+                if not VINTED_SHOW_ALL_LISTINGS:
+                    if CLICK_PAY_BUTTON:
+                        print('1')
+                driver.execute_script("arguments[0].click();", pay_button)
                 pay_clicked = True
                 print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (JavaScript)")
             except:
                 # Method 3: Force enable and click
                 try:
-                    #driver.execute_script("""
-                    #    arguments[0].disabled = false;
-                    #    arguments[0].click();
-                    #""", pay_button)
+                    if not VINTED_SHOW_ALL_LISTINGS:
+                        if CLICK_PAY_BUTTON:
+                            print('1')
+
+                    driver.execute_script("""
+                        arguments[0].disabled = false;
+                        arguments[0].click();
+                    """, pay_button)
                     pay_clicked = True
                     print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (force)")
                 except Exception as final_error:
@@ -1800,7 +1799,7 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
             
             purchase_successful = False
             start_time = time.time()
-            timeout = 1 
+            timeout = 15
             
             while (time.time() - start_time) < timeout:
                 try:
@@ -4201,7 +4200,210 @@ class VintedScraper:
             'anonymous_games': 5  # Add price for anonymous games
         })
         return all_prices
-    
+        
+    def login_vm_driver(self, driver):
+        """Login the VM driver and wait on homepage - extracted from main_vm_driver logic"""
+        try:
+            print("🔄 VM LOGIN: Starting login process...")
+            
+            # Clear browser data first
+            print("🔄 VM LOGIN: Clearing cookies...")
+            driver.delete_all_cookies()
+            
+            # Navigate to Vinted
+            print("🔄 VM LOGIN: Navigating to vinted.co.uk...")
+            driver.get("https://vinted.co.uk")
+            
+            # Random delay after page load
+            time.sleep(random.uniform(2, 4))
+            
+            # Wait for and accept cookies
+            print("🔄 VM LOGIN: Accepting cookies...")
+            if wait_and_click(driver, By.ID, "onetrust-accept-btn-handler", 15):
+                print("✅ VM LOGIN: Cookie consent accepted")
+            else:
+                print("⚠️ VM LOGIN: Cookie consent button not found")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            # Click Sign up | Log in button
+            print("🔄 VM LOGIN: Looking for login button...")
+            signup_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
+            )
+            
+            human_like_delay()
+            action = move_to_element_naturally(driver, signup_button)
+            time.sleep(random.uniform(0.1, 0.3))
+            action.click().perform()
+            print("✅ VM LOGIN: Clicked Sign up | Log in button")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            if google_login:
+                print("🔄 VM LOGIN: Using Google login...")
+                google_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
+                )
+                
+                human_like_delay()
+                action = move_to_element_naturally(driver, google_button)
+                time.sleep(random.uniform(0.1, 0.3))
+                action.click().perform()
+                print("✅ VM LOGIN: Clicked Continue with Google")
+                
+            else:
+                print("🔄 VM LOGIN: Using email login...")
+                # ... email login logic stays the same ...
+            
+            # Wait a bit for login process
+            time.sleep(random.uniform(3, 5))
+            
+            # Handle captcha if present
+            result = handle_datadome_audio_captcha(driver)
+
+            if result == "no_captcha":
+                print("✅ VM LOGIN: No captcha present - login successful!")
+                return True
+            elif result == True:
+                print("🔄 VM LOGIN: Captcha detected - handling...")
+                if HAS_PYAUDIO:
+                    detector = AudioNumberDetector(driver=driver)
+                    detector.start_listening()
+                    # Wait for captcha completion
+                    print("⏳ VM LOGIN: Waiting for captcha completion...")
+                    return True
+                else:
+                    print("❌ VM LOGIN: Cannot handle captcha - no audio support")
+                    return False
+            else:
+                print("❌ VM LOGIN: Captcha handling failed")
+                return False
+                
+        except Exception as e:
+            print(f"❌ VM LOGIN: Error during login: {e}")
+            return False
+
+    def execute_bookmark_with_preloaded_driver(self, url):
+        """Execute bookmark using the already logged-in VM driver"""
+        if not self.vm_driver_ready or not self.current_vm_driver:
+            print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
+            return False
+        
+        with self.vm_driver_lock:
+            print(f"🔖 BOOKMARK: Using pre-loaded driver for: {url}")
+            
+            try:
+                # Create step log for tracking
+                step_log = {
+                    'start_time': time.time(),
+                    'driver_number': 1,  # Always 1 since we use single driver
+                    'steps_completed': [],
+                    'failures': [],
+                    'success': False,
+                    'critical_sequence_completed': False,
+                    'actual_url': url
+                }
+                
+                # Execute the bookmark sequence
+                success = execute_vm_bookmark_sequences(self.current_vm_driver, url, "preloaded_user", step_log)
+                
+                self.vm_driver_ready = False  # Mark as used
+                
+                total_time = time.time() - step_log['start_time']
+                print(f"📊 BOOKMARK ANALYSIS:")
+                print(f"⏱️  Total time: {total_time:.2f}s")
+                print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
+                print(f"❌ Failures: {len(step_log['failures'])}")
+                print(f"🏆 Overall success: {'YES' if success else 'NO'}")
+                
+                return success
+                
+            except Exception as e:
+                print(f"❌ BOOKMARK: Error using pre-loaded driver: {e}")
+                self.vm_driver_ready = False
+                return False
+
+    def prepare_next_vm_driver(self):
+        """Prepare the NEXT VM driver after current one is used"""
+        print("🔄 NEXT DRIVER: Preparing next VM driver...")
+        
+        try:
+            # Close current driver if it exists
+            if self.current_vm_driver:
+                try:
+                    self.current_vm_driver.quit()
+                    print("✅ NEXT DRIVER: Closed previous driver")
+                except:
+                    print("⚠️ NEXT DRIVER: Error closing previous driver")
+            
+            # Clear browser data for new session
+            clear_browser_data_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            time.sleep(1)  # Brief delay
+            
+            # Create new VM driver
+            self.current_vm_driver = setup_driver_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            if not self.current_vm_driver:
+                print("❌ NEXT DRIVER: Failed to create new VM driver")
+                self.vm_driver_ready = False
+                return
+            
+            # Login the new driver
+            success = self.login_vm_driver(self.current_vm_driver)
+            
+            if success:
+                self.vm_driver_ready = True
+                print("✅ NEXT DRIVER: New VM driver ready and logged in")
+            else:
+                print("❌ NEXT DRIVER: Failed to login new VM driver")
+                self.vm_driver_ready = False
+                
+        except Exception as e:
+            print(f"❌ NEXT DRIVER: Error preparing next driver: {e}")
+            self.vm_driver_ready = False
+
+
+    def prepare_initial_vm_driver(self):
+        """Prepare the initial VM driver during startup - called ONCE at the beginning"""
+        print("🚀 STARTUP: Preparing initial VM driver for immediate use")
+        
+        try:
+            # Create and setup the first VM driver
+            self.current_vm_driver = setup_driver_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            if not self.current_vm_driver:
+                print("❌ STARTUP: Failed to create initial VM driver")
+                return False
+            
+            # Clear cookies and login
+            success = self.login_vm_driver(self.current_vm_driver)
+            
+            if success:
+                self.vm_driver_ready = True
+                print("✅ STARTUP: Initial VM driver ready and logged in - waiting for first listing")
+                return True
+            else:
+                print("❌ STARTUP: Failed to login initial VM driver")
+                return False
+                
+        except Exception as e:
+            print(f"❌ STARTUP: Error preparing initial VM driver: {e}")
+            return False
+
     def __init__(self):
         """Modified init - removed all booking/buying driver related initialization"""
         # Initialize pygame-related variables similar to FacebookScraper
@@ -4217,6 +4419,13 @@ class VintedScraper:
         }
         
         # Initialize all current listing variables
+        self.current_vm_driver = None
+        self.vm_driver_ready = False
+        self.vm_driver_lock = threading.Lock()
+        
+        # Initialize the first VM driver during startup
+        print("🔄 STARTUP: Preparing initial VM driver...")
+        self.prepare_next_vm_driver()
         current_listing_title = "No title"
         current_listing_description = "No description"
         current_listing_join_date = "No join date"
@@ -5105,15 +5314,15 @@ class VintedScraper:
             shutil.rmtree(DOWNLOAD_ROOT)
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
-    
+        
     def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter):
         """
-        IMMEDIATELY process a suitable listing with VM system - PAUSE SCRAPING
-        This is the new real-time processing method
+        IMMEDIATELY process a suitable listing with pre-loaded VM driver
+        The VM driver should already be logged in and waiting
         """
         global suitable_listings, current_listing_index, recent_listings
 
-        print(f"🚀 REAL-TIME: Immediately processing listing with VM system")
+        print(f"🚀 REAL-TIME: Immediately processing listing with PRE-LOADED VM driver")
         print(f"🔗 URL: {url}")
         print(f"⏸️  SCRAPING PAUSED: Processing will begin now...")
 
@@ -5208,26 +5417,29 @@ class VintedScraper:
             is_suitable = True
             print(f"✅ SUITABLE: {suitability_reason}")
 
-        # ============= CRITICAL CHANGE: IMMEDIATE VM PROCESSING =============
+        # ============= MODIFIED: USE PRE-LOADED VM DRIVER =============
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            print(f"🚀 REAL-TIME PROCESSING: Listing is suitable - starting VM process NOW")
+            print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver")
             print(f"⏸️  SCRAPING IS PAUSED UNTIL VM PROCESS COMPLETES")
             
-            # Create VM bookmark URL list with just this URL
-            global VM_BOOKMARK_URLS
-            VM_BOOKMARK_URLS = [url]  # Replace entire list with just this URL
-            
-            print(f"🔗 VM_BOOKMARK_URLS updated: {VM_BOOKMARK_URLS}")
-            
-            # IMMEDIATELY run the VM bookmark process (blocking call)
-            print(f"🚀 STARTING VM PROCESS: This will block until complete...")
+            # Call the new function that uses the pre-loaded driver
             try:
-                # Run the VM driver function directly and wait for completion
-                main_vm_driver()
-                print(f"✅ VM PROCESS COMPLETED: Listing has been fully processed")
+                success = self.execute_bookmark_with_preloaded_driver(url)
+                if success:
+                    print(f"✅ VM PROCESS COMPLETED: Listing has been bookmarked successfully")
+                else:
+                    print(f"❌ VM PROCESS FAILED: Bookmark attempt was unsuccessful")
             except Exception as vm_error:
                 print(f"❌ VM PROCESS ERROR: {vm_error}")
                 print(f"⚠️  Continuing with scraping despite VM error...")
+            
+            # CRITICAL: After processing, prepare the NEXT driver
+            try:
+                print(f"🔄 PREPARING NEXT DRIVER: Setting up new VM driver for next listing...")
+                self.prepare_next_vm_driver()
+                print(f"✅ NEXT DRIVER READY: VM driver prepared and logged in")
+            except Exception as prep_error:
+                print(f"❌ NEXT DRIVER ERROR: {prep_error}")
             
             print(f"▶️  SCRAPING RESUMED: VM process complete, continuing with search...")
         else:
@@ -6671,6 +6883,14 @@ class VintedScraper:
                     print("✅ SCRAPING THREAD: Main driver closed")
                 except:
                     print("⚠️ SCRAPING THREAD: Error closing main driver")
+                
+                # Clean up VM driver too
+                try:
+                    if self.current_vm_driver:
+                        self.current_vm_driver.quit()
+                        print("✅ SCRAPING THREAD: VM driver closed")
+                except:
+                    print("⚠️ SCRAPING THREAD: Error closing VM driver")
                     
                 pygame.quit()
                 time.sleep(2)
@@ -6681,6 +6901,10 @@ class VintedScraper:
         scraping_thread = Thread(target=main_scraping_driver, name="Main-Scraping-Thread")
         scraping_thread.daemon = False
         scraping_thread.start()
+
+        # Start pygame window in separate thread
+        pygame_thread = threading.Thread(target=self.run_pygame_window)
+        pygame_thread.start()
         
         print("🧵 MAIN: Main scraping driver thread started")
         print("🧵 MAIN: Main thread will now wait for scraping thread to complete...")
