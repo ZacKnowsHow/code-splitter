@@ -1,5 +1,4 @@
 # Continuation from line 2201
-            // Check if this element has a shadow root
             if (element.shadowRoot) {
                 // Search within the shadow root
                 let shadowButton = element.shadowRoot.querySelector('button[data-testid="item-buy-button"]');
@@ -2002,200 +2001,201 @@ class VintedScraper:
             'anonymous_games': 5  # Add price for anonymous games
         })
         return all_prices
-    
-    def __init__(self):
-        """Modified init - removed all booking/buying driver related initialization"""
-        # Initialize pygame-related variables similar to FacebookScraper
-        global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
-        global current_expected_revenue, current_profit, current_detected_items, current_listing_images
-        global current_bounding_boxes, current_listing_url, current_suitability, suitable_listings
-        global current_listing_index, recent_listings
         
-        # **CRITICAL FIX: Initialize recent_listings for website navigation**
-        recent_listings = {
-            'listings': [],
-            'current_index': 0
-        }
-        
-        # Initialize all current listing variables
-        current_listing_title = "No title"
-        current_listing_description = "No description"
-        current_listing_join_date = "No join date"
-        current_listing_price = "0"
-        current_expected_revenue = "0"
-        current_profit = "0"
-        current_detected_items = "None"
-        current_listing_images = []
-        current_bounding_boxes = {}
-        current_listing_url = ""
-        current_suitability = "Suitability unknown"
-        suitable_listings = []
-        current_listing_index = 0
-
-        # Initialize VM connection flag
-        self.vm_bookmark_queue = []  # Queue of URLs to send to VM system
-        
-        # Check if CUDA is available
-        print(f"CUDA available: {torch.cuda.is_available()}")
-        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
-
-        # Load model with explicit GPU usage
-        if torch.cuda.is_available():
-            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
-            print("✅ YOLO model loaded on GPU")
-        else:
-            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
-            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
-
-
-    def run_pygame_window(self):
-        global LOCK_POSITION, current_listing_index, suitable_listings
-        screen, clock = self.initialize_pygame_window()
-        rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
-            pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
-            pygame.Rect(0, 180, 240, 180), pygame.Rect(240, 180, 240, 180), pygame.Rect(480, 180, 320, 180),
-            pygame.Rect(0, 360, 240, 240), pygame.Rect(240, 360, 240, 120), pygame.Rect(240, 480, 240, 120),
-            pygame.Rect(480, 360, 160, 240), pygame.Rect(640, 360, 160, 240)
-        ]
-        fonts = {
-            'number': pygame.font.Font(None, 24),
-            'price': pygame.font.Font(None, 36),
-            'title': pygame.font.Font(None, 40),
-            'description': pygame.font.Font(None, 28),
-            'join_date': pygame.font.Font(None, 28),
-            'revenue': pygame.font.Font(None, 36),
-            'profit': pygame.font.Font(None, 36),
-            'items': pygame.font.Font(None, 30),
-            'click': pygame.font.Font(None, 28),
-            'suitability': pygame.font.Font(None, 28),
-            'reviews': pygame.font.Font(None, 28),
-            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
-        }
-        dragging = False
-        resizing = False
-        drag_rect = None
-        drag_offset = (0, 0)
-        resize_edge = None
-
-        running = True
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                    running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_l:
-                        LOCK_POSITION = not LOCK_POSITION
-                    elif event.key == pygame.K_RIGHT:
-                        if suitable_listings:
-                            current_listing_index = (current_listing_index + 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
-                    elif event.key == pygame.K_LEFT:
-                        if suitable_listings:
-                            current_listing_index = (current_listing_index - 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:  # Left mouse button
-                        # Check if rectangle 4 was clicked
-                        if rectangles[3].collidepoint(event.pos):
-                            if suitable_listings and 0 <= current_listing_index < len(suitable_listings):
-                                current_url = suitable_listings[current_listing_index].get('url')
-                                if current_url:
-                                    try:
-                                        import webbrowser
-                                        webbrowser.open(current_url)
-                                    except Exception as e:
-                                        print(f"Failed to open URL: {e}")
-                        elif not LOCK_POSITION:
-                            for i, rect in enumerate(rectangles):
-                                if rect.collidepoint(event.pos):
-                                    if event.pos[0] > rect.right - 10 and event.pos[1] > rect.bottom - 10:
-                                        resizing = True
-                                        drag_rect = i
-                                        resize_edge = 'bottom-right'
-                                    else:
-                                        dragging = True
-                                        drag_rect = i
-                                        drag_offset = (rect.x - event.pos[0], rect.y - event.pos[1])
-                                    break
-                elif event.type == pygame.MOUSEBUTTONUP:
-                    if event.button == 1:
-                        dragging = False
-                        resizing = False
-                        drag_rect = None
+    def login_vm_driver(self, driver):
+        """Login the VM driver and wait on homepage - extracted from main_vm_driver logic"""
+        try:
+            print("🔄 VM LOGIN: Starting login process...")
             
-            # Handle dragging and resizing
-            if dragging and drag_rect is not None:
-                rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
-                rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
-            elif resizing and drag_rect is not None:
-                if resize_edge == 'bottom-right':
-                    width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
-                    height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
-                    rectangles[drag_rect].size = (width, height)
+            # Clear browser data first
+            print("🔄 VM LOGIN: Clearing cookies...")
+            driver.delete_all_cookies()
             
-            screen.fill((204, 210, 255))
-            for i, rect in enumerate(rectangles):
-                pygame.draw.rect(screen, (0, 0, 0), rect, 2)
-                number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
-                number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
-                screen.blit(number_text, number_rect)
+            # Navigate to Vinted
+            print("🔄 VM LOGIN: Navigating to vinted.co.uk...")
+            driver.get("https://vinted.co.uk")
+            
+            # Random delay after page load
+            time.sleep(random.uniform(2, 4))
+            
+            # Wait for and accept cookies
+            print("🔄 VM LOGIN: Accepting cookies...")
+            if wait_and_click(driver, By.ID, "onetrust-accept-btn-handler", 15):
+                print("✅ VM LOGIN: Cookie consent accepted")
+            else:
+                print("⚠️ VM LOGIN: Cookie consent button not found")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            # Click Sign up | Log in button
+            print("🔄 VM LOGIN: Looking for login button...")
+            signup_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
+            )
+            
+            human_like_delay()
+            action = move_to_element_naturally(driver, signup_button)
+            time.sleep(random.uniform(0.1, 0.3))
+            action.click().perform()
+            print("✅ VM LOGIN: Clicked Sign up | Log in button")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            if google_login:
+                print("🔄 VM LOGIN: Using Google login...")
+                google_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
+                )
+                
+                human_like_delay()
+                action = move_to_element_naturally(driver, google_button)
+                time.sleep(random.uniform(0.1, 0.3))
+                action.click().perform()
+                print("✅ VM LOGIN: Clicked Continue with Google")
+                
+            else:
+                print("🔄 VM LOGIN: Using email login...")
+                # ... email login logic stays the same ...
+            
+            # Wait a bit for login process
+            time.sleep(random.uniform(3, 5))
+            
+            # Handle captcha if present
+            result = handle_datadome_audio_captcha(driver)
 
-                if i == 2:  # Rectangle 3 (index 2) - Title
-                    self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
-                elif i == 1:  # Rectangle 2 (index 1) - Price
-                    self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
-                elif i == 7:  # Rectangle 8 (index 7) - Description
-                    self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
-                elif i == 8:  # Rectangle 9 (index 8) - CHANGED: Now shows exact time instead of upload date
-                    time_label = "Appended:"
-                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
-                elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
-                    self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
-                elif i == 9:  # Rectangle 10 (index 9) - Profit
-                    self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
-                elif i == 0:  # Rectangle 1 (index 0) - Detected Items
-                    self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
-                elif i == 10:  # Rectangle 11 (index 10) - Images
-                    self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
-                elif i == 3:  # Rectangle 4 (index 3) - Click to open
-                    click_text = "CLICK TO OPEN LISTING IN CHROME"
-                    self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
-                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
-                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
-                elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
-                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
+            if result == "no_captcha":
+                print("✅ VM LOGIN: No captcha present - login successful!")
+                return True
+            elif result == True:
+                print("🔄 VM LOGIN: Captcha detected - handling...")
+                if HAS_PYAUDIO:
+                    detector = AudioNumberDetector(driver=driver)
+                    detector.start_listening()
+                    # Wait for captcha completion
+                    print("⏳ VM LOGIN: Waiting for captcha completion...")
+                    return True
+                else:
+                    print("❌ VM LOGIN: Cannot handle captcha - no audio support")
+                    return False
+            else:
+                print("❌ VM LOGIN: Captcha handling failed")
+                return False
+                
+        except Exception as e:
+            print(f"❌ VM LOGIN: Error during login: {e}")
+            return False
 
-            screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
-
-            if suitable_listings:
-                listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
-                screen.blit(listing_counter, (10, 40))
-
-            pygame.display.flip()
-            clock.tick(30)
-
-        self.save_rectangle_config(rectangles)
-        pygame.quit()
+    def execute_bookmark_with_preloaded_driver(self, url):
+        """Execute bookmark using the already logged-in VM driver"""
+        if not self.vm_driver_ready or not self.current_vm_driver:
+            print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
+            return False
         
-    def base64_encode_image(self, img):
-        """Convert PIL Image to base64 string, resizing if necessary"""
-        # Resize image while maintaining aspect ratio
-        max_size = (200, 200)
-        img.thumbnail(max_size, Image.LANCZOS)
+        with self.vm_driver_lock:
+            print(f"🔖 BOOKMARK: Using pre-loaded driver for: {url}")
+            
+            try:
+                # Create step log for tracking
+                step_log = {
+                    'start_time': time.time(),
+                    'driver_number': 1,  # Always 1 since we use single driver
+                    'steps_completed': [],
+                    'failures': [],
+                    'success': False,
+                    'critical_sequence_completed': False,
+                    'actual_url': url
+                }
+                
+                # Execute the bookmark sequence
+                success = execute_vm_bookmark_sequences(self.current_vm_driver, url, "preloaded_user", step_log)
+                
+                self.vm_driver_ready = False  # Mark as used
+                
+                total_time = time.time() - step_log['start_time']
+                print(f"📊 BOOKMARK ANALYSIS:")
+                print(f"⏱️  Total time: {total_time:.2f}s")
+                print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
+                print(f"❌ Failures: {len(step_log['failures'])}")
+                print(f"🏆 Overall success: {'YES' if success else 'NO'}")
+                
+                return success
+                
+            except Exception as e:
+                print(f"❌ BOOKMARK: Error using pre-loaded driver: {e}")
+                self.vm_driver_ready = False
+                return False
+
+    def prepare_next_vm_driver(self):
+        """Prepare the NEXT VM driver after current one is used"""
+        print("🔄 NEXT DRIVER: Preparing next VM driver...")
         
-        # Convert to base64
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode()
+        try:
+            # Close current driver if it exists
+            if self.current_vm_driver:
+                try:
+                    self.current_vm_driver.quit()
+                    print("✅ NEXT DRIVER: Closed previous driver")
+                except:
+                    print("⚠️ NEXT DRIVER: Error closing previous driver")
+            
+            # Clear browser data for new session
+            clear_browser_data_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            time.sleep(1)  # Brief delay
+            
+            # Create new VM driver
+            self.current_vm_driver = setup_driver_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            if not self.current_vm_driver:
+                print("❌ NEXT DRIVER: Failed to create new VM driver")
+                self.vm_driver_ready = False
+                return
+            
+            # Login the new driver
+            success = self.login_vm_driver(self.current_vm_driver)
+            
+            if success:
+                self.vm_driver_ready = True
+                print("✅ NEXT DRIVER: New VM driver ready and logged in")
+            else:
+                print("❌ NEXT DRIVER: Failed to login new VM driver")
+                self.vm_driver_ready = False
+                
+        except Exception as e:
+            print(f"❌ NEXT DRIVER: Error preparing next driver: {e}")
+            self.vm_driver_ready = False
 
-    def render_images(self, screen, images, rect, bounding_boxes):
-        if not images:
-            return
 
-        num_images = len(images)
-        if num_images == 1:
-            grid_size = 1
-        elif 2 <= num_images <= 4:
-            grid_size = 2
-        else:
-            grid_size = 3
+    def prepare_initial_vm_driver(self):
+        """Prepare the initial VM driver during startup - called ONCE at the beginning"""
+        print("🚀 STARTUP: Preparing initial VM driver for immediate use")
+        
+        try:
+            # Create and setup the first VM driver
+            self.current_vm_driver = setup_driver_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            if not self.current_vm_driver:
+                print("❌ STARTUP: Failed to create initial VM driver")
+                return False
+            
+            # Clear cookies and login
+            success = self.login_vm_driver(self.current_vm_driver)
+            
+            if success:
+                self.vm_driver_ready = True
+                print("✅ STARTUP: Initial VM driver ready and logged in - waiting for first listing")
+                return True
+            else:
+                print("❌ STARTUP: Failed to login initial VM driver")

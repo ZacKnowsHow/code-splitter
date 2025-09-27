@@ -65,6 +65,9 @@ from scipy import signal
 import wave
 import ctypes
 
+#uses custom url for buying in vm, for testing. works same as normal, just with custom url instead.
+
+CLICK_PAY_BUTTON = False
 
 VM_DRIVER_USE = False
 google_login = True
@@ -83,19 +86,6 @@ TEST_SUITABLE_URLS = [
 # tests the number of listings found by the search
 TEST_NUMBER_OF_LISTINGS = False
 
-#tests the bookmark functionality
-BOOKMARK_TEST_MODE = False
-BOOKMARK_TEST_URL = "https://www.vinted.co.uk/items/7037950664-racer-jacket?referrer=catalog"
-BOOKMARK_TEST_USERNAME = "leah_lane" 
-
-#tests the buying functionality
-BUYING_TEST_MODE = False
-BUYING_TEST_URL = "https://www.vinted.co.uk/items/6966124363-mens-t-shirt-bundle-x-3-ml?homepage_session_id=932d30be-02f5-4f54-9616-c412dd6e9da2"
-
-#tests both the bookmark and buying functionality
-TEST_BOOKMARK_BUYING_FUNCTIONALITY = False
-TEST_BOOKMARK_BUYING_URL = "https://www.vinted.co.uk/items/6996290195-cider-with-rosie-pretty-decor-book?referrer=catalog"
-
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
     'controller','tv_black', 
@@ -103,7 +93,7 @@ NINTENDO_SWITCH_CLASSES = [
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = True
+VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
 print_images_backend_info = False
 test_bookmark_function = False
@@ -215,7 +205,7 @@ recent_listings = {
 
 review_min = 3
 REFRESH_AND_RESCAN = True  # Set to False to disable refresh functionality
-MAX_LISTINGS_VINTED_TO_SCAN = 5  # Maximum listings to scan before refresh
+MAX_LISTINGS_VINTED_TO_SCAN = 15  # Maximum listings to scan before refresh
 wait_after_max_reached_vinted = 0  # Seconds to wait between refresh cycles (5 minutes)
 VINTED_SCANNED_IDS_FILE = "vinted_scanned_ids.txt"
 FAILURE_REASON_LISTED = True
@@ -1387,7 +1377,6 @@ def main_vm_driver():
                 assigned_url = VM_BOOKMARK_URLS[i-1]  # Get URL for this driver (0-indexed)
                 print(f"\n🔖 BOOKMARKING: Driver {i} starting bookmark process for:")
                 print(f"🔗 URL: {assigned_url}")
-                
                 # Execute bookmark using existing logic
                 bookmark_success = execute_vm_bookmark_process(driver, assigned_url, i)
                 
@@ -1768,22 +1757,32 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
         
         # Method 1: Direct click
         try:
-            #pay_button.click()
+            if not VINTED_SHOW_ALL_LISTINGS:
+                if CLICK_PAY_BUTTON:
+                    print('1')
+            pay_button.click()
             pay_clicked = True
             print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (direct)")
         except:
             # Method 2: JavaScript click
             try:
-                #driver.execute_script("arguments[0].click();", pay_button)
+                if not VINTED_SHOW_ALL_LISTINGS:
+                    if CLICK_PAY_BUTTON:
+                        print('1')
+                driver.execute_script("arguments[0].click();", pay_button)
                 pay_clicked = True
                 print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (JavaScript)")
             except:
                 # Method 3: Force enable and click
                 try:
-                    #driver.execute_script("""
-                    #    arguments[0].disabled = false;
-                    #    arguments[0].click();
-                    #""", pay_button)
+                    if not VINTED_SHOW_ALL_LISTINGS:
+                        if CLICK_PAY_BUTTON:
+                            print('1')
+
+                    driver.execute_script("""
+                        arguments[0].disabled = false;
+                        arguments[0].click();
+                    """, pay_button)
                     pay_clicked = True
                     print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (force)")
                 except Exception as final_error:
@@ -1800,7 +1799,7 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
             
             purchase_successful = False
             start_time = time.time()
-            timeout = 1 
+            timeout = 15
             
             while (time.time() - start_time) < timeout:
                 try:
@@ -2198,3 +2197,4 @@ def find_buy_button_with_shadow_dom(driver):
         function searchInShadowRoot(element) {
             if (!element) return null;
             
+            // Check if this element has a shadow root
