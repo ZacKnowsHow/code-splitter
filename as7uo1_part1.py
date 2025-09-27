@@ -66,15 +66,10 @@ import wave
 import ctypes
 
 
-VM_DRIVER_USE = True
+VM_DRIVER_USE = False
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7160371132-switch-case?referrer=catalog"
-    "https://www.vinted.co.uk/items/7159084364-ray-ban-aviators-gold-rim?referrer=catalog",
-    "https://www.vinted.co.uk/items/7102546985-fc24-nintendo-switch?homepage_session_id=6e3fa7fa-65d1-4aef-a0da-dda652e1c311", 
-    "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
-    "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
 ]
 
 # tests whether the listing is suitable for buying based on URL rather than scanning
@@ -2198,3 +2193,8 @@ def find_buy_button_with_shadow_dom(driver):
     print("🌊 SHADOW DOM: Standard selectors failed, trying Shadow DOM traversal...")
     
     shadow_dom_script = """
+    function findBuyButtonInShadowDOM() {
+        // Function to recursively search through shadow roots
+        function searchInShadowRoot(element) {
+            if (!element) return null;
+            

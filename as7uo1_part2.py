@@ -1,9 +1,4 @@
 # Continuation from line 2201
-    function findBuyButtonInShadowDOM() {
-        // Function to recursively search through shadow roots
-        function searchInShadowRoot(element) {
-            if (!element) return null;
-            
             // Check if this element has a shadow root
             if (element.shadowRoot) {
                 // Search within the shadow root
@@ -2199,3 +2194,8 @@ class VintedScraper:
 
         num_images = len(images)
         if num_images == 1:
+            grid_size = 1
+        elif 2 <= num_images <= 4:
+            grid_size = 2
+        else:
+            grid_size = 3
