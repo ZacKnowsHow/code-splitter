@@ -66,15 +66,10 @@ import wave
 import ctypes
 
 
-VM_DRIVER_USE = True
+VM_DRIVER_USE = False
 google_login = True
 
 VM_BOOKMARK_URLS = [
-    "https://www.vinted.co.uk/items/7160371132-switch-case?referrer=catalog"
-    "https://www.vinted.co.uk/items/7159084364-ray-ban-aviators-gold-rim?referrer=catalog",
-    "https://www.vinted.co.uk/items/7102546985-fc24-nintendo-switch?homepage_session_id=6e3fa7fa-65d1-4aef-a0da-dda652e1c311", 
-    "https://www.vinted.co.uk/items/7087256735-lol-born-to-travel-nintendo-switch?homepage_session_id=83612002-66a0-4de7-9bb8-dfbf49be0db7",
-    "https://www.vinted.co.uk/items/7083522788-instant-sports-nintendo-switch?homepage_session_id=2d9b4a2d-5def-4730-bc0c-d4e42e13fe12",
 ]
 
 # tests whether the listing is suitable for buying based on URL rather than scanning
@@ -5111,32 +5106,16 @@ class VintedScraper:
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
     
-    # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
-    def send_to_vm_bookmark_system(self, url):
+    def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter):
         """
-        Send a suitable listing URL to the VM bookmark system for processing
-        This connects to the existing VM bookmark infrastructure
-        """
-        global VM_BOOKMARK_URLS
-        
-        # Add URL to the VM bookmark queue (replacing the hardcoded URLs)
-        if url not in VM_BOOKMARK_URLS:
-            print(f"🚀 VM BOOKMARK: Adding {url} to VM bookmark queue")
-            VM_BOOKMARK_URLS.append(url)
-            
-            # If VM driver is active, it will automatically process this
-            # The VM system remains UTTERLY UNCHANGED - it just receives URLs from here
-            print(f"📋 VM BOOKMARK: Queue now has {len(VM_BOOKMARK_URLS)} URLs")
-            
-            # Note: The actual VM bookmark processing happens in main_vm_driver()
-            # which runs independently and processes URLs from VM_BOOKMARK_URLS
-
-
-    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
-        """
-        Enhanced processing with VM bookmark integration
+        IMMEDIATELY process a suitable listing with VM system - PAUSE SCRAPING
+        This is the new real-time processing method
         """
         global suitable_listings, current_listing_index, recent_listings
+
+        print(f"🚀 REAL-TIME: Immediately processing listing with VM system")
+        print(f"🔗 URL: {url}")
+        print(f"⏸️  SCRAPING PAUSED: Processing will begin now...")
 
         # Extract username from details
         username = details.get("username", None)
@@ -5144,7 +5123,7 @@ class VintedScraper:
             username = None
             print("🔖 USERNAME: Not available for this listing")
 
-        # Extract and validate price from the main price field
+        # Extract and validate price
         price_text = details.get("price", "0")
         listing_price = self.extract_vinted_price(price_text)
         postage = self.extract_price(details.get("postage", "0"))
@@ -5152,10 +5131,8 @@ class VintedScraper:
 
         # Get seller reviews
         seller_reviews = details.get("seller_reviews", "No reviews yet")
-        if print_debug:    
-            print(f"DEBUG: seller_reviews from details: '{seller_reviews}'")
 
-        # Create basic listing info for suitability checking
+        # Create listing info for suitability checking
         listing_info = {
             "title": details.get("title", "").lower(),
             "description": details.get("description", "").lower(),
@@ -5166,8 +5143,7 @@ class VintedScraper:
 
         # Check basic suitability 
         suitability_result = self.check_vinted_listing_suitability(listing_info)
-        if print_debug:    
-            print(f"DEBUG: Suitability result: '{suitability_result}'")
+        print(f"📋 SUITABILITY: {suitability_result}")
 
         # Apply console keyword detection to detected objects
         detected_console = self.detect_console_keywords_vinted(
@@ -5175,7 +5151,6 @@ class VintedScraper:
             details.get("description", "")
         )
         if detected_console:
-            # Set the detected console to 1 and ensure other mutually exclusive items are 0
             mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
             for item in mutually_exclusive_items:
                 detected_objects[item] = 1 if item == detected_console else 0
@@ -5227,23 +5202,36 @@ class VintedScraper:
         if unsuitability_reasons:
             suitability_reason = "Unsuitable:\n---- " + "\n---- ".join(unsuitability_reasons)
             is_suitable = False
+            print(f"❌ UNSUITABLE: {suitability_reason}")
         else:
             suitability_reason = f"Suitable: Profit £{expected_profit:.2f} ({profit_percentage:.2f}%)"
             is_suitable = True
+            print(f"✅ SUITABLE: {suitability_reason}")
 
-        if print_debug:    
-            print(f"DEBUG: Final is_suitable: {is_suitable}, suitability_reason: '{suitability_reason}'")
-
-        # MODIFIED: Send suitable listings to VM bookmark system
-        if is_suitable:
-            print(f"✅ SUITABLE LISTING FOUND: Sending to VM bookmark system")
-            print(f"🔗 URL: {url}")
+        # ============= CRITICAL CHANGE: IMMEDIATE VM PROCESSING =============
+        if is_suitable or VINTED_SHOW_ALL_LISTINGS:
+            print(f"🚀 REAL-TIME PROCESSING: Listing is suitable - starting VM process NOW")
+            print(f"⏸️  SCRAPING IS PAUSED UNTIL VM PROCESS COMPLETES")
             
-            # Add to VM bookmark queue
-            self.vm_bookmark_queue.append(url)
+            # Create VM bookmark URL list with just this URL
+            global VM_BOOKMARK_URLS
+            VM_BOOKMARK_URLS = [url]  # Replace entire list with just this URL
             
-            # Trigger VM bookmark processing
-            self.send_to_vm_bookmark_system(url)
+            print(f"🔗 VM_BOOKMARK_URLS updated: {VM_BOOKMARK_URLS}")
+            
+            # IMMEDIATELY run the VM bookmark process (blocking call)
+            print(f"🚀 STARTING VM PROCESS: This will block until complete...")
+            try:
+                # Run the VM driver function directly and wait for completion
+                main_vm_driver()
+                print(f"✅ VM PROCESS COMPLETED: Listing has been fully processed")
+            except Exception as vm_error:
+                print(f"❌ VM PROCESS ERROR: {vm_error}")
+                print(f"⚠️  Continuing with scraping despite VM error...")
+            
+            print(f"▶️  SCRAPING RESUMED: VM process complete, continuing with search...")
+        else:
+            print(f"❌ UNSUITABLE LISTING: Skipping VM process, continuing with scraping")
 
         # Generate exact UK time when creating listing info 
         from datetime import datetime
@@ -5251,17 +5239,17 @@ class VintedScraper:
         
         uk_tz = pytz.timezone('Europe/London')
         append_time = datetime.now(uk_tz)
-        exact_append_time = append_time.strftime("%H:%M:%S.%f")[:-3]  # Format: HH:MM:SS.mmm
-        
+        exact_append_time = append_time.strftime("%H:%M:%S.%f")[:-3]
+
         # Create final listing info with exact append time
         final_listing_info = {
             'title': details.get("title", "No title"),
             'description': details.get("description", "No description"),
-            'join_date': exact_append_time,  # CHANGED: Use exact UK time instead of upload date
+            'join_date': exact_append_time,
             'price': str(total_price),
             'expected_revenue': total_revenue,
             'profit': expected_profit,
-            'detected_items': detected_objects, # Raw detected objects for box 1
+            'detected_items': detected_objects,
             'processed_images': processed_images,
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
@@ -5308,6 +5296,57 @@ class VintedScraper:
 
         if not should_add_to_display:
             print(f"❌ Listing not added to display: {suitability_reason}")
+
+        print(f"🔄 REAL-TIME PROCESSING COMPLETE: Ready to resume scraping")
+
+
+    # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
+    def send_to_vm_bookmark_system(self, url):
+        """
+        DEPRECATED: This method is now replaced by immediate processing
+        Real-time processing happens in process_listing_immediately_with_vm
+        """
+        print(f"⚠️  DEPRECATED: send_to_vm_bookmark_system called")
+        print(f"🔄 REAL-TIME: Processing should happen immediately, not queued")
+        pass  # Do nothing - real-time processing handles this
+
+    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
+        """
+        MODIFIED: Now calls immediate processing instead of queueing
+        """
+        print(f"📋 PROCESSING: Listing #{listing_counter}")
+        
+        # Call the new real-time processing method
+        self.process_listing_immediately_with_vm(url, details, detected_objects, processed_images, listing_counter)
+        
+        print(f"✅ PROCESSING COMPLETE: Listing #{listing_counter} finished")
+
+
+    def should_process_listing_immediately(self, is_suitable, detected_objects, total_price):
+        """
+        Determine if a listing should trigger immediate VM processing
+        You can customize this logic based on your specific criteria
+        """
+        # Only process if listing is suitable
+        if not is_suitable:
+            return False
+        
+        # Additional filters can be added here
+        # For example: minimum price threshold
+        if total_price < 15.0:
+            print(f"⏭️  SKIP VM: Price £{total_price:.2f} below minimum threshold")
+            return False
+        
+        # Check for specific high-value items
+        high_value_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box']
+        has_high_value_item = any(detected_objects.get(item, 0) > 0 for item in high_value_items)
+        
+        if not has_high_value_item:
+            print(f"⏭️  SKIP VM: No high-value items detected")
+            return False
+        
+        print(f"🎯 TRIGGER VM: Listing meets criteria for immediate processing")
+        return True
 
     def check_vinted_profit_suitability(self, listing_price, profit_percentage):
         if 10 <= listing_price < 16:
