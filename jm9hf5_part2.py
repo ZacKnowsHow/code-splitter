@@ -1,286 +1,4 @@
 # Continuation from line 2201
-        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-extensions')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--disable-web-security')
-        chrome_options.add_argument('--allow-running-insecure-content')
-        
-        # Create driver connection
-        clear_driver = webdriver.Remote(
-            command_executor=f'http://{vm_ip_address}:4444',
-            options=chrome_options
-        )
-        
-        print(f"✓ Temporary driver created successfully (Session: {clear_driver.session_id})")
-        
-        print("Step 2: Navigating to Chrome settings...")
-        clear_driver.get("chrome://settings/clearBrowserData")
-        print("✓ Navigated to clear browser data page")
-        
-        print("Step 3: Waiting for page to load...")
-        time.sleep(2)  # Wait for Shadow DOM to initialize
-        
-        print("Step 4: Accessing Shadow DOM to find clear button...")
-        
-        # JavaScript to navigate Shadow DOM and click the clear button
-        shadow_dom_script = """
-        function findAndClickClearButton() {
-            // Multiple strategies to find the clear button in Shadow DOM
-            
-            // Strategy 1: Direct access via settings-ui
-            let settingsUi = document.querySelector('settings-ui');
-            if (settingsUi && settingsUi.shadowRoot) {
-                let clearBrowserData = settingsUi.shadowRoot.querySelector('settings-main')?.shadowRoot
-                    ?.querySelector('settings-basic-page')?.shadowRoot
-                    ?.querySelector('settings-section[section="privacy"]')?.shadowRoot
-                    ?.querySelector('settings-clear-browsing-data-dialog');
-                
-                if (clearBrowserData && clearBrowserData.shadowRoot) {
-                    let clearButton = clearBrowserData.shadowRoot.querySelector('#clearButton');
-                    if (clearButton) {
-                        console.log('Found clear button via strategy 1');
-                        clearButton.click();
-                        return true;
-                    }
-                }
-            }
-            
-            // Strategy 2: Search all shadow roots recursively
-            function searchShadowRoots(element) {
-                if (element.shadowRoot) {
-                    let clearButton = element.shadowRoot.querySelector('#clearButton');
-                    if (clearButton) {
-                        console.log('Found clear button via recursive search');
-                        clearButton.click();
-                        return true;
-                    }
-                    
-                    // Search nested shadow roots
-                    let shadowElements = element.shadowRoot.querySelectorAll('*');
-                    for (let el of shadowElements) {
-                        if (searchShadowRoots(el)) return true;
-                    }
-                }
-                return false;
-            }
-            
-            let allElements = document.querySelectorAll('*');
-            for (let el of allElements) {
-                if (searchShadowRoots(el)) return true;
-            }
-            
-            // Strategy 3: Look for cr-button elements in shadow roots
-            function findCrButton(element) {
-                if (element.shadowRoot) {
-                    let crButtons = element.shadowRoot.querySelectorAll('cr-button');
-                    for (let btn of crButtons) {
-                        if (btn.id === 'clearButton' || btn.textContent.includes('Delete data')) {
-                            console.log('Found cr-button via strategy 3');
-                            btn.click();
-                            return true;
-                        }
-                    }
-                    
-                    let shadowElements = element.shadowRoot.querySelectorAll('*');
-                    for (let el of shadowElements) {
-                        if (findCrButton(el)) return true;
-                    }
-                }
-                return false;
-            }
-            
-            for (let el of allElements) {
-                if (findCrButton(el)) return true;
-            }
-            
-            console.log('Clear button not found in any shadow root');
-            return false;
-        }
-        
-        return findAndClickClearButton();
-        """
-        
-        # Execute the Shadow DOM navigation script
-        result = clear_driver.execute_script(shadow_dom_script)
-        
-        if result:
-            print("✓ Successfully clicked clear data button via Shadow DOM!")
-            print("Step 5: Waiting for data clearing to complete...")
-            time.sleep(2)  # Wait for clearing process
-            print("✓ Browser data clearing completed successfully!")
-        else:
-            print("✗ Failed to find clear button in Shadow DOM")
-            
-            # Fallback: Try to trigger clear via keyboard shortcut
-            print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
-            try:
-                from selenium.webdriver.common.keys import Keys
-                body = clear_driver.find_element(By.TAG_NAME, "body")
-                body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
-                time.sleep(1)
-                # Try to press Enter to confirm
-                body.send_keys(Keys.ENTER)
-                time.sleep(1)
-                print("✓ Fallback keyboard shortcut attempted")
-            except Exception as fallback_error:
-                print(f"✗ Fallback also failed: {fallback_error}")
-        
-    except Exception as e:
-        print(f"✗ Browser data clearing failed: {str(e)}")
-        print("Continuing with main execution anyway...")
-        import traceback
-        traceback.print_exc()
-    
-    finally:
-        if clear_driver:
-            try:
-                print("Step 6: Closing temporary driver...")
-                clear_driver.quit()
-                print("✓ Temporary driver closed successfully")
-            except Exception as e:
-                print(f"Warning: Failed to close temporary driver: {e}")
-        
-        print("=" * 50)
-        print("BROWSER DATA CLEAR COMPLETE")
-        print("=" * 50)
-        time.sleep(0.5)  # Brief pause before continuing
-
-def setup_driver_universal(vm_ip_address, config):
-    """Universal setup function for any driver configuration"""
-    
-    # Session cleanup (existing code)
-    try:
-        import requests
-        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
-        status_data = status_response.json()
-        
-        if 'value' in status_data and 'nodes' in status_data['value']:
-            for node in status_data['value']['nodes']:
-                if 'slots' in node:
-                    for slot in node['slots']:
-                        if slot.get('session'):
-                            session_id = slot['session']['sessionId']
-                            print(f"Found existing session: {session_id}")
-                            delete_response = requests.delete(
-                                f"http://{vm_ip_address}:4444/session/{session_id}",
-                                timeout=10
-                            )
-                            print(f"Cleaned up session: {session_id}")
-    
-    except Exception as e:
-        print(f"Session cleanup failed: {e}")
-    
-    # Chrome options for the VM instance
-    chrome_options = ChromeOptions()
-    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
-    chrome_options.add_argument(f"--profile-directory={config['profile']}")
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    
-    # VM-specific optimizations
-    chrome_options.add_argument('--force-device-scale-factor=1')
-    chrome_options.add_argument('--high-dpi-support=1')
-    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
-    chrome_options.add_argument('--remote-allow-origins=*')
-    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-extensions')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--disable-web-security')
-    chrome_options.add_argument('--allow-running-insecure-content')
-
-    
-    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
-    
-    driver = None
-    
-    try:
-        print("Attempting to connect to remote WebDriver...")
-        
-        driver = webdriver.Remote(
-            command_executor=f'http://{vm_ip_address}:4444',
-            options=chrome_options
-        )
-        
-        print(f"✓ Successfully created remote WebDriver connection")
-        print(f"Session ID: {driver.session_id}")
-        
-        print("Applying stealth modifications...")
-        stealth_script = """
-        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-        window.chrome = {runtime: {}};
-        Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
-        
-        Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
-        Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
-        Object.defineProperty(screen, 'colorDepth', {get: () => 24});
-        """
-        driver.execute_script(stealth_script)
-        print("✓ Stealth script applied successfully")
-        
-        print(f"✓ Successfully connected to VM Chrome with clean profile")
-        return driver
-        
-    except Exception as e:
-        print(f"✗ Failed to connect to VM WebDriver")
-        print(f"Error: {str(e)}")
-        
-        if driver:
-            try:
-                driver.quit()
-            except:
-                pass
-        
-        return None
-
-def find_buy_button_with_shadow_dom(driver):
-    """
-    Enhanced buy now button finder - JavaScript click first approach
-    Finds button and immediately clicks with JavaScript for reliability
-    """
-    print("🔍 SHADOW DOM: Starting buy button search with JavaScript-first approach...")
-    
-    # Method 1: Find button and immediately click with JavaScript
-    print("⚡ JAVASCRIPT-FIRST: Finding and clicking buy button with JavaScript...")
-    buy_selectors = [
-        'button[data-testid="item-buy-button"]',
-        'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
-        '//button[@data-testid="item-buy-button"]',
-        '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
-        '//span[text()="Buy now"]/parent::button'
-    ]
-    
-    for selector in buy_selectors:
-        try:
-            if selector.startswith('//'):
-                buy_button = driver.find_element(By.XPATH, selector)
-            else:
-                buy_button = driver.find_element(By.CSS_SELECTOR, selector)
-            
-            print(f"✅ FOUND: Buy button with: {selector}")
-            
-            # IMMEDIATELY click with JavaScript - no other methods tried
-            try:
-                driver.execute_script("arguments[0].click();", buy_button)
-                print(f"✅ JAVASCRIPT-FIRST: Buy button clicked immediately with JavaScript")
-                return buy_button, selector
-            except Exception as js_error:
-                print(f"❌ JAVASCRIPT-FIRST: JavaScript click failed: {js_error}")
-                continue
-                
-        except:
-            continue
-    
-    # Method 2: Shadow DOM traversal using JavaScript
-    print("🌊 SHADOW DOM: Standard selectors failed, trying Shadow DOM traversal...")
-    
-    shadow_dom_script = """
     function findBuyButtonInShadowDOM() {
         // Function to recursively search through shadow roots
         function searchInShadowRoot(element) {
@@ -449,246 +167,6 @@ def find_buy_button_with_shadow_dom(driver):
     print("❌ SHADOW DOM: All Shadow DOM methods failed to find buy button")
     return None, None
 
-
-class VMBookmarkProcessor:
-    """
-    Real-time VM bookmark processor that runs continuously in the background
-    """
-    def __init__(self, vm_ip_address="192.168.56.101"):
-        self.vm_ip = vm_ip_address
-        self.drivers = []
-        self.is_running = False
-        self.worker_thread = None
-        
-        # Driver configurations
-        self.driver_configs = [
-            {"user_data_dir": "C:\\VintedScraper_Default6_Bookmark", "profile": "Profile 17", "port": 9223, "id": 1},
-            {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9224, "id": 2},
-            {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9226, "id": 3},
-            {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9227, "id": 4},
-            {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9228, "id": 5}
-        ]
-    
-    def start(self):
-        """Start the real-time processor"""
-        if not self.is_running:
-            self.is_running = True
-            self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
-            self.worker_thread.start()
-            print("✅ VM Real-time processor started")
-    
-    def stop(self):
-        """Stop the processor"""
-        self.is_running = False
-        if self.worker_thread:
-            self.worker_thread.join(timeout=5)
-        self._cleanup_drivers()
-        print("✅ VM Real-time processor stopped")
-    
-    def add_url(self, url):
-        """Add a URL to the processing queue"""
-        if url and not self._is_url_in_queue(url):
-            VM_BOOKMARK_QUEUE.put(url)
-            print(f"🚀 VM QUEUE: Added {url} (Queue size: {VM_BOOKMARK_QUEUE.qsize()})")
-            
-            # If processor not running, start it
-            if not self.is_running:
-                self.start()
-            return True
-        return False
-    
-    def _is_url_in_queue(self, url):
-        """Check if URL is already in queue"""
-        return url in list(VM_BOOKMARK_QUEUE.queue)
-    
-    def _worker_loop(self):
-        """Main worker loop that processes URLs"""
-        print("🔄 VM WORKER: Starting real-time processing loop...")
-        
-        # Initialize drivers
-        self._initialize_drivers()
-        
-        if not self.drivers:
-            print("❌ VM WORKER: No drivers available")
-            self.is_running = False
-            return
-        
-        print(f"✅ VM WORKER: {len(self.drivers)} drivers ready")
-        
-        # Main processing loop
-        while self.is_running:
-            try:
-                # Get URL from queue (with timeout for checking is_running)
-                try:
-                    url = VM_BOOKMARK_QUEUE.get(timeout=1)
-                except queue.Empty:
-                    continue
-                
-                print(f"\n🔔 VM WORKER: Processing URL: {url}")
-                
-                # Find available driver
-                available_driver = self._get_available_driver()
-                
-                if available_driver:
-                    # Process the URL
-                    available_driver['busy'] = True
-                    
-                    # Process in separate thread to not block
-                    process_thread = threading.Thread(
-                        target=self._process_bookmark,
-                        args=(available_driver, url),
-                        daemon=True
-                    )
-                    process_thread.start()
-                    
-                else:
-                    # All drivers busy, requeue
-                    print("⏳ VM WORKER: All drivers busy, requeueing")
-                    VM_BOOKMARK_QUEUE.put(url)
-                    time.sleep(2)
-                    
-            except Exception as e:
-                print(f"❌ VM WORKER ERROR: {e}")
-    
-    def _initialize_drivers(self):
-        """Initialize all VM drivers"""
-        for config in self.driver_configs:
-            driver = self._create_driver(config)
-            if driver:
-                self.drivers.append({
-                    'driver': driver,
-                    'config': config,
-                    'busy': False,
-                    'id': config['id']
-                })
-                print(f"✅ Driver {config['id']} initialized")
-    
-    def _create_driver(self, config):
-        """Create a single VM driver"""
-        try:
-            # Clear browser data first
-            clear_browser_data_universal(self.vm_ip, config)
-            
-            chrome_options = ChromeOptions()
-            chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
-            chrome_options.add_argument(f"--profile-directory={config['profile']}")
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
-            chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--disable-gpu')
-            
-            driver = webdriver.Remote(
-                command_executor=f'http://{self.vm_ip}:4444',
-                options=chrome_options
-            )
-            
-            # Navigate to Vinted
-            driver.get("https://vinted.co.uk")
-            time.sleep(2)
-            
-            # Handle login if needed (simplified - add your login logic here)
-            self._handle_login(driver, config['id'])
-            
-            return driver
-            
-        except Exception as e:
-            print(f"❌ Failed to create driver {config['id']}: {e}")
-            return None
-    
-    def _handle_login(self, driver, driver_id):
-        """Handle Vinted login (simplified version)"""
-        try:
-            # Check if already logged in
-            WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="header-conversations-button"]'))
-            )
-            print(f"✅ Driver {driver_id}: Already logged in")
-        except:
-            print(f"⚠️ Driver {driver_id}: May need login")
-            # Add your login logic here if needed
-    
-    def _get_available_driver(self):
-        """Get an available driver"""
-        with VM_DRIVER_LOCK:
-            for driver_info in self.drivers:
-                if not driver_info['busy']:
-                    return driver_info
-        return None
-    
-    def _process_bookmark(self, driver_info, url):
-        """Process a single bookmark"""
-        driver = driver_info['driver']
-        driver_id = driver_info['id']
-        
-        try:
-            print(f"🔖 DRIVER {driver_id}: Processing {url}")
-            
-            # Open new tab
-            driver.execute_script("window.open('');")
-            new_tab = driver.window_handles[-1]
-            driver.switch_to.window(new_tab)
-            
-            # Navigate to URL
-            driver.get(url)
-            time.sleep(2)
-            
-            # Find and click buy button
-            buy_button = find_buy_button_with_shadow_dom(driver)
-            
-            if not buy_button or not buy_button[0]:
-                print(f"❌ DRIVER {driver_id}: Buy button not found - item sold")
-                return
-            
-            print(f"✅ DRIVER {driver_id}: Buy button found and clicked")
-            
-            # Wait for pay button
-            time.sleep(3)
-            
-            # Look for pay button
-            pay_button, _ = vm_try_selectors(
-                driver,
-                'pay_button',
-                operation='find',
-                timeout=10,
-                step_log={'driver_number': driver_id, 'start_time': time.time()}
-            )
-            
-            if pay_button:
-                print(f"✅ DRIVER {driver_id}: Pay button found")
-                
-                # Critical timing - wait exactly 2.5 seconds then close
-                print(f"⏰ DRIVER {driver_id}: Waiting 2.5 seconds...")
-                time.sleep(2.5)
-                
-                print(f"✅ DRIVER {driver_id}: Bookmark completed for {url}")
-            else:
-                print(f"❌ DRIVER {driver_id}: Pay button not found")
-            
-        except Exception as e:
-            print(f"❌ DRIVER {driver_id} ERROR: {e}")
-        
-        finally:
-            # Close tab and mark driver as available
-            try:
-                driver.close()
-                driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-            
-            driver_info['busy'] = False
-            print(f"🔓 DRIVER {driver_id}: Available again")
-    
-    def _cleanup_drivers(self):
-        """Close all drivers"""
-        for driver_info in self.drivers:
-            try:
-                driver_info['driver'].quit()
-                print(f"✅ Closed driver {driver_info['id']}")
-            except:
-                pass
-        self.drivers.clear()
 
 
 class HIDKeyboard:
@@ -2199,3 +1677,525 @@ def render_main_page():
                     const descriptionEl = document.querySelector('.content-description');
                     const urlEl = document.querySelector('.content-url');
                     const counterEl = document.querySelector('.listing-counter');
+
+                    if (titleEl) titleEl.textContent = listing.title;
+                    if (priceEl) priceEl.textContent = 'Price: £' + listing.price;
+                    if (profitEl) profitEl.textContent = `Profit: £${{listing.profit.toFixed(2)}}`;
+                    if (joinDateEl) joinDateEl.textContent = listing.join_date;
+                    if (detectedItemsEl) detectedItemsEl.textContent = listing.detected_items;
+                    if (descriptionEl) descriptionEl.textContent = listing.description;
+                    if (urlEl) urlEl.textContent = listing.url;
+                    if (counterEl) counterEl.textContent = `${{currentListingIndex + 1}} of ${{allListings.length}}`;
+
+                    // Update images
+                    const imageContainer = document.querySelector('.image-container');
+                    if (imageContainer) {{
+                        imageContainer.innerHTML = '';
+                        listing.processed_images.forEach(imgBase64 => {{
+                            const imageWrapper = document.createElement('div');
+                            imageWrapper.className = 'image-wrapper';
+                            const img = document.createElement('img');
+                            img.src = `data:image/png;base64=${{imgBase64}}`;
+                            img.alt = 'Listing Image';
+                            imageWrapper.appendChild(img);
+                            imageContainer.appendChild(imageWrapper);
+                        }});
+                    }}
+                    
+                    // Update stopwatch
+                    updateStopwatch();
+                    
+                    // Reset confirmation dialog state
+                    hideConfirmation();
+                }}
+
+                function changeListingIndex(direction) {{
+                    if (direction === 'next') {{
+                        updateListingDisplay(currentListingIndex + 1);
+                    }} else if (direction === 'previous') {{
+                        updateListingDisplay(currentListingIndex - 1);
+                    }}
+                }}
+
+                // Single button function to open listing directly
+                function openListing() {{
+                    var urlElement = document.querySelector('.content-url');
+                    var url = urlElement ? urlElement.textContent.trim() : '';
+                    
+                    if (url && url !== 'No URL Available') {{
+                        console.log('Opening listing:', url);
+                        window.open(url, '_blank');
+                    }} else {{
+                        alert('No valid URL available for this listing');
+                    }}
+                }}
+                
+                // Confirmation dialog functions
+                function showConfirmation(message, confirmCallback, cancelCallback) {{
+                    const buyDecisionContainer = document.querySelector('.buy-decision-container');
+                    const confirmationContainer = document.querySelector('.confirmation-container');
+                    
+                    if (buyDecisionContainer) buyDecisionContainer.style.display = 'none';
+                    if (confirmationContainer) {{
+                        confirmationContainer.style.display = 'flex';
+                        
+                        const confirmationText = confirmationContainer.querySelector('.confirmation-text');
+                        if (confirmationText) confirmationText.textContent = message;
+                        
+                        const confirmYesBtn = confirmationContainer.querySelector('.confirm-yes-button');
+                        const confirmNoBtn = confirmationContainer.querySelector('.confirm-no-button');
+                        
+                        if (confirmYesBtn) {{
+                            confirmYesBtn.onclick = function() {{
+                                confirmCallback();
+                                hideConfirmation();
+                            }};
+                        }}
+                        
+                        if (confirmNoBtn) {{
+                            confirmNoBtn.onclick = function() {{
+                                cancelCallback();
+                                hideConfirmation();
+                            }};
+                        }}
+                    }}
+                }}
+                
+                function hideConfirmation() {{
+                    const buyDecisionContainer = document.querySelector('.buy-decision-container');
+                    const confirmationContainer = document.querySelector('.confirmation-container');
+                    
+                    if (buyDecisionContainer) buyDecisionContainer.style.display = 'flex';
+                    if (confirmationContainer) confirmationContainer.style.display = 'none';
+                }}
+
+                // Buy decision functions with confirmation
+                function buyYes() {{
+                    showConfirmation(
+                        'Are you sure you want to buy this listing?',
+                        function() {{
+                            var urlElement = document.querySelector('.content-url');
+                            var url = urlElement ? urlElement.textContent.trim() : '';
+                            
+                            if (url && url !== 'No URL Available') {{
+                                console.log('User confirmed: wants to buy listing: ' + url);
+                                
+                                fetch('/vinted-button-clicked', {{
+                                    method: 'POST',
+                                    headers: {{
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                    }},
+                                    body: `url=${{encodeURIComponent(url)}}&action=buy_yes`
+                                }})
+                                .then(response => {{
+                                    if (response.ok) {{
+                                        console.log('Vinted YES button confirmed and sent successfully');
+                                    }} else {{
+                                        console.error('Failed to process Vinted YES button');
+                                    }}
+                                }})
+                                .catch(error => {{
+                                    console.error('Error with Vinted YES button:', error);
+                                }});
+                            }} else {{
+                                console.log('User confirmed: wants to buy listing but no URL available');
+                            }}
+                        }},
+                        function() {{
+                            console.log('User cancelled buying decision');
+                        }}
+                    );
+                }}
+
+                function buyNo() {{
+                    showConfirmation(
+                        'Are you sure you don\\'t want to buy this listing?',
+                        function() {{
+                            var urlElement = document.querySelector('.content-url');
+                            var url = urlElement ? urlElement.textContent.trim() : '';
+                            
+                            if (url && url !== 'No URL Available') {{
+                                console.log('User confirmed: does not want to buy listing: ' + url);
+                                
+                                fetch('/vinted-button-clicked', {{
+                                    method: 'POST',
+                                    headers: {{
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                    }},
+                                    body: `url=${{encodeURIComponent(url)}}&action=buy_no`
+                                }})
+                                .then(response => {{
+                                    if (response.ok) {{
+                                        console.log('Vinted NO button confirmed and sent successfully');
+                                    }} else {{
+                                        console.error('Failed to process Vinted NO button');
+                                    }}
+                                }})
+                                .catch(error => {{
+                                    console.error('Error with Vinted NO button:', error);
+                                }});
+                            }} else {{
+                                console.log('User confirmed: does not want to buy listing but no URL available');
+                            }}
+                        }},
+                        function() {{
+                            console.log('User cancelled buying decision');
+                        }}
+                    );
+                }}
+
+                // Initialize display on page load
+                window.onload = () => {{
+                    console.log('Page loaded, initializing display');
+                    if (allListings.length > 0) {{
+                        updateListingDisplay(0);
+                    }} else {{
+                        console.log('No listings to display');
+                    }}
+                    
+                    // Start stopwatch update interval
+                    setInterval(updateStopwatch, 1000);
+                }};
+            </script>
+        </head>
+        <body>
+            <div class="container listing-container">
+                <!-- NEW: Top bar with three colored rectangles -->
+                <div class="top-bar">
+                    <button class="top-bar-item refresh-button" onclick="refreshPage()">
+                        Refresh Page
+                    </button>
+                    <div class="top-bar-item listing-counter" id="listing-counter">
+                        1 of 1
+                    </div>
+                    <div class="top-bar-item stopwatch-display" id="stopwatch-display">
+                        No stopwatch - listing unbookmarked
+                    </div>
+                </div>
+                
+                <div class="section-box">
+                    <p><span class="content-title">{title}</span></p>
+                </div>
+                <div class="financial-row">
+                    <div class="financial-item">
+                        <p><span class="content-price">{price}</span></p>
+                    </div>
+                    <div class="financial-item">
+                        <p><span class="content-profit">{profit}</span></p>
+                    </div>
+                </div>
+                <div class="section-box">
+                    <p><span class="content-description">{description}</span></p>
+                </div>
+                
+                <!-- Single button for opening listing -->
+                <div class="single-button-container">
+                    <button class="custom-button open-listing-button" onclick="openListing()">
+                        Open Listing in New Tab
+                    </button>
+                </div>
+                
+                <!-- Buy decision buttons -->
+                <div class="buy-decision-container">
+                    <button class="buy-yes-button" onclick="buyYes()">
+                        Yes - Buy now
+                    </button>
+                    <button class="buy-no-button" onclick="buyNo()">
+                        No - Do not purchase
+                    </button>
+                </div>
+                
+                <!-- Confirmation dialog (initially hidden) -->
+                <div class="confirmation-container">
+                    <div class="confirmation-text">
+                        Are you sure?
+                    </div>
+                    <div class="confirmation-buttons">
+                        <button class="confirm-yes-button">
+                            Yes
+                        </button>
+                        <button class="confirm-no-button">
+                            No
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="details-row">
+                    <div class="details-item">
+                        <p><span class="content-detected-items">{detected_items}</span></p>
+                    </div>
+                </div>
+                <div class="image-container">
+                    {image_html}
+                </div>
+                <div class="details-item">
+                    <p><span class="content-join-date">{join_date}</span></p>
+                </div>
+                <div class="navigation-buttons">
+                    <button onclick="changeListingIndex('previous')" class="custom-button" style="background-color: #666;">Previous</button>
+                    <button onclick="changeListingIndex('next')" class="custom-button" style="background-color: #666;">Next</button>
+                </div>
+                <div class="listing-url" id="listing-url">
+                    <p><span class="header">Listing URL: </span><span class="content-url">{listing_url}</span></p>
+                </div>
+            </div>
+        </body>
+        </html>
+        '''
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in render_main_page: {e}")
+        print(f"Traceback: {error_details}")
+        return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
+class VintedScraper:
+
+    def restart_driver_if_dead(self, driver):
+        """If driver is dead, create a new one. That's it."""
+        try:
+            driver.current_url  # Simple test
+            return driver  # Driver is fine
+        except:
+            print("🔄 Driver crashed, restarting...")
+            try:
+                driver.quit()
+            except:
+                pass
+            return self.setup_driver()
+    # Add this method to the VintedScraper class
+    def send_pushover_notification(self, title, message, api_token, user_key):
+        """
+        Send a notification via Pushover
+        :param title: Notification title
+        :param message: Notification message
+        :param api_token: Pushover API token
+        :param user_key: Pushover user key
+        """
+        try:
+            url = "https://api.pushover.net/1/messages.json"
+            payload = {
+                "token": api_token,
+                "user": user_key,
+                "title": title,
+                "message": message
+            }
+            response = requests.post(url, data=payload)
+            if response.status_code == 200:
+                print(f"Notification sent successfully: {title}")
+            else:
+                print(f"Failed to send notification. Status code: {response.status_code}")
+                print(f"Response: {response.text}")
+        except Exception as e:
+            print(f"Error sending Pushover notification: {str(e)}")
+
+    def fetch_price(self, class_name):
+        if class_name in ['lite_box', 'oled_box', 'oled_in_tv', 'switch_box', 'switch_in_tv', 'other_mario']:
+            return None
+        price = BASE_PRICES.get(class_name, 0)
+        delivery_cost = 5.0 if class_name in ['lite', 'oled', 'switch'] else 3.5
+        final_price = price + delivery_cost
+        return final_price
+    def fetch_all_prices(self):
+        all_prices = {class_name: self.fetch_price(class_name) for class_name in class_names if self.fetch_price(class_name) is not None}
+        all_prices.update({
+            'lite_box': all_prices.get('lite', 0) * 1.05, 
+            'oled_box': all_prices.get('oled', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_white', 0) - 15, 
+            'oled_in_tv': all_prices.get('oled', 0) + all_prices.get('tv_white', 0) - 10, 
+            'switch_box': all_prices.get('switch', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_black', 0) - 5, 
+            'switch_in_tv': all_prices.get('switch', 0) + all_prices.get('tv_black', 0) - 3.5, 
+            'other_mario': 22.5,
+            'anonymous_games': 5  # Add price for anonymous games
+        })
+        return all_prices
+    
+    def __init__(self):
+        """Modified init - removed all booking/buying driver related initialization"""
+        # Initialize pygame-related variables similar to FacebookScraper
+        global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
+        global current_expected_revenue, current_profit, current_detected_items, current_listing_images
+        global current_bounding_boxes, current_listing_url, current_suitability, suitable_listings
+        global current_listing_index, recent_listings
+        
+        # **CRITICAL FIX: Initialize recent_listings for website navigation**
+        recent_listings = {
+            'listings': [],
+            'current_index': 0
+        }
+        
+        # Initialize all current listing variables
+        current_listing_title = "No title"
+        current_listing_description = "No description"
+        current_listing_join_date = "No join date"
+        current_listing_price = "0"
+        current_expected_revenue = "0"
+        current_profit = "0"
+        current_detected_items = "None"
+        current_listing_images = []
+        current_bounding_boxes = {}
+        current_listing_url = ""
+        current_suitability = "Suitability unknown"
+        suitable_listings = []
+        current_listing_index = 0
+
+        # Initialize VM connection flag
+        self.vm_bookmark_queue = []  # Queue of URLs to send to VM system
+        
+        # Check if CUDA is available
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
+
+        # Load model with explicit GPU usage
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
+
+    def run_pygame_window(self):
+        global LOCK_POSITION, current_listing_index, suitable_listings
+        screen, clock = self.initialize_pygame_window()
+        rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
+            pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
+            pygame.Rect(0, 180, 240, 180), pygame.Rect(240, 180, 240, 180), pygame.Rect(480, 180, 320, 180),
+            pygame.Rect(0, 360, 240, 240), pygame.Rect(240, 360, 240, 120), pygame.Rect(240, 480, 240, 120),
+            pygame.Rect(480, 360, 160, 240), pygame.Rect(640, 360, 160, 240)
+        ]
+        fonts = {
+            'number': pygame.font.Font(None, 24),
+            'price': pygame.font.Font(None, 36),
+            'title': pygame.font.Font(None, 40),
+            'description': pygame.font.Font(None, 28),
+            'join_date': pygame.font.Font(None, 28),
+            'revenue': pygame.font.Font(None, 36),
+            'profit': pygame.font.Font(None, 36),
+            'items': pygame.font.Font(None, 30),
+            'click': pygame.font.Font(None, 28),
+            'suitability': pygame.font.Font(None, 28),
+            'reviews': pygame.font.Font(None, 28),
+            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
+        }
+        dragging = False
+        resizing = False
+        drag_rect = None
+        drag_offset = (0, 0)
+        resize_edge = None
+
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_l:
+                        LOCK_POSITION = not LOCK_POSITION
+                    elif event.key == pygame.K_RIGHT:
+                        if suitable_listings:
+                            current_listing_index = (current_listing_index + 1) % len(suitable_listings)
+                            self.update_listing_details(**suitable_listings[current_listing_index])
+                    elif event.key == pygame.K_LEFT:
+                        if suitable_listings:
+                            current_listing_index = (current_listing_index - 1) % len(suitable_listings)
+                            self.update_listing_details(**suitable_listings[current_listing_index])
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Left mouse button
+                        # Check if rectangle 4 was clicked
+                        if rectangles[3].collidepoint(event.pos):
+                            if suitable_listings and 0 <= current_listing_index < len(suitable_listings):
+                                current_url = suitable_listings[current_listing_index].get('url')
+                                if current_url:
+                                    try:
+                                        import webbrowser
+                                        webbrowser.open(current_url)
+                                    except Exception as e:
+                                        print(f"Failed to open URL: {e}")
+                        elif not LOCK_POSITION:
+                            for i, rect in enumerate(rectangles):
+                                if rect.collidepoint(event.pos):
+                                    if event.pos[0] > rect.right - 10 and event.pos[1] > rect.bottom - 10:
+                                        resizing = True
+                                        drag_rect = i
+                                        resize_edge = 'bottom-right'
+                                    else:
+                                        dragging = True
+                                        drag_rect = i
+                                        drag_offset = (rect.x - event.pos[0], rect.y - event.pos[1])
+                                    break
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        dragging = False
+                        resizing = False
+                        drag_rect = None
+            
+            # Handle dragging and resizing
+            if dragging and drag_rect is not None:
+                rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
+                rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
+            elif resizing and drag_rect is not None:
+                if resize_edge == 'bottom-right':
+                    width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
+                    height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
+                    rectangles[drag_rect].size = (width, height)
+            
+            screen.fill((204, 210, 255))
+            for i, rect in enumerate(rectangles):
+                pygame.draw.rect(screen, (0, 0, 0), rect, 2)
+                number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
+                number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
+                screen.blit(number_text, number_rect)
+
+                if i == 2:  # Rectangle 3 (index 2) - Title
+                    self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
+                elif i == 1:  # Rectangle 2 (index 1) - Price
+                    self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
+                elif i == 7:  # Rectangle 8 (index 7) - Description
+                    self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
+                elif i == 8:  # Rectangle 9 (index 8) - CHANGED: Now shows exact time instead of upload date
+                    time_label = "Appended:"
+                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
+                elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
+                    self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
+                elif i == 9:  # Rectangle 10 (index 9) - Profit
+                    self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
+                elif i == 0:  # Rectangle 1 (index 0) - Detected Items
+                    self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
+                elif i == 10:  # Rectangle 11 (index 10) - Images
+                    self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
+                elif i == 3:  # Rectangle 4 (index 3) - Click to open
+                    click_text = "CLICK TO OPEN LISTING IN CHROME"
+                    self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
+                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
+                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+                elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
+                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
+
+            screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
+
+            if suitable_listings:
+                listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
+                screen.blit(listing_counter, (10, 40))
+
+            pygame.display.flip()
+            clock.tick(30)
+
+        self.save_rectangle_config(rectangles)
+        pygame.quit()
+        
+    def base64_encode_image(self, img):
+        """Convert PIL Image to base64 string, resizing if necessary"""
+        # Resize image while maintaining aspect ratio
+        max_size = (200, 200)
+        img.thumbnail(max_size, Image.LANCZOS)
+        
+        # Convert to base64
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode()
+
+    def render_images(self, screen, images, rect, bounding_boxes):
+        if not images:
+            return
+
+        num_images = len(images)
+        if num_images == 1:
