@@ -1,4 +1,104 @@
 # Continuation from line 2201
+        
+        if 'value' in status_data and 'nodes' in status_data['value']:
+            for node in status_data['value']['nodes']:
+                if 'slots' in node:
+                    for slot in node['slots']:
+                        if slot.get('session'):
+                            session_id = slot['session']['sessionId']
+                            print(f"Found existing session: {session_id}")
+                            delete_response = requests.delete(
+                                f"http://{vm_ip_address}:4444/session/{session_id}",
+                                timeout=10
+                            )
+                            print(f"Cleaned up session: {session_id}")
+    
+    except Exception as e:
+        print(f"Session cleanup failed: {e}")
+    
+    # Chrome options for the VM instance
+    chrome_options = ChromeOptions()
+    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
+    chrome_options.add_argument(f"--profile-directory={config['profile']}")
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    
+    # VM-specific optimizations
+    chrome_options.add_argument('--force-device-scale-factor=1')
+    chrome_options.add_argument('--high-dpi-support=1')
+    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
+    chrome_options.add_argument('--remote-allow-origins=*')
+    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--disable-web-security')
+    chrome_options.add_argument('--allow-running-insecure-content')
+
+    
+    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
+    
+    driver = None
+    
+    try:
+        print("Attempting to connect to remote WebDriver...")
+        
+        driver = webdriver.Remote(
+            command_executor=f'http://{vm_ip_address}:4444',
+            options=chrome_options
+        )
+        
+        print(f"✓ Successfully created remote WebDriver connection")
+        print(f"Session ID: {driver.session_id}")
+        
+        print("Applying stealth modifications...")
+        stealth_script = """
+        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+        window.chrome = {runtime: {}};
+        Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+        
+        Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
+        Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+        Object.defineProperty(screen, 'colorDepth', {get: () => 24});
+        """
+        driver.execute_script(stealth_script)
+        print("✓ Stealth script applied successfully")
+        
+        print(f"✓ Successfully connected to VM Chrome with clean profile")
+        return driver
+        
+    except Exception as e:
+        print(f"✗ Failed to connect to VM WebDriver")
+        print(f"Error: {str(e)}")
+        
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
+        
+        return None
+
+def find_buy_button_with_shadow_dom(driver):
+    """
+    Enhanced buy now button finder - JavaScript click first approach
+    Finds button and immediately clicks with JavaScript for reliability
+    """
+    print("🔍 SHADOW DOM: Starting buy button search with JavaScript-first approach...")
+    
+    # Method 1: Find button and immediately click with JavaScript
+    print("⚡ JAVASCRIPT-FIRST: Finding and clicking buy button with JavaScript...")
+    buy_selectors = [
+        'button[data-testid="item-buy-button"]',
+        'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
+        '//button[@data-testid="item-buy-button"]',
+        '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
+        '//span[text()="Buy now"]/parent::button'
+    ]
     
     for selector in buy_selectors:
         try:
@@ -2099,103 +2199,3 @@ class VintedScraper:
                 print("✅ VM LOGIN: No captcha present - login successful!")
                 return True
             elif result == True:
-                print("🔄 VM LOGIN: Captcha detected - handling...")
-                if HAS_PYAUDIO:
-                    detector = AudioNumberDetector(driver=driver)
-                    detector.start_listening()
-                    # Wait for captcha completion
-                    print("⏳ VM LOGIN: Waiting for captcha completion...")
-                    return True
-                else:
-                    print("❌ VM LOGIN: Cannot handle captcha - no audio support")
-                    return False
-            else:
-                print("❌ VM LOGIN: Captcha handling failed")
-                return False
-                
-        except Exception as e:
-            print(f"❌ VM LOGIN: Error during login: {e}")
-            return False
-
-    def execute_bookmark_with_preloaded_driver(self, url):
-        """Execute bookmark using the already logged-in VM driver"""
-        if not self.vm_driver_ready or not self.current_vm_driver:
-            print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
-            return False
-        
-        with self.vm_driver_lock:
-            print(f"🔖 BOOKMARK: Using pre-loaded driver for: {url}")
-            
-            try:
-                # Create step log for tracking
-                step_log = {
-                    'start_time': time.time(),
-                    'driver_number': 1,  # Always 1 since we use single driver
-                    'steps_completed': [],
-                    'failures': [],
-                    'success': False,
-                    'critical_sequence_completed': False,
-                    'actual_url': url
-                }
-                
-                # Execute the bookmark sequence
-                success = execute_vm_bookmark_sequences(self.current_vm_driver, url, "preloaded_user", step_log)
-                
-                self.vm_driver_ready = False  # Mark as used
-                
-                total_time = time.time() - step_log['start_time']
-                print(f"📊 BOOKMARK ANALYSIS:")
-                print(f"⏱️  Total time: {total_time:.2f}s")
-                print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
-                print(f"❌ Failures: {len(step_log['failures'])}")
-                print(f"🏆 Overall success: {'YES' if success else 'NO'}")
-                
-                return success
-                
-            except Exception as e:
-                print(f"❌ BOOKMARK: Error using pre-loaded driver: {e}")
-                self.vm_driver_ready = False
-                return False
-
-    def prepare_next_vm_driver(self):
-        """Prepare the NEXT VM driver after current one is used"""
-        print("🔄 NEXT DRIVER: Preparing next VM driver...")
-        
-        try:
-            # Close current driver if it exists
-            if self.current_vm_driver:
-                try:
-                    self.current_vm_driver.quit()
-                    print("✅ NEXT DRIVER: Closed previous driver")
-                except:
-                    print("⚠️ NEXT DRIVER: Error closing previous driver")
-            
-            # Clear browser data for new session
-            clear_browser_data_universal("192.168.56.101", {
-                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
-                "profile": "Profile 4", 
-                "port": 9224
-            })
-            
-            time.sleep(1)  # Brief delay
-            
-            # Create new VM driver
-            self.current_vm_driver = setup_driver_universal("192.168.56.101", {
-                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
-                "profile": "Profile 4", 
-                "port": 9224
-            })
-            
-            if not self.current_vm_driver:
-                print("❌ NEXT DRIVER: Failed to create new VM driver")
-                self.vm_driver_ready = False
-                return
-            
-            # Login the new driver
-            success = self.login_vm_driver(self.current_vm_driver)
-            
-            if success:
-                self.vm_driver_ready = True
-                print("✅ NEXT DRIVER: New VM driver ready and logged in")
-            else:
-                print("❌ NEXT DRIVER: Failed to login new VM driver")

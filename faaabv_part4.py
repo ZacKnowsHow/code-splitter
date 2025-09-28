@@ -1,4 +1,155 @@
 # Continuation from line 6601
+            app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+            
+        except Exception as e:
+            print(f"Error starting Flask app: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def is_monitoring_active(self):
+        """Check if any monitoring threads are still active"""
+        # Check if current bookmark driver exists (indicates monitoring might be active)
+        if hasattr(self, 'current_bookmark_driver') and self.current_bookmark_driver is not None:
+            try:
+                # Try to access the driver - if it fails, monitoring is done
+                self.current_bookmark_driver.current_url
+                return True
+            except:
+                return False
+        return False
+
+
+    def check_chrome_processes(self):
+        """
+        Debug function to check for running Chrome processes
+        """
+        import psutil
+        chrome_processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                if 'chrome' in proc.info['name'].lower():
+                    chrome_processes.append({
+                        'pid': proc.info['pid'],
+                        'name': proc.info['name'],
+                        'cmdline': ' '.join(proc.info['cmdline'][:3]) if proc.info['cmdline'] else ''
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        print(f"🔖 CHROME PROCESSES: Found {len(chrome_processes)} running Chrome processes")
+        for proc in chrome_processes[:5]:  # Show first 5
+            print(f"  • PID: {proc['pid']}, Name: {proc['name']}")
+        
+        return len(chrome_processes)
+
+    def setup_driver_enhanced_debug(self):
+        """
+        Enhanced setup_driver with comprehensive debugging
+        """
+        print("🚀 ENHANCED DRIVER SETUP: Starting...")
+        
+        # Check for existing Chrome processes
+        self.check_chrome_processes()
+        
+        chrome_opts = Options()
+        
+        # Basic preferences
+        prefs = {
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.default_content_setting_values.popups": 0,
+            "download.prompt_for_download": False,
+        }
+        chrome_opts.add_experimental_option("prefs", prefs)
+        
+        # User data directory setup
+        print(f"🚀 USER DATA DIR: {PERMANENT_USER_DATA_DIR}")
+        chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+        chrome_opts.add_argument(f"--profile-directory=Default")
+        
+        # Check if user data directory exists and is accessible
+        try:
+            if not os.path.exists(PERMANENT_USER_DATA_DIR):
+                os.makedirs(PERMANENT_USER_DATA_DIR, exist_ok=True)
+                print(f"🚀 CREATED: User data directory")
+            else:
+                print(f"🚀 EXISTS: User data directory found")
+        except Exception as dir_error:
+            print(f"🚀 DIR ERROR: {dir_error}")
+        
+        # Core stability arguments (minimal set)
+        chrome_opts.add_argument("--no-sandbox")
+        chrome_opts.add_argument("--disable-dev-shm-usage")
+        chrome_opts.add_argument("--disable-gpu")
+        chrome_opts.add_argument("--disable-software-rasterizer")
+        
+        # Remove potentially problematic arguments
+        chrome_opts.add_argument("--headless")  # Try without headless first
+        
+        # Keep some logging for debugging
+        chrome_opts.add_argument("--log-level=3")  # More detailed logging
+        chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        
+        try:
+            service = Service(
+                ChromeDriverManager().install()
+            )
+            
+            print("🚀 CREATING: Chrome driver...")
+            driver = webdriver.Chrome(service=service, options=chrome_opts)
+            
+            # Set timeouts
+            driver.implicitly_wait(10)
+            driver.set_page_load_timeout(30)
+            driver.set_script_timeout(30)
+            
+            print("✅ SUCCESS: Chrome driver initialized successfully")
+            return driver
+            
+        except Exception as e:
+            print(f"❌ CRITICAL ERROR: Chrome driver failed: {e}")
+            print(f"❌ ERROR TYPE: {type(e).__name__}")
+            
+            import traceback
+            print(f"❌ TRACEBACK:\n{traceback.format_exc()}")
+            
+            # Show system info for debugging
+            print("🔧 SYSTEM INFO:")
+            print(f"  • Python: {sys.version}")
+            print(f"  • OS: {os.name}")
+            print(f"  • Chrome processes: {self.check_chrome_processes()}")
+            
+            return None
+
+    def test_url_collection_mode(self, driver, search_query):
+        """
+        Simple testing mode that only collects URLs and saves listing IDs
+        No bookmarking, no purchasing, no image downloading - just URL collection
+        """
+        print("🧪 TEST_NUMBER_OF_LISTINGS MODE: Starting URL collection only")
+        
+        # Setup search URL with parameters
+        params = {
+            "search_text": search_query,
+            "price_from": PRICE_FROM,
+            "price_to": PRICE_TO,
+            "currency": CURRENCY,
+            "order": ORDER,
+        }
+        driver.get(f"{BASE_URL}?{urlencode(params)}")
+        
+        refresh_cycle = 1
+        
+        while True:
+            print(end=" ")
+            
+            try:
+                # Wait for page to load
+                WebDriverWait(driver, 20).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                )
+            except TimeoutException:
+                print("0 listings (page load timeout)")
+                refresh_cycle += 1
                 time.sleep(5)
                 continue
             

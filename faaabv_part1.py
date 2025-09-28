@@ -887,128 +887,228 @@ def clear_browser_data(vm_ip_address="192.168.56.101"):
         print("=" * 50)
         time.sleep(0.5)  # Brief pause before continuing
 
-def setup_driver(vm_ip_address="192.168.56.101"):
-    
-    # Session cleanup (existing code)
-    try:
-        import requests
-        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
-        status_data = status_response.json()
+    def setup_driver(vm_ip_address="192.168.56.101"):
         
-        if 'value' in status_data and 'nodes' in status_data['value']:
-            for node in status_data['value']['nodes']:
-                if 'slots' in node:
-                    for slot in node['slots']:
-                        if slot.get('session'):
-                            session_id = slot['session']['sessionId']
-                            print(f"Found existing session: {session_id}")
-                            delete_response = requests.delete(
-                                f"http://{vm_ip_address}:4444/session/{session_id}",
-                                timeout=10
-                            )
-                            print(f"Cleaned up session: {session_id}")
-    
-    except Exception as e:
-        print(f"Session cleanup failed: {e}")
-    
-    # Chrome options for the VM instance (existing code continues...)
-    chrome_options = ChromeOptions()
-    chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
-    chrome_options.add_argument('--profile-directory=Profile 4')
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    
-    # VM-specific optimizations
-    chrome_options.add_argument('--force-device-scale-factor=1')
-    chrome_options.add_argument('--high-dpi-support=1')
-    chrome_options.add_argument('--remote-debugging-port=9222')
-    chrome_options.add_argument('--remote-allow-origins=*')
-    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-extensions')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--disable-web-security')
-    chrome_options.add_argument('--allow-running-insecure-content')
-    
-    # CRITICAL FIX: Prevent session timeout
-    chrome_options.add_argument('--disable-background-timer-throttling')
-    chrome_options.add_argument('--disable-renderer-backgrounding')
-    chrome_options.add_argument('--disable-backgrounding-occluded-windows')
-    chrome_options.add_argument('--disable-ipc-flooding-protection')
-    chrome_options.add_argument('--memory-pressure-off')
-    
-    # CRITICAL FIX: Set capabilities for infinite session
-    capabilities = {
-        'browserName': 'chrome',
-        'version': '',
-        'platform': 'ANY',
-        # INFINITE SESSION TIMEOUT
-        'se:timeouts': {
-            'implicit': 0,
-            'pageLoad': 300000,  # 5 minutes for page load
-            'script': 30000,     # 30 seconds for script
-            'session': 0         # INFINITE SESSION - NEVER TIMEOUT
-        },
-        # Additional capabilities to prevent timeout
-        'se:idleTimeout': 0,        # No idle timeout
-        'se:sessionTimeout': 0,     # No session timeout  
-        'maxInstances': 1,
-        'browserTimeout': 0,        # No browser timeout
-        'newSessionWaitTimeout': 0  # No wait timeout
-    }
-    
-    # Merge capabilities with chrome options
-    chrome_options.set_capability('timeouts', capabilities['se:timeouts'])
-    chrome_options.set_capability('se:idleTimeout', capabilities['se:idleTimeout'])
-    chrome_options.set_capability('se:sessionTimeout', capabilities['se:sessionTimeout'])
-    
-    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
-    print(f"INFINITE SESSION: Timeout set to 0 (never expires)")
-    
-    driver = None
-    
-    try:
-        print("Attempting to connect to remote WebDriver...")
+        # Session cleanup (existing code)
+        try:
+            import requests
+            status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+            status_data = status_response.json()
+            
+            if 'value' in status_data and 'nodes' in status_data['value']:
+                for node in status_data['value']['nodes']:
+                    if 'slots' in node:
+                        for slot in node['slots']:
+                            if slot.get('session'):
+                                session_id = slot['session']['sessionId']
+                                print(f"Found existing session: {session_id}")
+                                delete_response = requests.delete(
+                                    f"http://{vm_ip_address}:4444/session/{session_id}",
+                                    timeout=10
+                                )
+                                print(f"Cleaned up session: {session_id}")
         
-        driver = webdriver.Remote(
-            command_executor=f'http://{vm_ip_address}:4444',
-            options=chrome_options
-        )
+        except Exception as e:
+            print(f"Session cleanup failed: {e}")
         
-        print(f"✓ Successfully created remote WebDriver connection")
-        print(f"Session ID: {driver.session_id}")
+        # Chrome options for the VM instance (existing code continues...)
+        chrome_options = ChromeOptions()
+        chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
+        chrome_options.add_argument('--profile-directory=Profile 4')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         
-        print("Applying stealth modifications...")
-        stealth_script = """
-        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-        window.chrome = {runtime: {}};
-        Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+        # VM-specific optimizations
+        chrome_options.add_argument('--force-device-scale-factor=1')
+        chrome_options.add_argument('--high-dpi-support=1')
+        chrome_options.add_argument('--remote-debugging-port=9222')
+        chrome_options.add_argument('--remote-allow-origins=*')
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--disable-web-security')
+        chrome_options.add_argument('--allow-running-insecure-content')
         
-        Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
-        Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
-        Object.defineProperty(screen, 'colorDepth', {get: () => 24});
-        """
-        driver.execute_script(stealth_script)
-        print("✓ Stealth script applied successfully")
+        # CRITICAL FIX: Prevent session timeout
+        chrome_options.add_argument('--disable-background-timer-throttling')
+        chrome_options.add_argument('--disable-renderer-backgrounding')
+        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+        chrome_options.add_argument('--disable-ipc-flooding-protection')
+        chrome_options.add_argument('--memory-pressure-off')
         
-        print(f"✓ Successfully connected to VM Chrome with clean profile")
-        return driver
+        # Modern Selenium 4+ approach - set capabilities directly on ChromeOptions
+        # Set only valid Selenium Grid timeout capabilities
+        chrome_options.set_capability('se:idleTimeout', 0)        # No idle timeout (infinite)
+        chrome_options.set_capability('se:sessionTimeout', 0)     # No session timeout (infinite)
         
-    except Exception as e:
-        print(f"✗ Failed to connect to VM WebDriver")
-        print(f"Error: {str(e)}")
+        print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
+        print(f"INFINITE SESSION: Grid timeouts set to 0 (never expires)")
         
-        if driver:
+        driver = None
+        
+        try:
+            print("Attempting to connect to remote WebDriver...")
+            
+            driver = webdriver.Remote(
+                command_executor=f'http://{vm_ip_address}:4444',
+                options=chrome_options
+            )
+            
+            print(f"✓ Successfully created remote WebDriver connection")
+            print(f"Session ID: {driver.session_id}")
+            
+            # Set client-side timeouts after session creation
             try:
-                driver.quit()
-            except:
-                pass
+                driver.implicitly_wait(0)  # No implicit wait
+                driver.set_page_load_timeout(300)  # 5 minutes page load timeout
+                driver.set_script_timeout(30)  # 30 seconds script timeout
+                print("✓ Client-side timeouts configured")
+            except Exception as timeout_error:
+                print(f"Warning: Could not set client timeouts: {timeout_error}")
+            
+            print("Applying stealth modifications...")
+            stealth_script = """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            window.chrome = {runtime: {}};
+            Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+            
+            Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
+            Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+            Object.defineProperty(screen, 'colorDepth', {get: () => 24});
+            """
+            driver.execute_script(stealth_script)
+            print("✓ Stealth script applied successfully")
+            
+            print(f"✓ Successfully connected to VM Chrome with clean profile")
+            return driver
+            
+        except Exception as e:
+            print(f"✗ Failed to connect to VM WebDriver")
+            print(f"Error: {str(e)}")
+            
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
+            
+            return None
         
-        return None
+        # Session cleanup (existing code)
+        try:
+            import requests
+            status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+            status_data = status_response.json()
+            
+            if 'value' in status_data and 'nodes' in status_data['value']:
+                for node in status_data['value']['nodes']:
+                    if 'slots' in node:
+                        for slot in node['slots']:
+                            if slot.get('session'):
+                                session_id = slot['session']['sessionId']
+                                print(f"Found existing session: {session_id}")
+                                delete_response = requests.delete(
+                                    f"http://{vm_ip_address}:4444/session/{session_id}",
+                                    timeout=10
+                                )
+                                print(f"Cleaned up session: {session_id}")
+        
+        except Exception as e:
+            print(f"Session cleanup failed: {e}")
+        
+        # Chrome options for the VM instance
+        chrome_options = ChromeOptions()
+        chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
+        chrome_options.add_argument('--profile-directory=Profile 4')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        
+        # VM-specific optimizations
+        chrome_options.add_argument('--force-device-scale-factor=1')
+        chrome_options.add_argument('--high-dpi-support=1')
+        chrome_options.add_argument('--remote-debugging-port=9222')
+        chrome_options.add_argument('--remote-allow-origins=*')
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--disable-web-security')
+        chrome_options.add_argument('--allow-running-insecure-content')
+        
+        # CRITICAL FIX: Prevent session timeout
+        chrome_options.add_argument('--disable-background-timer-throttling')
+        chrome_options.add_argument('--disable-renderer-backgrounding')
+        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+        chrome_options.add_argument('--disable-ipc-flooding-protection')
+        chrome_options.add_argument('--memory-pressure-off')
+        
+        # Modern Selenium 4+ approach - set capabilities directly on ChromeOptions
+        # Set only valid Selenium Grid timeout capabilities
+        chrome_options.set_capability('se:idleTimeout', 0)        # No idle timeout (infinite)
+        chrome_options.set_capability('se:sessionTimeout', 0)     # No session timeout (infinite)
+        
+        print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
+        print(f"INFINITE SESSION: Grid timeouts set to 0 (never expires)")
+        
+        driver = None
+        
+        try:
+            print("Attempting to connect to remote WebDriver...")
+            
+            # Modern Selenium 4+ approach - use options only
+            driver = webdriver.Remote(
+                command_executor=f'http://{vm_ip_address}:4444',
+                options=chrome_options
+            )
+            
+            print(f"✓ Successfully created remote WebDriver connection")
+            print(f"Session ID: {driver.session_id}")
+            
+            # Set client-side timeouts after session creation
+            try:
+                driver.implicitly_wait(0)  # No implicit wait
+                driver.set_page_load_timeout(300)  # 5 minutes page load timeout
+                driver.set_script_timeout(30)  # 30 seconds script timeout
+                print("✓ Client-side timeouts configured")
+            except Exception as timeout_error:
+                print(f"Warning: Could not set client timeouts: {timeout_error}")
+            
+            print("Applying stealth modifications...")
+            stealth_script = """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            window.chrome = {runtime: {}};
+            Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+            
+            Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
+            Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+            Object.defineProperty(screen, 'colorDepth', {get: () => 24});
+            """
+            driver.execute_script(stealth_script)
+            print("✓ Stealth script applied successfully")
+            
+            print(f"✓ Successfully connected to VM Chrome with clean profile")
+            return driver
+            
+        except Exception as e:
+            print(f"✗ Failed to connect to VM WebDriver")
+            print(f"Error: {str(e)}")
+            
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
+            
+            return None
     
 def handle_datadome_audio_captcha(driver):
     """Enhanced function to handle DataDome audio captcha with nested iframes"""
@@ -2098,103 +2198,3 @@ def setup_driver_universal(vm_ip_address, config):
         import requests
         status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
         status_data = status_response.json()
-        
-        if 'value' in status_data and 'nodes' in status_data['value']:
-            for node in status_data['value']['nodes']:
-                if 'slots' in node:
-                    for slot in node['slots']:
-                        if slot.get('session'):
-                            session_id = slot['session']['sessionId']
-                            print(f"Found existing session: {session_id}")
-                            delete_response = requests.delete(
-                                f"http://{vm_ip_address}:4444/session/{session_id}",
-                                timeout=10
-                            )
-                            print(f"Cleaned up session: {session_id}")
-    
-    except Exception as e:
-        print(f"Session cleanup failed: {e}")
-    
-    # Chrome options for the VM instance
-    chrome_options = ChromeOptions()
-    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
-    chrome_options.add_argument(f"--profile-directory={config['profile']}")
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    
-    # VM-specific optimizations
-    chrome_options.add_argument('--force-device-scale-factor=1')
-    chrome_options.add_argument('--high-dpi-support=1')
-    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
-    chrome_options.add_argument('--remote-allow-origins=*')
-    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-extensions')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--disable-web-security')
-    chrome_options.add_argument('--allow-running-insecure-content')
-
-    
-    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
-    
-    driver = None
-    
-    try:
-        print("Attempting to connect to remote WebDriver...")
-        
-        driver = webdriver.Remote(
-            command_executor=f'http://{vm_ip_address}:4444',
-            options=chrome_options
-        )
-        
-        print(f"✓ Successfully created remote WebDriver connection")
-        print(f"Session ID: {driver.session_id}")
-        
-        print("Applying stealth modifications...")
-        stealth_script = """
-        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-        window.chrome = {runtime: {}};
-        Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
-        
-        Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
-        Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
-        Object.defineProperty(screen, 'colorDepth', {get: () => 24});
-        """
-        driver.execute_script(stealth_script)
-        print("✓ Stealth script applied successfully")
-        
-        print(f"✓ Successfully connected to VM Chrome with clean profile")
-        return driver
-        
-    except Exception as e:
-        print(f"✗ Failed to connect to VM WebDriver")
-        print(f"Error: {str(e)}")
-        
-        if driver:
-            try:
-                driver.quit()
-            except:
-                pass
-        
-        return None
-
-def find_buy_button_with_shadow_dom(driver):
-    """
-    Enhanced buy now button finder - JavaScript click first approach
-    Finds button and immediately clicks with JavaScript for reliability
-    """
-    print("🔍 SHADOW DOM: Starting buy button search with JavaScript-first approach...")
-    
-    # Method 1: Find button and immediately click with JavaScript
-    print("⚡ JAVASCRIPT-FIRST: Finding and clicking buy button with JavaScript...")
-    buy_selectors = [
-        'button[data-testid="item-buy-button"]',
-        'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
-        '//button[@data-testid="item-buy-button"]',
-        '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
-        '//span[text()="Buy now"]/parent::button'
-    ]
