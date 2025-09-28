@@ -1,4 +1,36 @@
 # Continuation from line 2201
+    
+    for selector in buy_selectors:
+        try:
+            if selector.startswith('//'):
+                buy_button = driver.find_element(By.XPATH, selector)
+            else:
+                buy_button = driver.find_element(By.CSS_SELECTOR, selector)
+            
+            print(f"✅ FOUND: Buy button with: {selector}")
+            
+            # IMMEDIATELY click with JavaScript - no other methods tried
+            try:
+                driver.execute_script("arguments[0].click();", buy_button)
+                print(f"✅ JAVASCRIPT-FIRST: Buy button clicked immediately with JavaScript")
+                return buy_button, selector
+            except Exception as js_error:
+                print(f"❌ JAVASCRIPT-FIRST: JavaScript click failed: {js_error}")
+                continue
+                
+        except:
+            continue
+    
+    # Method 2: Shadow DOM traversal using JavaScript
+    print("🌊 SHADOW DOM: Standard selectors failed, trying Shadow DOM traversal...")
+    
+    shadow_dom_script = """
+    function findBuyButtonInShadowDOM() {
+        // Function to recursively search through shadow roots
+        function searchInShadowRoot(element) {
+            if (!element) return null;
+            
+            // Check if this element has a shadow root
             if (element.shadowRoot) {
                 // Search within the shadow root
                 let shadowButton = element.shadowRoot.querySelector('button[data-testid="item-buy-button"]');
@@ -2167,35 +2199,3 @@ class VintedScraper:
                 print("✅ NEXT DRIVER: New VM driver ready and logged in")
             else:
                 print("❌ NEXT DRIVER: Failed to login new VM driver")
-                self.vm_driver_ready = False
-                
-        except Exception as e:
-            print(f"❌ NEXT DRIVER: Error preparing next driver: {e}")
-            self.vm_driver_ready = False
-
-
-    def prepare_initial_vm_driver(self):
-        """Prepare the initial VM driver during startup - called ONCE at the beginning"""
-        print("🚀 STARTUP: Preparing initial VM driver for immediate use")
-        
-        try:
-            # Create and setup the first VM driver
-            self.current_vm_driver = setup_driver_universal("192.168.56.101", {
-                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
-                "profile": "Profile 4", 
-                "port": 9224
-            })
-            
-            if not self.current_vm_driver:
-                print("❌ STARTUP: Failed to create initial VM driver")
-                return False
-            
-            # Clear cookies and login
-            success = self.login_vm_driver(self.current_vm_driver)
-            
-            if success:
-                self.vm_driver_ready = True
-                print("✅ STARTUP: Initial VM driver ready and logged in - waiting for first listing")
-                return True
-            else:
-                print("❌ STARTUP: Failed to login initial VM driver")

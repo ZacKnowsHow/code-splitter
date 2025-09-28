@@ -88,8 +88,8 @@ TEST_NUMBER_OF_LISTINGS = False
 
 PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
-    'controller','tv_black', 
-    'tv_white', 'comfort_h',
+    'controller','tv_black', 'switch_screen'
+    'tv_white', 'comfort_h', 'lite', 'lite_box', 'lite_in_tv', 'oled', 'oled_box', 'oled_in_tv',
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
@@ -931,9 +931,41 @@ def setup_driver(vm_ip_address="192.168.56.101"):
     chrome_options.add_argument('--disable-gpu')
     chrome_options.add_argument('--disable-web-security')
     chrome_options.add_argument('--allow-running-insecure-content')
-
+    
+    # CRITICAL FIX: Prevent session timeout
+    chrome_options.add_argument('--disable-background-timer-throttling')
+    chrome_options.add_argument('--disable-renderer-backgrounding')
+    chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+    chrome_options.add_argument('--disable-ipc-flooding-protection')
+    chrome_options.add_argument('--memory-pressure-off')
+    
+    # CRITICAL FIX: Set capabilities for infinite session
+    capabilities = {
+        'browserName': 'chrome',
+        'version': '',
+        'platform': 'ANY',
+        # INFINITE SESSION TIMEOUT
+        'se:timeouts': {
+            'implicit': 0,
+            'pageLoad': 300000,  # 5 minutes for page load
+            'script': 30000,     # 30 seconds for script
+            'session': 0         # INFINITE SESSION - NEVER TIMEOUT
+        },
+        # Additional capabilities to prevent timeout
+        'se:idleTimeout': 0,        # No idle timeout
+        'se:sessionTimeout': 0,     # No session timeout  
+        'maxInstances': 1,
+        'browserTimeout': 0,        # No browser timeout
+        'newSessionWaitTimeout': 0  # No wait timeout
+    }
+    
+    # Merge capabilities with chrome options
+    chrome_options.set_capability('timeouts', capabilities['se:timeouts'])
+    chrome_options.set_capability('se:idleTimeout', capabilities['se:idleTimeout'])
+    chrome_options.set_capability('se:sessionTimeout', capabilities['se:sessionTimeout'])
     
     print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
+    print(f"INFINITE SESSION: Timeout set to 0 (never expires)")
     
     driver = None
     
@@ -1760,7 +1792,7 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
             if not VINTED_SHOW_ALL_LISTINGS:
                 if CLICK_PAY_BUTTON:
                     print('1')
-            pay_button.click()
+                    pay_button.click()
             pay_clicked = True
             print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (direct)")
         except:
@@ -1769,7 +1801,7 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                 if not VINTED_SHOW_ALL_LISTINGS:
                     if CLICK_PAY_BUTTON:
                         print('1')
-                driver.execute_script("arguments[0].click();", pay_button)
+                        driver.execute_script("arguments[0].click();", pay_button)
                 pay_clicked = True
                 print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (JavaScript)")
             except:
@@ -1779,10 +1811,10 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                         if CLICK_PAY_BUTTON:
                             print('1')
 
-                    driver.execute_script("""
-                        arguments[0].disabled = false;
-                        arguments[0].click();
-                    """, pay_button)
+                            driver.execute_script("""
+                                arguments[0].disabled = false;
+                                arguments[0].click();
+                            """, pay_button)
                     pay_clicked = True
                     print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (force)")
                 except Exception as final_error:
@@ -2166,35 +2198,3 @@ def find_buy_button_with_shadow_dom(driver):
         '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]',
         '//span[text()="Buy now"]/parent::button'
     ]
-    
-    for selector in buy_selectors:
-        try:
-            if selector.startswith('//'):
-                buy_button = driver.find_element(By.XPATH, selector)
-            else:
-                buy_button = driver.find_element(By.CSS_SELECTOR, selector)
-            
-            print(f"✅ FOUND: Buy button with: {selector}")
-            
-            # IMMEDIATELY click with JavaScript - no other methods tried
-            try:
-                driver.execute_script("arguments[0].click();", buy_button)
-                print(f"✅ JAVASCRIPT-FIRST: Buy button clicked immediately with JavaScript")
-                return buy_button, selector
-            except Exception as js_error:
-                print(f"❌ JAVASCRIPT-FIRST: JavaScript click failed: {js_error}")
-                continue
-                
-        except:
-            continue
-    
-    # Method 2: Shadow DOM traversal using JavaScript
-    print("🌊 SHADOW DOM: Standard selectors failed, trying Shadow DOM traversal...")
-    
-    shadow_dom_script = """
-    function findBuyButtonInShadowDOM() {
-        // Function to recursively search through shadow roots
-        function searchInShadowRoot(element) {
-            if (!element) return null;
-            
-            // Check if this element has a shadow root

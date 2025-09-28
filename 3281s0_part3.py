@@ -1,4 +1,36 @@
 # Continuation from line 4401
+                self.vm_driver_ready = False
+                
+        except Exception as e:
+            print(f"❌ NEXT DRIVER: Error preparing next driver: {e}")
+            self.vm_driver_ready = False
+
+
+    def prepare_initial_vm_driver(self):
+        """Prepare the initial VM driver during startup - called ONCE at the beginning"""
+        print("🚀 STARTUP: Preparing initial VM driver for immediate use")
+        
+        try:
+            # Create and setup the first VM driver
+            self.current_vm_driver = setup_driver_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            if not self.current_vm_driver:
+                print("❌ STARTUP: Failed to create initial VM driver")
+                return False
+            
+            # Clear cookies and login
+            success = self.login_vm_driver(self.current_vm_driver)
+            
+            if success:
+                self.vm_driver_ready = True
+                print("✅ STARTUP: Initial VM driver ready and logged in - waiting for first listing")
+                return True
+            else:
+                print("❌ STARTUP: Failed to login initial VM driver")
                 return False
                 
         except Exception as e:
@@ -2167,35 +2199,3 @@
             except TimeoutException:
                 print("0 listings (page load timeout)")
                 refresh_cycle += 1
-                time.sleep(5)
-                continue
-            
-            # Get listing URLs from current page
-            els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
-            urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
-            
-            if not urls:
-                print("0 listings (no URLs found)")
-                refresh_cycle += 1
-                time.sleep(5)
-                continue
-            
-            # Count new URLs that haven't been seen before
-            new_urls = []
-            for url in urls:
-                listing_id = self.extract_vinted_listing_id(url)
-                if listing_id:
-                    # Check if we've already saved this ID
-                    try:
-                        with open(VINTED_SCANNED_IDS_FILE, 'r') as f:
-                            existing_ids = f.read().splitlines()
-                        
-                        if listing_id not in existing_ids:
-                            new_urls.append(url)
-                            # Save the listing ID
-                            with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
-                                f.write(f"{listing_id}\n")
-                    except FileNotFoundError:
-                        # File doesn't exist yet, all URLs are new
-                        new_urls.append(url)
-                        with open(VINTED_SCANNED_IDS_FILE, 'a') as f:

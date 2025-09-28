@@ -1,4 +1,36 @@
 # Continuation from line 6601
+                time.sleep(5)
+                continue
+            
+            # Get listing URLs from current page
+            els = driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
+            urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
+            
+            if not urls:
+                print("0 listings (no URLs found)")
+                refresh_cycle += 1
+                time.sleep(5)
+                continue
+            
+            # Count new URLs that haven't been seen before
+            new_urls = []
+            for url in urls:
+                listing_id = self.extract_vinted_listing_id(url)
+                if listing_id:
+                    # Check if we've already saved this ID
+                    try:
+                        with open(VINTED_SCANNED_IDS_FILE, 'r') as f:
+                            existing_ids = f.read().splitlines()
+                        
+                        if listing_id not in existing_ids:
+                            new_urls.append(url)
+                            # Save the listing ID
+                            with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
+                                f.write(f"{listing_id}\n")
+                    except FileNotFoundError:
+                        # File doesn't exist yet, all URLs are new
+                        new_urls.append(url)
+                        with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
                             f.write(f"{listing_id}\n")
             
             # Print the count of new listings found
