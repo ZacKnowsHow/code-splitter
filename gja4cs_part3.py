@@ -1,4 +1,213 @@
 # Continuation from line 4401
+                return False
+                
+        except Exception as e:
+            print(f"❌ STARTUP: Error preparing initial VM driver: {e}")
+            return False
+
+    def __init__(self):
+        """Modified init - removed all booking/buying driver related initialization"""
+        # Initialize pygame-related variables similar to FacebookScraper
+        global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
+        global current_expected_revenue, current_profit, current_detected_items, current_listing_images
+        global current_bounding_boxes, current_listing_url, current_suitability, suitable_listings
+        global current_listing_index, recent_listings
+        
+        # **CRITICAL FIX: Initialize recent_listings for website navigation**
+        recent_listings = {
+            'listings': [],
+            'current_index': 0
+        }
+        
+        # Initialize all current listing variables
+        self.current_vm_driver = None
+        self.vm_driver_ready = False
+        self.vm_driver_lock = threading.Lock()
+        
+        # Initialize the first VM driver during startup
+        print("🔄 STARTUP: Preparing initial VM driver...")
+        self.prepare_next_vm_driver()
+        current_listing_title = "No title"
+        current_listing_description = "No description"
+        current_listing_join_date = "No join date"
+        current_listing_price = "0"
+        current_expected_revenue = "0"
+        current_profit = "0"
+        current_detected_items = "None"
+        current_listing_images = []
+        current_bounding_boxes = {}
+        current_listing_url = ""
+        current_suitability = "Suitability unknown"
+        suitable_listings = []
+        current_listing_index = 0
+
+        # Initialize VM connection flag
+        self.vm_bookmark_queue = []  # Queue of URLs to send to VM system
+        
+        # Check if CUDA is available
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
+
+        # Load model with explicit GPU usage
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
+
+    def run_pygame_window(self):
+        global LOCK_POSITION, current_listing_index, suitable_listings
+        screen, clock = self.initialize_pygame_window()
+        rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
+            pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
+            pygame.Rect(0, 180, 240, 180), pygame.Rect(240, 180, 240, 180), pygame.Rect(480, 180, 320, 180),
+            pygame.Rect(0, 360, 240, 240), pygame.Rect(240, 360, 240, 120), pygame.Rect(240, 480, 240, 120),
+            pygame.Rect(480, 360, 160, 240), pygame.Rect(640, 360, 160, 240)
+        ]
+        fonts = {
+            'number': pygame.font.Font(None, 24),
+            'price': pygame.font.Font(None, 36),
+            'title': pygame.font.Font(None, 40),
+            'description': pygame.font.Font(None, 28),
+            'join_date': pygame.font.Font(None, 28),
+            'revenue': pygame.font.Font(None, 36),
+            'profit': pygame.font.Font(None, 36),
+            'items': pygame.font.Font(None, 30),
+            'click': pygame.font.Font(None, 28),
+            'suitability': pygame.font.Font(None, 28),
+            'reviews': pygame.font.Font(None, 28),
+            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
+        }
+        dragging = False
+        resizing = False
+        drag_rect = None
+        drag_offset = (0, 0)
+        resize_edge = None
+
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_l:
+                        LOCK_POSITION = not LOCK_POSITION
+                    elif event.key == pygame.K_RIGHT:
+                        if suitable_listings:
+                            current_listing_index = (current_listing_index + 1) % len(suitable_listings)
+                            self.update_listing_details(**suitable_listings[current_listing_index])
+                    elif event.key == pygame.K_LEFT:
+                        if suitable_listings:
+                            current_listing_index = (current_listing_index - 1) % len(suitable_listings)
+                            self.update_listing_details(**suitable_listings[current_listing_index])
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Left mouse button
+                        # Check if rectangle 4 was clicked
+                        if rectangles[3].collidepoint(event.pos):
+                            if suitable_listings and 0 <= current_listing_index < len(suitable_listings):
+                                current_url = suitable_listings[current_listing_index].get('url')
+                                if current_url:
+                                    try:
+                                        import webbrowser
+                                        webbrowser.open(current_url)
+                                    except Exception as e:
+                                        print(f"Failed to open URL: {e}")
+                        elif not LOCK_POSITION:
+                            for i, rect in enumerate(rectangles):
+                                if rect.collidepoint(event.pos):
+                                    if event.pos[0] > rect.right - 10 and event.pos[1] > rect.bottom - 10:
+                                        resizing = True
+                                        drag_rect = i
+                                        resize_edge = 'bottom-right'
+                                    else:
+                                        dragging = True
+                                        drag_rect = i
+                                        drag_offset = (rect.x - event.pos[0], rect.y - event.pos[1])
+                                    break
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        dragging = False
+                        resizing = False
+                        drag_rect = None
+            
+            # Handle dragging and resizing
+            if dragging and drag_rect is not None:
+                rectangles[drag_rect].x = pygame.mouse.get_pos()[0] + drag_offset[0]
+                rectangles[drag_rect].y = pygame.mouse.get_pos()[1] + drag_offset[1]
+            elif resizing and drag_rect is not None:
+                if resize_edge == 'bottom-right':
+                    width = max(pygame.mouse.get_pos()[0] - rectangles[drag_rect].left, 20)
+                    height = max(pygame.mouse.get_pos()[1] - rectangles[drag_rect].top, 20)
+                    rectangles[drag_rect].size = (width, height)
+            
+            screen.fill((204, 210, 255))
+            for i, rect in enumerate(rectangles):
+                pygame.draw.rect(screen, (0, 0, 0), rect, 2)
+                number_text = fonts['number'].render(str(i + 1), True, (255, 0, 0))
+                number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
+                screen.blit(number_text, number_rect)
+
+                if i == 2:  # Rectangle 3 (index 2) - Title
+                    self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
+                elif i == 1:  # Rectangle 2 (index 1) - Price
+                    self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
+                elif i == 7:  # Rectangle 8 (index 7) - Description
+                    self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
+                elif i == 8:  # Rectangle 9 (index 8) - CHANGED: Now shows exact time instead of upload date
+                    time_label = "Appended:"
+                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
+                elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
+                    self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
+                elif i == 9:  # Rectangle 10 (index 9) - Profit
+                    self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
+                elif i == 0:  # Rectangle 1 (index 0) - Detected Items
+                    self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
+                elif i == 10:  # Rectangle 11 (index 10) - Images
+                    self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
+                elif i == 3:  # Rectangle 4 (index 3) - Click to open
+                    click_text = "CLICK TO OPEN LISTING IN CHROME"
+                    self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
+                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
+                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+                elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
+                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
+
+            screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
+
+            if suitable_listings:
+                listing_counter = fonts['number'].render(f"Listing {current_listing_index + 1}/{len(suitable_listings)}", True, (0, 0, 0))
+                screen.blit(listing_counter, (10, 40))
+
+            pygame.display.flip()
+            clock.tick(30)
+
+        self.save_rectangle_config(rectangles)
+        pygame.quit()
+        
+    def base64_encode_image(self, img):
+        """Convert PIL Image to base64 string, resizing if necessary"""
+        # Resize image while maintaining aspect ratio
+        max_size = (200, 200)
+        img.thumbnail(max_size, Image.LANCZOS)
+        
+        # Convert to base64
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode()
+
+    def render_images(self, screen, images, rect, bounding_boxes):
+        if not images:
+            return
+
+        num_images = len(images)
+        if num_images == 1:
+            grid_size = 1
+        elif 2 <= num_images <= 4:
+            grid_size = 2
+        else:
+            grid_size = 3
 
         cell_width = rect.width // grid_size
         cell_height = rect.height // grid_size
@@ -706,15 +915,15 @@
             shutil.rmtree(DOWNLOAD_ROOT)
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
-    
+        
     def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter):
         """
-        IMMEDIATELY process a suitable listing with VM system - PAUSE SCRAPING
-        This is the new real-time processing method
+        IMMEDIATELY process a suitable listing with pre-loaded VM driver
+        The VM driver should already be logged in and waiting
         """
         global suitable_listings, current_listing_index, recent_listings
 
-        print(f"🚀 REAL-TIME: Immediately processing listing with VM system")
+        print(f"🚀 REAL-TIME: Immediately processing listing with PRE-LOADED VM driver")
         print(f"🔗 URL: {url}")
         print(f"⏸️  SCRAPING PAUSED: Processing will begin now...")
 
@@ -809,26 +1018,29 @@
             is_suitable = True
             print(f"✅ SUITABLE: {suitability_reason}")
 
-        # ============= CRITICAL CHANGE: IMMEDIATE VM PROCESSING =============
+        # ============= MODIFIED: USE PRE-LOADED VM DRIVER =============
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            print(f"🚀 REAL-TIME PROCESSING: Listing is suitable - starting VM process NOW")
+            print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver")
             print(f"⏸️  SCRAPING IS PAUSED UNTIL VM PROCESS COMPLETES")
             
-            # Create VM bookmark URL list with just this URL
-            global VM_BOOKMARK_URLS
-            VM_BOOKMARK_URLS = [url]  # Replace entire list with just this URL
-            
-            print(f"🔗 VM_BOOKMARK_URLS updated: {VM_BOOKMARK_URLS}")
-            
-            # IMMEDIATELY run the VM bookmark process (blocking call)
-            print(f"🚀 STARTING VM PROCESS: This will block until complete...")
+            # Call the new function that uses the pre-loaded driver
             try:
-                # Run the VM driver function directly and wait for completion
-                main_vm_driver()
-                print(f"✅ VM PROCESS COMPLETED: Listing has been fully processed")
+                success = self.execute_bookmark_with_preloaded_driver(url)
+                if success:
+                    print(f"✅ VM PROCESS COMPLETED: Listing has been bookmarked successfully")
+                else:
+                    print(f"❌ VM PROCESS FAILED: Bookmark attempt was unsuccessful")
             except Exception as vm_error:
                 print(f"❌ VM PROCESS ERROR: {vm_error}")
                 print(f"⚠️  Continuing with scraping despite VM error...")
+            
+            # CRITICAL: After processing, prepare the NEXT driver
+            try:
+                print(f"🔄 PREPARING NEXT DRIVER: Setting up new VM driver for next listing...")
+                self.prepare_next_vm_driver()
+                print(f"✅ NEXT DRIVER READY: VM driver prepared and logged in")
+            except Exception as prep_error:
+                print(f"❌ NEXT DRIVER ERROR: {prep_error}")
             
             print(f"▶️  SCRAPING RESUMED: VM process complete, continuing with search...")
         else:
@@ -1987,215 +2199,3 @@
                         # File doesn't exist yet, all URLs are new
                         new_urls.append(url)
                         with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
-                            f.write(f"{listing_id}\n")
-            
-            # Print the count of new listings found
-            print(f"{len(new_urls)} listings")
-            
-            # Refresh the page and continue
-            driver.refresh()
-            refresh_cycle += 1
-            
-            # Small delay to prevent overwhelming the server
-            time.sleep(2)
-
-
-    def test_suitable_urls_mode(self, driver):
-        """
-        Simple function to cycle through TEST_SUITABLE_URLS and display each on pygame
-        Only uses the scraping driver, no buying or bookmarking drivers
-        Forces ALL listings to be added to pygame regardless of suitability
-        """
-        global suitable_listings, current_listing_index, VINTED_SHOW_ALL_LISTINGS, bookmark_listings
-        
-        print("🧪 TEST_WHETHER_SUITABLE = True - Starting test suitable URLs mode")
-        
-        # Temporarily override settings to force all listings to show
-        original_show_all = VINTED_SHOW_ALL_LISTINGS
-        original_bookmark = bookmark_listings
-        VINTED_SHOW_ALL_LISTINGS = True  # Force show all listings
-        bookmark_listings = False  # Disable bookmarking
-        
-        # Clear previous results
-        suitable_listings.clear()
-        current_listing_index = 0
-        
-        # Load YOLO Model
-        print("🧠 Loading object detection model...")
-        if torch.cuda.is_available():
-            model = YOLO(MODEL_WEIGHTS).cuda()
-            print("✅ YOLO model loaded on GPU")
-        else:
-            model = YOLO(MODEL_WEIGHTS).cpu()
-            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
-        
-        # Process each URL in TEST_SUITABLE_URLS
-        for idx, url in enumerate(TEST_SUITABLE_URLS, 1):
-            print(f"\n🔍 Processing test URL {idx}/{len(TEST_SUITABLE_URLS)}")
-            print(f"🔗 URL: {url}")
-            
-            try:
-                # Open new tab
-                driver.execute_script("window.open();")
-                driver.switch_to.window(driver.window_handles[-1])
-                driver.get(url)
-                
-                # Scrape details
-                details = self.scrape_item_details(driver)
-                
-                # Download images
-                listing_dir = os.path.join(DOWNLOAD_ROOT, f"test_listing_{idx}")
-                image_paths = self.download_images_for_listing(driver, listing_dir)
-                
-                # Perform object detection
-                detected_objects = {}
-                processed_images = []
-                if model and image_paths:
-                    detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
-                
-                # Process for pygame display (no booking logic, force show all)
-                self.process_vinted_listing(details, detected_objects, processed_images, idx, url)
-                
-                print(f"✅ Processed test URL {idx} - added to pygame")
-                
-            except Exception as e:
-                print(f"❌ Error processing test URL {idx}: {e}")
-            
-            finally:
-                # Close tab and return to main
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-        
-        # Restore original settings
-        VINTED_SHOW_ALL_LISTINGS = original_show_all
-        bookmark_listings = original_bookmark
-        
-        print(f"✅ Test mode complete - processed {len(TEST_SUITABLE_URLS)} URLs, all added to pygame")
-
-
-
-    # Add this new method to your VintedScraper class:
-    def _simulate_buying_process_for_test(self, driver, driver_num, url):
-        """
-        Simulate the buying process for test mode when no actual listing is available
-        This tests the buy button clicking logic without requiring a real purchasable item
-        """
-        print(f"🧪 SIMULATION: Starting simulated buying process for driver {driver_num}")
-        
-        try:
-            # Open new tab
-            driver.execute_script("window.open('');")
-            new_tab = driver.window_handles[-1]
-            driver.switch_to.window(new_tab)
-            print(f"✅ SIMULATION: New tab opened")
-            
-            # Navigate to URL
-            driver.get(url)
-            print(f"✅ SIMULATION: Navigated to {url}")
-            
-            # Wait for page to load
-            WebDriverWait(driver, 8).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            print(f"✅ SIMULATION: Page loaded")
-            
-            # Look for buy button (even if not clickable)
-            buy_selectors = [
-                'button[data-testid="item-buy-button"]',
-                'button.web_ui__Button__button.web_ui__Button__filled.web_ui__Button__default.web_ui__Button__primary.web_ui__Button__truncated',
-                '//button[@data-testid="item-buy-button"]',
-                '//button[contains(@class, "web_ui__Button__primary")]//span[text()="Buy now"]'
-            ]
-            
-            buy_button_found = False
-            for selector in buy_selectors:
-                try:
-                    if selector.startswith('//'):
-                        buy_button = driver.find_element(By.XPATH, selector)
-                    else:
-                        buy_button = driver.find_element(By.CSS_SELECTOR, selector)
-                    
-                    print(f"✅ SIMULATION: Found buy button with selector: {selector}")
-                    buy_button_found = True
-                    
-                    # Try to click it (even if it fails, that's expected)
-                    try:
-                        buy_button.click()
-                        print(f"✅ SIMULATION: Buy button clicked successfully")
-                    except Exception as click_error:
-                        print(f"⚠️ SIMULATION: Buy button click failed (expected): {click_error}")
-                    
-                    break
-                    
-                except NoSuchElementException:
-                    continue
-            
-            if not buy_button_found:
-                print(f"⚠️ SIMULATION: No buy button found (item may be sold/removed)")
-                print(f"🧪 SIMULATION: Simulating buy button click anyway for test purposes...")
-            
-            # Simulate waiting for checkout page (even if it doesn't load)
-            print(f"🧪 SIMULATION: Waiting for checkout page simulation...")
-            time.sleep(2)
-            
-            # Look for pay button (simulate the buying logic)
-            pay_selectors = [
-                'button[data-testid="single-checkout-order-summary-purchase-button"]',
-                'button[data-testid="single-checkout-order-summary-purchase-button"].web_ui__Button__primary',
-            ]
-            
-            pay_button_found = False
-            for selector in pay_selectors:
-                try:
-                    pay_button = driver.find_element(By.CSS_SELECTOR, selector)
-                    print(f"✅ SIMULATION: Found pay button with selector: {selector}")
-                    pay_button_found = True
-                    
-                    # Simulate clicking pay button multiple times (the actual buying logic)
-                    for attempt in range(3):
-                        print(f"🧪 SIMULATION: Simulated pay button click attempt {attempt + 1}")
-                        try:
-                            pay_button.click()
-                            print(f"✅ SIMULATION: Pay button click attempt {attempt + 1} simulated")
-                        except Exception as pay_click_error:
-                            print(f"⚠️ SIMULATION: Pay button click {attempt + 1} failed (expected): {pay_click_error}")
-                        
-                        # Simulate the wait time between clicks
-                        time.sleep(buying_driver_click_pay_wait_time)
-                        
-                    break
-                    
-                except NoSuchElementException:
-                    continue
-            
-            if not pay_button_found:
-                print(f"⚠️ SIMULATION: No pay button found (checkout page didn't load)")
-                print(f"🧪 SIMULATION: This is expected behavior for test URLs without actual items")
-            
-            # Simulate completion
-            print(f"✅ SIMULATION: Buying process simulation completed")
-            print(f"🧪 SIMULATION: In real scenario, this would continue until purchase success/failure")
-            
-        except Exception as simulation_error:
-            print(f"❌ SIMULATION ERROR: {simulation_error}")
-        
-        finally:
-            # Clean up the tab
-            try:
-                driver.close()
-                if len(driver.window_handles) > 0:
-                    driver.switch_to.window(driver.window_handles[0])
-                print(f"✅ SIMULATION: Cleanup completed")
-            except Exception as cleanup_error:
-                print(f"⚠️ SIMULATION CLEANUP: {cleanup_error}")
-            
-            # Release the driver
-            self.release_driver(driver_num)
-            print(f"✅ SIMULATION: Driver {driver_num} released")
-
-
-    def run(self):
-        """Simplified run method without internal booking/buying functionality"""
-        global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
-        global current_listing_description, current_listing_join_date, current_detected_items, current_profit
