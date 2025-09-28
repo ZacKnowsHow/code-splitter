@@ -887,128 +887,228 @@ def clear_browser_data(vm_ip_address="192.168.56.101"):
         print("=" * 50)
         time.sleep(0.5)  # Brief pause before continuing
 
-def setup_driver(vm_ip_address="192.168.56.101"):
-    
-    # Session cleanup (existing code)
-    try:
-        import requests
-        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
-        status_data = status_response.json()
+    def setup_driver(vm_ip_address="192.168.56.101"):
         
-        if 'value' in status_data and 'nodes' in status_data['value']:
-            for node in status_data['value']['nodes']:
-                if 'slots' in node:
-                    for slot in node['slots']:
-                        if slot.get('session'):
-                            session_id = slot['session']['sessionId']
-                            print(f"Found existing session: {session_id}")
-                            delete_response = requests.delete(
-                                f"http://{vm_ip_address}:4444/session/{session_id}",
-                                timeout=10
-                            )
-                            print(f"Cleaned up session: {session_id}")
-    
-    except Exception as e:
-        print(f"Session cleanup failed: {e}")
-    
-    # Chrome options for the VM instance (existing code continues...)
-    chrome_options = ChromeOptions()
-    chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
-    chrome_options.add_argument('--profile-directory=Profile 4')
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    
-    # VM-specific optimizations
-    chrome_options.add_argument('--force-device-scale-factor=1')
-    chrome_options.add_argument('--high-dpi-support=1')
-    chrome_options.add_argument('--remote-debugging-port=9222')
-    chrome_options.add_argument('--remote-allow-origins=*')
-    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-extensions')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--disable-web-security')
-    chrome_options.add_argument('--allow-running-insecure-content')
-    
-    # CRITICAL FIX: Prevent session timeout
-    chrome_options.add_argument('--disable-background-timer-throttling')
-    chrome_options.add_argument('--disable-renderer-backgrounding')
-    chrome_options.add_argument('--disable-backgrounding-occluded-windows')
-    chrome_options.add_argument('--disable-ipc-flooding-protection')
-    chrome_options.add_argument('--memory-pressure-off')
-    
-    # CRITICAL FIX: Set capabilities for infinite session
-    capabilities = {
-        'browserName': 'chrome',
-        'version': '',
-        'platform': 'ANY',
-        # INFINITE SESSION TIMEOUT
-        'se:timeouts': {
-            'implicit': 0,
-            'pageLoad': 300000,  # 5 minutes for page load
-            'script': 30000,     # 30 seconds for script
-            'session': 0         # INFINITE SESSION - NEVER TIMEOUT
-        },
-        # Additional capabilities to prevent timeout
-        'se:idleTimeout': 0,        # No idle timeout
-        'se:sessionTimeout': 0,     # No session timeout  
-        'maxInstances': 1,
-        'browserTimeout': 0,        # No browser timeout
-        'newSessionWaitTimeout': 0  # No wait timeout
-    }
-    
-    # Merge capabilities with chrome options
-    chrome_options.set_capability('timeouts', capabilities['se:timeouts'])
-    chrome_options.set_capability('se:idleTimeout', capabilities['se:idleTimeout'])
-    chrome_options.set_capability('se:sessionTimeout', capabilities['se:sessionTimeout'])
-    
-    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
-    print(f"INFINITE SESSION: Timeout set to 0 (never expires)")
-    
-    driver = None
-    
-    try:
-        print("Attempting to connect to remote WebDriver...")
+        # Session cleanup (existing code)
+        try:
+            import requests
+            status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+            status_data = status_response.json()
+            
+            if 'value' in status_data and 'nodes' in status_data['value']:
+                for node in status_data['value']['nodes']:
+                    if 'slots' in node:
+                        for slot in node['slots']:
+                            if slot.get('session'):
+                                session_id = slot['session']['sessionId']
+                                print(f"Found existing session: {session_id}")
+                                delete_response = requests.delete(
+                                    f"http://{vm_ip_address}:4444/session/{session_id}",
+                                    timeout=10
+                                )
+                                print(f"Cleaned up session: {session_id}")
         
-        driver = webdriver.Remote(
-            command_executor=f'http://{vm_ip_address}:4444',
-            options=chrome_options
-        )
+        except Exception as e:
+            print(f"Session cleanup failed: {e}")
         
-        print(f"✓ Successfully created remote WebDriver connection")
-        print(f"Session ID: {driver.session_id}")
+        # Chrome options for the VM instance (existing code continues...)
+        chrome_options = ChromeOptions()
+        chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
+        chrome_options.add_argument('--profile-directory=Profile 4')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         
-        print("Applying stealth modifications...")
-        stealth_script = """
-        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-        window.chrome = {runtime: {}};
-        Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+        # VM-specific optimizations
+        chrome_options.add_argument('--force-device-scale-factor=1')
+        chrome_options.add_argument('--high-dpi-support=1')
+        chrome_options.add_argument('--remote-debugging-port=9222')
+        chrome_options.add_argument('--remote-allow-origins=*')
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--disable-web-security')
+        chrome_options.add_argument('--allow-running-insecure-content')
         
-        Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
-        Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
-        Object.defineProperty(screen, 'colorDepth', {get: () => 24});
-        """
-        driver.execute_script(stealth_script)
-        print("✓ Stealth script applied successfully")
+        # CRITICAL FIX: Prevent session timeout
+        chrome_options.add_argument('--disable-background-timer-throttling')
+        chrome_options.add_argument('--disable-renderer-backgrounding')
+        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+        chrome_options.add_argument('--disable-ipc-flooding-protection')
+        chrome_options.add_argument('--memory-pressure-off')
         
-        print(f"✓ Successfully connected to VM Chrome with clean profile")
-        return driver
+        # Modern Selenium 4+ approach - set capabilities directly on ChromeOptions
+        # Set only valid Selenium Grid timeout capabilities
+        chrome_options.set_capability('se:idleTimeout', 0)        # No idle timeout (infinite)
+        chrome_options.set_capability('se:sessionTimeout', 0)     # No session timeout (infinite)
         
-    except Exception as e:
-        print(f"✗ Failed to connect to VM WebDriver")
-        print(f"Error: {str(e)}")
+        print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
+        print(f"INFINITE SESSION: Grid timeouts set to 0 (never expires)")
         
-        if driver:
+        driver = None
+        
+        try:
+            print("Attempting to connect to remote WebDriver...")
+            
+            driver = webdriver.Remote(
+                command_executor=f'http://{vm_ip_address}:4444',
+                options=chrome_options
+            )
+            
+            print(f"✓ Successfully created remote WebDriver connection")
+            print(f"Session ID: {driver.session_id}")
+            
+            # Set client-side timeouts after session creation
             try:
-                driver.quit()
-            except:
-                pass
+                driver.implicitly_wait(0)  # No implicit wait
+                driver.set_page_load_timeout(300)  # 5 minutes page load timeout
+                driver.set_script_timeout(30)  # 30 seconds script timeout
+                print("✓ Client-side timeouts configured")
+            except Exception as timeout_error:
+                print(f"Warning: Could not set client timeouts: {timeout_error}")
+            
+            print("Applying stealth modifications...")
+            stealth_script = """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            window.chrome = {runtime: {}};
+            Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+            
+            Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
+            Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+            Object.defineProperty(screen, 'colorDepth', {get: () => 24});
+            """
+            driver.execute_script(stealth_script)
+            print("✓ Stealth script applied successfully")
+            
+            print(f"✓ Successfully connected to VM Chrome with clean profile")
+            return driver
+            
+        except Exception as e:
+            print(f"✗ Failed to connect to VM WebDriver")
+            print(f"Error: {str(e)}")
+            
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
+            
+            return None
         
-        return None
+        # Session cleanup (existing code)
+        try:
+            import requests
+            status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+            status_data = status_response.json()
+            
+            if 'value' in status_data and 'nodes' in status_data['value']:
+                for node in status_data['value']['nodes']:
+                    if 'slots' in node:
+                        for slot in node['slots']:
+                            if slot.get('session'):
+                                session_id = slot['session']['sessionId']
+                                print(f"Found existing session: {session_id}")
+                                delete_response = requests.delete(
+                                    f"http://{vm_ip_address}:4444/session/{session_id}",
+                                    timeout=10
+                                )
+                                print(f"Cleaned up session: {session_id}")
+        
+        except Exception as e:
+            print(f"Session cleanup failed: {e}")
+        
+        # Chrome options for the VM instance
+        chrome_options = ChromeOptions()
+        chrome_options.add_argument('--user-data-dir=C:\VintedScraper_Default_Bookmark')
+        chrome_options.add_argument('--profile-directory=Profile 4')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        
+        # VM-specific optimizations
+        chrome_options.add_argument('--force-device-scale-factor=1')
+        chrome_options.add_argument('--high-dpi-support=1')
+        chrome_options.add_argument('--remote-debugging-port=9222')
+        chrome_options.add_argument('--remote-allow-origins=*')
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--disable-web-security')
+        chrome_options.add_argument('--allow-running-insecure-content')
+        
+        # CRITICAL FIX: Prevent session timeout
+        chrome_options.add_argument('--disable-background-timer-throttling')
+        chrome_options.add_argument('--disable-renderer-backgrounding')
+        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+        chrome_options.add_argument('--disable-ipc-flooding-protection')
+        chrome_options.add_argument('--memory-pressure-off')
+        
+        # Modern Selenium 4+ approach - set capabilities directly on ChromeOptions
+        # Set only valid Selenium Grid timeout capabilities
+        chrome_options.set_capability('se:idleTimeout', 0)        # No idle timeout (infinite)
+        chrome_options.set_capability('se:sessionTimeout', 0)     # No session timeout (infinite)
+        
+        print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
+        print(f"INFINITE SESSION: Grid timeouts set to 0 (never expires)")
+        
+        driver = None
+        
+        try:
+            print("Attempting to connect to remote WebDriver...")
+            
+            # Modern Selenium 4+ approach - use options only
+            driver = webdriver.Remote(
+                command_executor=f'http://{vm_ip_address}:4444',
+                options=chrome_options
+            )
+            
+            print(f"✓ Successfully created remote WebDriver connection")
+            print(f"Session ID: {driver.session_id}")
+            
+            # Set client-side timeouts after session creation
+            try:
+                driver.implicitly_wait(0)  # No implicit wait
+                driver.set_page_load_timeout(300)  # 5 minutes page load timeout
+                driver.set_script_timeout(30)  # 30 seconds script timeout
+                print("✓ Client-side timeouts configured")
+            except Exception as timeout_error:
+                print(f"Warning: Could not set client timeouts: {timeout_error}")
+            
+            print("Applying stealth modifications...")
+            stealth_script = """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            window.chrome = {runtime: {}};
+            Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+            
+            Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
+            Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+            Object.defineProperty(screen, 'colorDepth', {get: () => 24});
+            """
+            driver.execute_script(stealth_script)
+            print("✓ Stealth script applied successfully")
+            
+            print(f"✓ Successfully connected to VM Chrome with clean profile")
+            return driver
+            
+        except Exception as e:
+            print(f"✗ Failed to connect to VM WebDriver")
+            print(f"Error: {str(e)}")
+            
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
+            
+            return None
     
 def handle_datadome_audio_captcha(driver):
     """Enhanced function to handle DataDome audio captcha with nested iframes"""
@@ -4528,11 +4628,49 @@ class VintedScraper:
                     elif event.key == pygame.K_RIGHT:
                         if suitable_listings:
                             current_listing_index = (current_listing_index + 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
+                            # CRITICAL FIX: Properly switch to stored listing data including images
+                            current_listing = suitable_listings[current_listing_index]
+                            
+                            # FIXED: Pass the stored images from the listing, not empty list
+                            stored_images = current_listing.get('processed_images', [])
+                            
+                            self.update_listing_details(
+                                title=current_listing['title'],
+                                description=current_listing['description'],
+                                join_date=current_listing['join_date'],  # FIXED: Use stored timestamp
+                                price=current_listing['price'],
+                                expected_revenue=current_listing['expected_revenue'],
+                                profit=current_listing['profit'],
+                                detected_items=current_listing['detected_items'],
+                                processed_images=stored_images,  # FIXED: Pass stored images
+                                bounding_boxes=current_listing['bounding_boxes'],
+                                url=current_listing.get('url'),
+                                suitability=current_listing.get('suitability'),
+                                seller_reviews=current_listing.get('seller_reviews')
+                            )
                     elif event.key == pygame.K_LEFT:
                         if suitable_listings:
                             current_listing_index = (current_listing_index - 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
+                            # CRITICAL FIX: Properly switch to stored listing data including images
+                            current_listing = suitable_listings[current_listing_index]
+                            
+                            # FIXED: Pass the stored images from the listing, not empty list
+                            stored_images = current_listing.get('processed_images', [])
+                            
+                            self.update_listing_details(
+                                title=current_listing['title'],
+                                description=current_listing['description'],
+                                join_date=current_listing['join_date'],  # FIXED: Use stored timestamp
+                                price=current_listing['price'],
+                                expected_revenue=current_listing['expected_revenue'],
+                                profit=current_listing['profit'],
+                                detected_items=current_listing['detected_items'],
+                                processed_images=stored_images,  # FIXED: Pass stored images
+                                bounding_boxes=current_listing['bounding_boxes'],
+                                url=current_listing.get('url'),
+                                suitability=current_listing.get('suitability'),
+                                seller_reviews=current_listing.get('seller_reviews')
+                            )
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left mouse button
                         # Check if rectangle 4 was clicked
@@ -4586,7 +4724,7 @@ class VintedScraper:
                     self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
                 elif i == 7:  # Rectangle 8 (index 7) - Description
                     self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
-                elif i == 8:  # Rectangle 9 (index 8) - CHANGED: Now shows exact time instead of upload date
+                elif i == 8:  # Rectangle 9 (index 8) - FIXED: Shows exact stored timestamp
                     time_label = "Appended:"
                     self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
                 elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
@@ -4798,29 +4936,34 @@ class VintedScraper:
             end_time = time.time()
             elapsed = end_time - start_time
             print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
+   
             raise
     def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
         global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
 
-        # Close and clear existing images
-        if 'current_listing_images' in globals():
-            for img in current_listing_images:
-                try:
-                    img.close()  # Explicitly close the image
-                except Exception as e:
-                    print(f"Error closing image: {str(e)}")
-            current_listing_images.clear()
+        # CRITICAL FIX 1: Don't clear existing images when switching between listings
+        # Only clear if we're setting NEW images (not switching to existing listing)
+        if processed_images:  # Only clear and replace if new images are provided
+            # Close and clear existing images
+            if 'current_listing_images' in globals():
+                for img in current_listing_images:
+                    try:
+                        img.close()  # Explicitly close the image
+                    except Exception as e:
+                        print(f"Error closing image: {str(e)}")
+                current_listing_images.clear()
 
-        if processed_images:
+            # Add new images
             for img in processed_images:
                 try:
                     img_copy = img.copy()  # Create a fresh copy
                     current_listing_images.append(img_copy)
                 except Exception as e:
                     print(f"Error copying image: {str(e)}")
-        
+        # If no processed_images provided, keep existing current_listing_images intact
+
         # Store bounding boxes with more robust handling
         current_bounding_boxes = {
             'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
@@ -4844,15 +4987,14 @@ class VintedScraper:
         else:
             formatted_detected_items = {"no_items": "No items detected"}
 
-        # FIXED: Use the join_date parameter directly instead of generating new timestamp
-        # The join_date parameter now contains the stored timestamp from when item was processed
+        # CRITICAL FIX 2: Use the exact join_date parameter that was stored, never generate new timestamp
         stored_append_time = join_date if join_date else "No timestamp"
 
         # Explicitly set the global variables
         current_detected_items = formatted_detected_items
         current_listing_title = title[:50] + '...' if len(title) > 50 else title
         current_listing_description = description[:200] + '...' if len(description) > 200 else description if description else "No description"
-        current_listing_join_date = stored_append_time  # FIXED: Use stored timestamp, not current time
+        current_listing_join_date = stored_append_time  # FIXED: Use stored timestamp, never current time
         current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
         current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
         current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
@@ -5351,6 +5493,7 @@ class VintedScraper:
         """
         IMMEDIATELY process a suitable listing with pre-loaded VM driver
         The VM driver should already be logged in and waiting
+        FIXED: Properly preserve timestamps and images for pygame display
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -5449,7 +5592,7 @@ class VintedScraper:
             is_suitable = True
             print(f"✅ SUITABLE: {suitability_reason}")
 
-        # ============= MODIFIED: USE PRE-LOADED VM DRIVER =============
+        # ============= VM PROCESSING =============
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
             print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver")
             print(f"⏸️  SCRAPING IS PAUSED UNTIL VM PROCESS COMPLETES")
@@ -5477,7 +5620,7 @@ class VintedScraper:
         else:
             print(f"❌ UNSUITABLE LISTING: Skipping VM process, continuing with scraping")
 
-        # Generate exact UK time when creating listing info 
+        # CRITICAL FIX: Generate exact UK time when creating listing info and store it permanently
         from datetime import datetime
         import pytz
         
@@ -5485,16 +5628,25 @@ class VintedScraper:
         append_time = datetime.now(uk_tz)
         exact_append_time = append_time.strftime("%H:%M:%S.%f")[:-3]
 
-        # Create final listing info with exact append time
+        # CRITICAL FIX: Create deep copies of images to prevent memory issues
+        preserved_images = []
+        for img in processed_images:
+            try:
+                img_copy = img.copy()  # Create independent copy
+                preserved_images.append(img_copy)
+            except Exception as e:
+                print(f"Error copying image for storage: {e}")
+
+        # Create final listing info with exact append time and preserved images
         final_listing_info = {
             'title': details.get("title", "No title"),
             'description': details.get("description", "No description"),
-            'join_date': exact_append_time,
+            'join_date': exact_append_time,  # CRITICAL: This timestamp must be preserved
             'price': str(total_price),
             'expected_revenue': total_revenue,
             'profit': expected_profit,
             'detected_items': detected_objects,
-            'processed_images': processed_images,
+            'processed_images': preserved_images,  # CRITICAL: Store deep copies of images
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
             'suitability': suitability_reason,
@@ -5530,7 +5682,7 @@ class VintedScraper:
             suitable_listings.append(final_listing_info)
             current_listing_index = len(suitable_listings) - 1
             
-            print(f"⏰ APPENDED TO DISPLAY: {exact_append_time} UK time")
+            print(f"⏰ APPENDED TO DISPLAY: {exact_append_time} UK time (PRESERVED FOR PYGAME)")
             self.update_listing_details(**final_listing_info)
 
             if is_suitable:
@@ -5542,7 +5694,6 @@ class VintedScraper:
             print(f"❌ Listing not added to display: {suitability_reason}")
 
         print(f"🔄 REAL-TIME PROCESSING COMPLETE: Ready to resume scraping")
-
 
     # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
     def send_to_vm_bookmark_system(self, url):
