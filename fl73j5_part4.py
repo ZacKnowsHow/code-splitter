@@ -1,4 +1,21 @@
 # Continuation from line 6601
+        # Function to read and print cloudflared output asynchronously
+        def read_output(proc):
+            for line in proc.stdout:
+                print("[cloudflared]", line.strip())
+        
+        # Start a thread to print cloudflared output so you can see the public URL and any errors
+        threading.Thread(target=read_output, args=(process,), daemon=True).start()
+        
+        # Wait a few seconds for the tunnel to establish (adjust if needed).
+        time.sleep(5)
+        return process
+
+    def run_flask_app(self):
+        try:
+            print("Starting Flask app for https://fk43b0p45crc03r.xyz/")
+            
+            # Run Flask locally - your domain should be configured to tunnel to this
             app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
             
         except Exception as e:

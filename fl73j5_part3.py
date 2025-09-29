@@ -150,6 +150,8 @@
             'listings': [],
             'current_index': 0
         }
+
+        self.program_start_time = time.time()
         
         # Initialize all current listing variables
         self.current_vm_driver = None
@@ -187,6 +189,16 @@
         else:
             model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
             print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
+
+    def format_runtime(self, elapsed_seconds):
+        """
+        Format elapsed time into HH:MM:SS format
+        """
+        hours = int(elapsed_seconds // 3600)
+        minutes = int((elapsed_seconds % 3600) // 60)
+        seconds = int(elapsed_seconds % 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
     def run_pygame_window(self):
@@ -1966,9 +1978,14 @@
 
         # Main scanning loop with refresh functionality AND driver restart
         while True:
+            current_time = time.time()
+            runtime_seconds = current_time - self.program_start_time
+            runtime_formatted = self.format_runtime(runtime_seconds)
+            
             print(f"\n{'='*60}")
             print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
             print(f"🔄 Cycles since last driver restart: {cycles_since_restart}")
+            print(f"⏰ Time since start: {runtime_formatted}")
             print(f"{'='*60}")
             
             # NEW: Check if we need to restart the driver
@@ -2182,20 +2199,3 @@
             text=True
         )
         
-        # Function to read and print cloudflared output asynchronously
-        def read_output(proc):
-            for line in proc.stdout:
-                print("[cloudflared]", line.strip())
-        
-        # Start a thread to print cloudflared output so you can see the public URL and any errors
-        threading.Thread(target=read_output, args=(process,), daemon=True).start()
-        
-        # Wait a few seconds for the tunnel to establish (adjust if needed).
-        time.sleep(5)
-        return process
-
-    def run_flask_app(self):
-        try:
-            print("Starting Flask app for https://fk43b0p45crc03r.xyz/")
-            
-            # Run Flask locally - your domain should be configured to tunnel to this
