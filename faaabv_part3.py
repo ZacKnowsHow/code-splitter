@@ -1,4 +1,104 @@
 # Continuation from line 4401
+                print("🔄 VM LOGIN: Captcha detected - handling...")
+                if HAS_PYAUDIO:
+                    detector = AudioNumberDetector(driver=driver)
+                    detector.start_listening()
+                    # Wait for captcha completion
+                    print("⏳ VM LOGIN: Waiting for captcha completion...")
+                    return True
+                else:
+                    print("❌ VM LOGIN: Cannot handle captcha - no audio support")
+                    return False
+            else:
+                print("❌ VM LOGIN: Captcha handling failed")
+                return False
+                
+        except Exception as e:
+            print(f"❌ VM LOGIN: Error during login: {e}")
+            return False
+
+    def execute_bookmark_with_preloaded_driver(self, url):
+        """Execute bookmark using the already logged-in VM driver"""
+        if not self.vm_driver_ready or not self.current_vm_driver:
+            print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
+            return False
+        
+        with self.vm_driver_lock:
+            print(f"🔖 BOOKMARK: Using pre-loaded driver for: {url}")
+            
+            try:
+                # Create step log for tracking
+                step_log = {
+                    'start_time': time.time(),
+                    'driver_number': 1,  # Always 1 since we use single driver
+                    'steps_completed': [],
+                    'failures': [],
+                    'success': False,
+                    'critical_sequence_completed': False,
+                    'actual_url': url
+                }
+                
+                # Execute the bookmark sequence
+                success = execute_vm_bookmark_sequences(self.current_vm_driver, url, "preloaded_user", step_log)
+                
+                self.vm_driver_ready = False  # Mark as used
+                
+                total_time = time.time() - step_log['start_time']
+                print(f"📊 BOOKMARK ANALYSIS:")
+                print(f"⏱️  Total time: {total_time:.2f}s")
+                print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
+                print(f"❌ Failures: {len(step_log['failures'])}")
+                print(f"🏆 Overall success: {'YES' if success else 'NO'}")
+                
+                return success
+                
+            except Exception as e:
+                print(f"❌ BOOKMARK: Error using pre-loaded driver: {e}")
+                self.vm_driver_ready = False
+                return False
+
+    def prepare_next_vm_driver(self):
+        """Prepare the NEXT VM driver after current one is used"""
+        print("🔄 NEXT DRIVER: Preparing next VM driver...")
+        
+        try:
+            # Close current driver if it exists
+            if self.current_vm_driver:
+                try:
+                    self.current_vm_driver.quit()
+                    print("✅ NEXT DRIVER: Closed previous driver")
+                except:
+                    print("⚠️ NEXT DRIVER: Error closing previous driver")
+            
+            # Clear browser data for new session
+            clear_browser_data_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            time.sleep(1)  # Brief delay
+            
+            # Create new VM driver
+            self.current_vm_driver = setup_driver_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            if not self.current_vm_driver:
+                print("❌ NEXT DRIVER: Failed to create new VM driver")
+                self.vm_driver_ready = False
+                return
+            
+            # Login the new driver
+            success = self.login_vm_driver(self.current_vm_driver)
+            
+            if success:
+                self.vm_driver_ready = True
+                print("✅ NEXT DRIVER: New VM driver ready and logged in")
+            else:
+                print("❌ NEXT DRIVER: Failed to login new VM driver")
                 self.vm_driver_ready = False
                 
         except Exception as e:
@@ -129,11 +229,49 @@
                     elif event.key == pygame.K_RIGHT:
                         if suitable_listings:
                             current_listing_index = (current_listing_index + 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
+                            # CRITICAL FIX: Properly switch to stored listing data including images
+                            current_listing = suitable_listings[current_listing_index]
+                            
+                            # FIXED: Pass the stored images from the listing, not empty list
+                            stored_images = current_listing.get('processed_images', [])
+                            
+                            self.update_listing_details(
+                                title=current_listing['title'],
+                                description=current_listing['description'],
+                                join_date=current_listing['join_date'],  # FIXED: Use stored timestamp
+                                price=current_listing['price'],
+                                expected_revenue=current_listing['expected_revenue'],
+                                profit=current_listing['profit'],
+                                detected_items=current_listing['detected_items'],
+                                processed_images=stored_images,  # FIXED: Pass stored images
+                                bounding_boxes=current_listing['bounding_boxes'],
+                                url=current_listing.get('url'),
+                                suitability=current_listing.get('suitability'),
+                                seller_reviews=current_listing.get('seller_reviews')
+                            )
                     elif event.key == pygame.K_LEFT:
                         if suitable_listings:
                             current_listing_index = (current_listing_index - 1) % len(suitable_listings)
-                            self.update_listing_details(**suitable_listings[current_listing_index])
+                            # CRITICAL FIX: Properly switch to stored listing data including images
+                            current_listing = suitable_listings[current_listing_index]
+                            
+                            # FIXED: Pass the stored images from the listing, not empty list
+                            stored_images = current_listing.get('processed_images', [])
+                            
+                            self.update_listing_details(
+                                title=current_listing['title'],
+                                description=current_listing['description'],
+                                join_date=current_listing['join_date'],  # FIXED: Use stored timestamp
+                                price=current_listing['price'],
+                                expected_revenue=current_listing['expected_revenue'],
+                                profit=current_listing['profit'],
+                                detected_items=current_listing['detected_items'],
+                                processed_images=stored_images,  # FIXED: Pass stored images
+                                bounding_boxes=current_listing['bounding_boxes'],
+                                url=current_listing.get('url'),
+                                suitability=current_listing.get('suitability'),
+                                seller_reviews=current_listing.get('seller_reviews')
+                            )
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left mouse button
                         # Check if rectangle 4 was clicked
@@ -187,7 +325,7 @@
                     self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
                 elif i == 7:  # Rectangle 8 (index 7) - Description
                     self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
-                elif i == 8:  # Rectangle 9 (index 8) - CHANGED: Now shows exact time instead of upload date
+                elif i == 8:  # Rectangle 9 (index 8) - FIXED: Shows exact stored timestamp
                     time_label = "Appended:"
                     self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
                 elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
@@ -399,29 +537,34 @@
             end_time = time.time()
             elapsed = end_time - start_time
             print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
+   
             raise
     def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
         global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
 
-        # Close and clear existing images
-        if 'current_listing_images' in globals():
-            for img in current_listing_images:
-                try:
-                    img.close()  # Explicitly close the image
-                except Exception as e:
-                    print(f"Error closing image: {str(e)}")
-            current_listing_images.clear()
+        # CRITICAL FIX 1: Don't clear existing images when switching between listings
+        # Only clear if we're setting NEW images (not switching to existing listing)
+        if processed_images:  # Only clear and replace if new images are provided
+            # Close and clear existing images
+            if 'current_listing_images' in globals():
+                for img in current_listing_images:
+                    try:
+                        img.close()  # Explicitly close the image
+                    except Exception as e:
+                        print(f"Error closing image: {str(e)}")
+                current_listing_images.clear()
 
-        if processed_images:
+            # Add new images
             for img in processed_images:
                 try:
                     img_copy = img.copy()  # Create a fresh copy
                     current_listing_images.append(img_copy)
                 except Exception as e:
                     print(f"Error copying image: {str(e)}")
-        
+        # If no processed_images provided, keep existing current_listing_images intact
+
         # Store bounding boxes with more robust handling
         current_bounding_boxes = {
             'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
@@ -445,15 +588,14 @@
         else:
             formatted_detected_items = {"no_items": "No items detected"}
 
-        # FIXED: Use the join_date parameter directly instead of generating new timestamp
-        # The join_date parameter now contains the stored timestamp from when item was processed
+        # CRITICAL FIX 2: Use the exact join_date parameter that was stored, never generate new timestamp
         stored_append_time = join_date if join_date else "No timestamp"
 
         # Explicitly set the global variables
         current_detected_items = formatted_detected_items
         current_listing_title = title[:50] + '...' if len(title) > 50 else title
         current_listing_description = description[:200] + '...' if len(description) > 200 else description if description else "No description"
-        current_listing_join_date = stored_append_time  # FIXED: Use stored timestamp, not current time
+        current_listing_join_date = stored_append_time  # FIXED: Use stored timestamp, never current time
         current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
         current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
         current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
@@ -952,6 +1094,7 @@
         """
         IMMEDIATELY process a suitable listing with pre-loaded VM driver
         The VM driver should already be logged in and waiting
+        FIXED: Properly preserve timestamps and images for pygame display
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -1050,7 +1193,7 @@
             is_suitable = True
             print(f"✅ SUITABLE: {suitability_reason}")
 
-        # ============= MODIFIED: USE PRE-LOADED VM DRIVER =============
+        # ============= VM PROCESSING =============
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
             print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver")
             print(f"⏸️  SCRAPING IS PAUSED UNTIL VM PROCESS COMPLETES")
@@ -1078,7 +1221,7 @@
         else:
             print(f"❌ UNSUITABLE LISTING: Skipping VM process, continuing with scraping")
 
-        # Generate exact UK time when creating listing info 
+        # CRITICAL FIX: Generate exact UK time when creating listing info and store it permanently
         from datetime import datetime
         import pytz
         
@@ -1086,16 +1229,25 @@
         append_time = datetime.now(uk_tz)
         exact_append_time = append_time.strftime("%H:%M:%S.%f")[:-3]
 
-        # Create final listing info with exact append time
+        # CRITICAL FIX: Create deep copies of images to prevent memory issues
+        preserved_images = []
+        for img in processed_images:
+            try:
+                img_copy = img.copy()  # Create independent copy
+                preserved_images.append(img_copy)
+            except Exception as e:
+                print(f"Error copying image for storage: {e}")
+
+        # Create final listing info with exact append time and preserved images
         final_listing_info = {
             'title': details.get("title", "No title"),
             'description': details.get("description", "No description"),
-            'join_date': exact_append_time,
+            'join_date': exact_append_time,  # CRITICAL: This timestamp must be preserved
             'price': str(total_price),
             'expected_revenue': total_revenue,
             'profit': expected_profit,
             'detected_items': detected_objects,
-            'processed_images': processed_images,
+            'processed_images': preserved_images,  # CRITICAL: Store deep copies of images
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
             'suitability': suitability_reason,
@@ -1131,7 +1283,7 @@
             suitable_listings.append(final_listing_info)
             current_listing_index = len(suitable_listings) - 1
             
-            print(f"⏰ APPENDED TO DISPLAY: {exact_append_time} UK time")
+            print(f"⏰ APPENDED TO DISPLAY: {exact_append_time} UK time (PRESERVED FOR PYGAME)")
             self.update_listing_details(**final_listing_info)
 
             if is_suitable:
@@ -1143,7 +1295,6 @@
             print(f"❌ Listing not added to display: {suitability_reason}")
 
         print(f"🔄 REAL-TIME PROCESSING COMPLETE: Ready to resume scraping")
-
 
     # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
     def send_to_vm_bookmark_system(self, url):
@@ -2048,154 +2199,3 @@
             print("Starting Flask app for https://fk43b0p45crc03r.xyz/")
             
             # Run Flask locally - your domain should be configured to tunnel to this
-            app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
-            
-        except Exception as e:
-            print(f"Error starting Flask app: {e}")
-            import traceback
-            traceback.print_exc()
-
-    def is_monitoring_active(self):
-        """Check if any monitoring threads are still active"""
-        # Check if current bookmark driver exists (indicates monitoring might be active)
-        if hasattr(self, 'current_bookmark_driver') and self.current_bookmark_driver is not None:
-            try:
-                # Try to access the driver - if it fails, monitoring is done
-                self.current_bookmark_driver.current_url
-                return True
-            except:
-                return False
-        return False
-
-
-    def check_chrome_processes(self):
-        """
-        Debug function to check for running Chrome processes
-        """
-        import psutil
-        chrome_processes = []
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                if 'chrome' in proc.info['name'].lower():
-                    chrome_processes.append({
-                        'pid': proc.info['pid'],
-                        'name': proc.info['name'],
-                        'cmdline': ' '.join(proc.info['cmdline'][:3]) if proc.info['cmdline'] else ''
-                    })
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        
-        print(f"🔖 CHROME PROCESSES: Found {len(chrome_processes)} running Chrome processes")
-        for proc in chrome_processes[:5]:  # Show first 5
-            print(f"  • PID: {proc['pid']}, Name: {proc['name']}")
-        
-        return len(chrome_processes)
-
-    def setup_driver_enhanced_debug(self):
-        """
-        Enhanced setup_driver with comprehensive debugging
-        """
-        print("🚀 ENHANCED DRIVER SETUP: Starting...")
-        
-        # Check for existing Chrome processes
-        self.check_chrome_processes()
-        
-        chrome_opts = Options()
-        
-        # Basic preferences
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,
-            "profile.default_content_setting_values.popups": 0,
-            "download.prompt_for_download": False,
-        }
-        chrome_opts.add_experimental_option("prefs", prefs)
-        
-        # User data directory setup
-        print(f"🚀 USER DATA DIR: {PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--profile-directory=Default")
-        
-        # Check if user data directory exists and is accessible
-        try:
-            if not os.path.exists(PERMANENT_USER_DATA_DIR):
-                os.makedirs(PERMANENT_USER_DATA_DIR, exist_ok=True)
-                print(f"🚀 CREATED: User data directory")
-            else:
-                print(f"🚀 EXISTS: User data directory found")
-        except Exception as dir_error:
-            print(f"🚀 DIR ERROR: {dir_error}")
-        
-        # Core stability arguments (minimal set)
-        chrome_opts.add_argument("--no-sandbox")
-        chrome_opts.add_argument("--disable-dev-shm-usage")
-        chrome_opts.add_argument("--disable-gpu")
-        chrome_opts.add_argument("--disable-software-rasterizer")
-        
-        # Remove potentially problematic arguments
-        chrome_opts.add_argument("--headless")  # Try without headless first
-        
-        # Keep some logging for debugging
-        chrome_opts.add_argument("--log-level=3")  # More detailed logging
-        chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-        
-        try:
-            service = Service(
-                ChromeDriverManager().install()
-            )
-            
-            print("🚀 CREATING: Chrome driver...")
-            driver = webdriver.Chrome(service=service, options=chrome_opts)
-            
-            # Set timeouts
-            driver.implicitly_wait(10)
-            driver.set_page_load_timeout(30)
-            driver.set_script_timeout(30)
-            
-            print("✅ SUCCESS: Chrome driver initialized successfully")
-            return driver
-            
-        except Exception as e:
-            print(f"❌ CRITICAL ERROR: Chrome driver failed: {e}")
-            print(f"❌ ERROR TYPE: {type(e).__name__}")
-            
-            import traceback
-            print(f"❌ TRACEBACK:\n{traceback.format_exc()}")
-            
-            # Show system info for debugging
-            print("🔧 SYSTEM INFO:")
-            print(f"  • Python: {sys.version}")
-            print(f"  • OS: {os.name}")
-            print(f"  • Chrome processes: {self.check_chrome_processes()}")
-            
-            return None
-
-    def test_url_collection_mode(self, driver, search_query):
-        """
-        Simple testing mode that only collects URLs and saves listing IDs
-        No bookmarking, no purchasing, no image downloading - just URL collection
-        """
-        print("🧪 TEST_NUMBER_OF_LISTINGS MODE: Starting URL collection only")
-        
-        # Setup search URL with parameters
-        params = {
-            "search_text": search_query,
-            "price_from": PRICE_FROM,
-            "price_to": PRICE_TO,
-            "currency": CURRENCY,
-            "order": ORDER,
-        }
-        driver.get(f"{BASE_URL}?{urlencode(params)}")
-        
-        refresh_cycle = 1
-        
-        while True:
-            print(end=" ")
-            
-            try:
-                # Wait for page to load
-                WebDriverWait(driver, 20).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-                )
-            except TimeoutException:
-                print("0 listings (page load timeout)")
-                refresh_cycle += 1
