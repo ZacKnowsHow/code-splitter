@@ -2019,7 +2019,9 @@ VM_SELECTOR_SETS = {
 }
 
 def clear_browser_data_universal(vm_ip_address, config):
-    """Universal function to clear browser data - NOW RUNS ON HOST"""
+    """
+    Universal function to clear browser data for any driver configuration
+    """
     print("=" * 50)
     print(f"CLEARING BROWSER DATA FOR {config['user_data_dir']}...")
     print("=" * 50)
@@ -2029,6 +2031,7 @@ def clear_browser_data_universal(vm_ip_address, config):
     try:
         print("Step 1: Setting up temporary driver for data clearing...")
         
+        # Use universal Chrome options
         chrome_options = ChromeOptions()
         chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
         chrome_options.add_argument(f"--profile-directory={config['profile']}")
@@ -2047,8 +2050,11 @@ def clear_browser_data_universal(vm_ip_address, config):
         chrome_options.add_argument('--disable-web-security')
         chrome_options.add_argument('--allow-running-insecure-content')
         
-        service = Service(ChromeDriverManager().install())
-        clear_driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Create driver connection
+        clear_driver = webdriver.Remote(
+            command_executor=f'http://{vm_ip_address}:4444',
+            options=chrome_options
+        )
         
         print(f"✓ Temporary driver created successfully (Session: {clear_driver.session_id})")
         
@@ -2057,12 +2063,16 @@ def clear_browser_data_universal(vm_ip_address, config):
         print("✓ Navigated to clear browser data page")
         
         print("Step 3: Waiting for page to load...")
-        time.sleep(2)
+        time.sleep(2)  # Wait for Shadow DOM to initialize
         
         print("Step 4: Accessing Shadow DOM to find clear button...")
         
+        # JavaScript to navigate Shadow DOM and click the clear button
         shadow_dom_script = """
         function findAndClickClearButton() {
+            // Multiple strategies to find the clear button in Shadow DOM
+            
+            // Strategy 1: Direct access via settings-ui
             let settingsUi = document.querySelector('settings-ui');
             if (settingsUi && settingsUi.shadowRoot) {
                 let clearBrowserData = settingsUi.shadowRoot.querySelector('settings-main')?.shadowRoot
@@ -2080,6 +2090,7 @@ def clear_browser_data_universal(vm_ip_address, config):
                 }
             }
             
+            // Strategy 2: Search all shadow roots recursively
             function searchShadowRoots(element) {
                 if (element.shadowRoot) {
                     let clearButton = element.shadowRoot.querySelector('#clearButton');
@@ -2089,6 +2100,7 @@ def clear_browser_data_universal(vm_ip_address, config):
                         return true;
                     }
                     
+                    // Search nested shadow roots
                     let shadowElements = element.shadowRoot.querySelectorAll('*');
                     for (let el of shadowElements) {
                         if (searchShadowRoots(el)) return true;
@@ -2102,6 +2114,7 @@ def clear_browser_data_universal(vm_ip_address, config):
                 if (searchShadowRoots(el)) return true;
             }
             
+            // Strategy 3: Look for cr-button elements in shadow roots
             function findCrButton(element) {
                 if (element.shadowRoot) {
                     let crButtons = element.shadowRoot.querySelectorAll('cr-button');
@@ -2132,22 +2145,25 @@ def clear_browser_data_universal(vm_ip_address, config):
         return findAndClickClearButton();
         """
         
+        # Execute the Shadow DOM navigation script
         result = clear_driver.execute_script(shadow_dom_script)
         
         if result:
             print("✓ Successfully clicked clear data button via Shadow DOM!")
             print("Step 5: Waiting for data clearing to complete...")
-            time.sleep(2)
+            time.sleep(2)  # Wait for clearing process
             print("✓ Browser data clearing completed successfully!")
         else:
             print("✗ Failed to find clear button in Shadow DOM")
             
+            # Fallback: Try to trigger clear via keyboard shortcut
             print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
             try:
                 from selenium.webdriver.common.keys import Keys
                 body = clear_driver.find_element(By.TAG_NAME, "body")
                 body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
                 time.sleep(1)
+                # Try to press Enter to confirm
                 body.send_keys(Keys.ENTER)
                 time.sleep(1)
                 print("✓ Fallback keyboard shortcut attempted")
@@ -2172,29 +2188,13 @@ def clear_browser_data_universal(vm_ip_address, config):
         print("=" * 50)
         print("BROWSER DATA CLEAR COMPLETE")
         print("=" * 50)
-        time.sleep(0.5)
+        time.sleep(0.5)  # Brief pause before continuing
 
 def setup_driver_universal(vm_ip_address, config):
-    """Universal setup function - NOW RUNS ON HOST"""
+    """Universal setup function for any driver configuration"""
     
-    chrome_options = ChromeOptions()
-    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
-    chrome_options.add_argument(f"--profile-directory={config['profile']}")
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    
-    chrome_options.add_argument('--force-device-scale-factor=1')
-    chrome_options.add_argument('--high-dpi-support=1')
-    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
-    chrome_options.add_argument('--remote-allow-origins=*')
-    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-extensions')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--disable-web-security')
-    chrome_options.add_argument('--allow-running-insecure-content')
-    
-    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
-    
+    # Session cleanup (existing code)
+    try:
+        import requests
+        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+        status_data = status_response.json()
