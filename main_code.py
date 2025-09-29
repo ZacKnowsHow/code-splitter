@@ -2019,9 +2019,7 @@ VM_SELECTOR_SETS = {
 }
 
 def clear_browser_data_universal(vm_ip_address, config):
-    """
-    Universal function to clear browser data for any driver configuration
-    """
+    """Universal function to clear browser data - NOW RUNS ON HOST"""
     print("=" * 50)
     print(f"CLEARING BROWSER DATA FOR {config['user_data_dir']}...")
     print("=" * 50)
@@ -2031,7 +2029,6 @@ def clear_browser_data_universal(vm_ip_address, config):
     try:
         print("Step 1: Setting up temporary driver for data clearing...")
         
-        # Use universal Chrome options
         chrome_options = ChromeOptions()
         chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
         chrome_options.add_argument(f"--profile-directory={config['profile']}")
@@ -2050,11 +2047,8 @@ def clear_browser_data_universal(vm_ip_address, config):
         chrome_options.add_argument('--disable-web-security')
         chrome_options.add_argument('--allow-running-insecure-content')
         
-        # Create driver connection
-        clear_driver = webdriver.Remote(
-            command_executor=f'http://{vm_ip_address}:4444',
-            options=chrome_options
-        )
+        service = Service(ChromeDriverManager().install())
+        clear_driver = webdriver.Chrome(service=service, options=chrome_options)
         
         print(f"✓ Temporary driver created successfully (Session: {clear_driver.session_id})")
         
@@ -2063,16 +2057,12 @@ def clear_browser_data_universal(vm_ip_address, config):
         print("✓ Navigated to clear browser data page")
         
         print("Step 3: Waiting for page to load...")
-        time.sleep(2)  # Wait for Shadow DOM to initialize
+        time.sleep(2)
         
         print("Step 4: Accessing Shadow DOM to find clear button...")
         
-        # JavaScript to navigate Shadow DOM and click the clear button
         shadow_dom_script = """
         function findAndClickClearButton() {
-            // Multiple strategies to find the clear button in Shadow DOM
-            
-            // Strategy 1: Direct access via settings-ui
             let settingsUi = document.querySelector('settings-ui');
             if (settingsUi && settingsUi.shadowRoot) {
                 let clearBrowserData = settingsUi.shadowRoot.querySelector('settings-main')?.shadowRoot
@@ -2090,7 +2080,6 @@ def clear_browser_data_universal(vm_ip_address, config):
                 }
             }
             
-            // Strategy 2: Search all shadow roots recursively
             function searchShadowRoots(element) {
                 if (element.shadowRoot) {
                     let clearButton = element.shadowRoot.querySelector('#clearButton');
@@ -2100,7 +2089,6 @@ def clear_browser_data_universal(vm_ip_address, config):
                         return true;
                     }
                     
-                    // Search nested shadow roots
                     let shadowElements = element.shadowRoot.querySelectorAll('*');
                     for (let el of shadowElements) {
                         if (searchShadowRoots(el)) return true;
@@ -2114,7 +2102,6 @@ def clear_browser_data_universal(vm_ip_address, config):
                 if (searchShadowRoots(el)) return true;
             }
             
-            // Strategy 3: Look for cr-button elements in shadow roots
             function findCrButton(element) {
                 if (element.shadowRoot) {
                     let crButtons = element.shadowRoot.querySelectorAll('cr-button');
@@ -2145,25 +2132,22 @@ def clear_browser_data_universal(vm_ip_address, config):
         return findAndClickClearButton();
         """
         
-        # Execute the Shadow DOM navigation script
         result = clear_driver.execute_script(shadow_dom_script)
         
         if result:
             print("✓ Successfully clicked clear data button via Shadow DOM!")
             print("Step 5: Waiting for data clearing to complete...")
-            time.sleep(2)  # Wait for clearing process
+            time.sleep(2)
             print("✓ Browser data clearing completed successfully!")
         else:
             print("✗ Failed to find clear button in Shadow DOM")
             
-            # Fallback: Try to trigger clear via keyboard shortcut
             print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
             try:
                 from selenium.webdriver.common.keys import Keys
                 body = clear_driver.find_element(By.TAG_NAME, "body")
                 body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
                 time.sleep(1)
-                # Try to press Enter to confirm
                 body.send_keys(Keys.ENTER)
                 time.sleep(1)
                 print("✓ Fallback keyboard shortcut attempted")
@@ -2188,34 +2172,11 @@ def clear_browser_data_universal(vm_ip_address, config):
         print("=" * 50)
         print("BROWSER DATA CLEAR COMPLETE")
         print("=" * 50)
-        time.sleep(0.5)  # Brief pause before continuing
+        time.sleep(0.5)
 
 def setup_driver_universal(vm_ip_address, config):
-    """Universal setup function for any driver configuration"""
+    """Universal setup function - NOW RUNS ON HOST"""
     
-    # Session cleanup (existing code)
-    try:
-        import requests
-        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
-        status_data = status_response.json()
-        
-        if 'value' in status_data and 'nodes' in status_data['value']:
-            for node in status_data['value']['nodes']:
-                if 'slots' in node:
-                    for slot in node['slots']:
-                        if slot.get('session'):
-                            session_id = slot['session']['sessionId']
-                            print(f"Found existing session: {session_id}")
-                            delete_response = requests.delete(
-                                f"http://{vm_ip_address}:4444/session/{session_id}",
-                                timeout=10
-                            )
-                            print(f"Cleaned up session: {session_id}")
-    
-    except Exception as e:
-        print(f"Session cleanup failed: {e}")
-    
-    # Chrome options for the VM instance
     chrome_options = ChromeOptions()
     chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
     chrome_options.add_argument(f"--profile-directory={config['profile']}")
@@ -2223,7 +2184,6 @@ def setup_driver_universal(vm_ip_address, config):
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
     
-    # VM-specific optimizations
     chrome_options.add_argument('--force-device-scale-factor=1')
     chrome_options.add_argument('--high-dpi-support=1')
     chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
@@ -2235,21 +2195,18 @@ def setup_driver_universal(vm_ip_address, config):
     chrome_options.add_argument('--disable-gpu')
     chrome_options.add_argument('--disable-web-security')
     chrome_options.add_argument('--allow-running-insecure-content')
-
     
     print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
     
     driver = None
     
     try:
-        print("Attempting to connect to remote WebDriver...")
+        print("Attempting to connect to LOCAL ChromeDriver...")
         
-        driver = webdriver.Remote(
-            command_executor=f'http://{vm_ip_address}:4444',
-            options=chrome_options
-        )
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        print(f"✓ Successfully created remote WebDriver connection")
+        print(f"✓ Successfully created LOCAL WebDriver connection")
         print(f"Session ID: {driver.session_id}")
         
         print("Applying stealth modifications...")
@@ -2267,11 +2224,11 @@ def setup_driver_universal(vm_ip_address, config):
         driver.execute_script(stealth_script)
         print("✓ Stealth script applied successfully")
         
-        print(f"✓ Successfully connected to VM Chrome with clean profile")
+        print(f"✓ Successfully connected to LOCAL Chrome with profile")
         return driver
         
     except Exception as e:
-        print(f"✗ Failed to connect to VM WebDriver")
+        print(f"✗ Failed to connect to LOCAL WebDriver")
         print(f"Error: {str(e)}")
         
         if driver:
@@ -6396,7 +6353,7 @@ class VintedScraper:
             
             while True:  # Page loop
                 try:
-                    WebDriverWait(current_driver, 20).until(
+                    WebDriverWait(current_driver, 5).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                     )
                 except TimeoutException:
