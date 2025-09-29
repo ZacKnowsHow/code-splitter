@@ -1,47 +1,4 @@
 # Continuation from line 6601
-                    chrome_processes.append({
-                        'pid': proc.info['pid'],
-                        'name': proc.info['name'],
-                        'cmdline': ' '.join(proc.info['cmdline'][:3]) if proc.info['cmdline'] else ''
-                    })
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        
-        print(f"🔖 CHROME PROCESSES: Found {len(chrome_processes)} running Chrome processes")
-        for proc in chrome_processes[:5]:  # Show first 5
-            print(f"  • PID: {proc['pid']}, Name: {proc['name']}")
-        
-        return len(chrome_processes)
-
-    def setup_driver_enhanced_debug(self):
-        """
-        Enhanced setup_driver with comprehensive debugging
-        """
-        print("🚀 ENHANCED DRIVER SETUP: Starting...")
-        
-        # Check for existing Chrome processes
-        self.check_chrome_processes()
-        
-        chrome_opts = Options()
-        
-        # Basic preferences
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,
-            "profile.default_content_setting_values.popups": 0,
-            "download.prompt_for_download": False,
-        }
-        chrome_opts.add_experimental_option("prefs", prefs)
-        
-        # User data directory setup
-        print(f"🚀 USER DATA DIR: {PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--profile-directory=Default")
-        
-        # Check if user data directory exists and is accessible
-        try:
-            if not os.path.exists(PERMANENT_USER_DATA_DIR):
-                os.makedirs(PERMANENT_USER_DATA_DIR, exist_ok=True)
-                print(f"🚀 CREATED: User data directory")
             else:
                 print(f"🚀 EXISTS: User data directory found")
         except Exception as dir_error:

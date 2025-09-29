@@ -1,47 +1,4 @@
 # Continuation from line 4401
-                print("🔄 VM LOGIN: Captcha detected - handling...")
-                if HAS_PYAUDIO:
-                    detector = AudioNumberDetector(driver=driver)
-                    detector.start_listening()
-                    # Wait for captcha completion
-                    print("⏳ VM LOGIN: Waiting for captcha completion...")
-                    return True
-                else:
-                    print("❌ VM LOGIN: Cannot handle captcha - no audio support")
-                    return False
-            else:
-                print("❌ VM LOGIN: Captcha handling failed")
-                return False
-                
-        except Exception as e:
-            print(f"❌ VM LOGIN: Error during login: {e}")
-            return False
-
-    def execute_bookmark_with_preloaded_driver(self, url):
-        """Execute bookmark using driver ALREADY ON THE LISTING PAGE"""
-        if not self.vm_driver_ready or not self.current_vm_driver:
-            print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
-            return False
-        
-        with self.vm_driver_lock:
-            print(f"🔖 BOOKMARK: Driver ALREADY on listing page: {url}")
-            print(f"🔖 BOOKMARK: Skipping navigation - proceeding directly to buy button")
-            
-            try:
-                # Create step log for tracking
-                step_log = {
-                    'start_time': time.time(),
-                    'driver_number': 1,
-                    'steps_completed': [],
-                    'failures': [],
-                    'success': False,
-                    'critical_sequence_completed': False,
-                    'actual_url': url
-                }
-                
-                # CRITICAL CHANGE: Skip navigation, go straight to first buy sequence
-                # Driver is already on the correct page from scraping
-                success = execute_vm_first_buy_sequence(self.current_vm_driver, step_log)
                 self.vm_driver_ready = False  # Mark as used
                 
                 total_time = time.time() - step_log['start_time']
@@ -1997,7 +1954,7 @@
             
             while True:  # Page loop
                 try:
-                    WebDriverWait(current_driver, 20).until(
+                    WebDriverWait(current_driver, 5).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                     )
                 except TimeoutException:
@@ -2199,3 +2156,46 @@
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
                 if 'chrome' in proc.info['name'].lower():
+                    chrome_processes.append({
+                        'pid': proc.info['pid'],
+                        'name': proc.info['name'],
+                        'cmdline': ' '.join(proc.info['cmdline'][:3]) if proc.info['cmdline'] else ''
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        print(f"🔖 CHROME PROCESSES: Found {len(chrome_processes)} running Chrome processes")
+        for proc in chrome_processes[:5]:  # Show first 5
+            print(f"  • PID: {proc['pid']}, Name: {proc['name']}")
+        
+        return len(chrome_processes)
+
+    def setup_driver_enhanced_debug(self):
+        """
+        Enhanced setup_driver with comprehensive debugging
+        """
+        print("🚀 ENHANCED DRIVER SETUP: Starting...")
+        
+        # Check for existing Chrome processes
+        self.check_chrome_processes()
+        
+        chrome_opts = Options()
+        
+        # Basic preferences
+        prefs = {
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.default_content_setting_values.popups": 0,
+            "download.prompt_for_download": False,
+        }
+        chrome_opts.add_experimental_option("prefs", prefs)
+        
+        # User data directory setup
+        print(f"🚀 USER DATA DIR: {PERMANENT_USER_DATA_DIR}")
+        chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
+        chrome_opts.add_argument(f"--profile-directory=Default")
+        
+        # Check if user data directory exists and is accessible
+        try:
+            if not os.path.exists(PERMANENT_USER_DATA_DIR):
+                os.makedirs(PERMANENT_USER_DATA_DIR, exist_ok=True)
+                print(f"🚀 CREATED: User data directory")
