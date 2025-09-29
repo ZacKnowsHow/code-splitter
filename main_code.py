@@ -93,7 +93,7 @@ NINTENDO_SWITCH_CLASSES = [
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = True
 print_debug = False
 print_images_backend_info = False
 test_bookmark_function = False
@@ -4417,19 +4417,20 @@ class VintedScraper:
             return False
 
     def execute_bookmark_with_preloaded_driver(self, url):
-        """Execute bookmark using the already logged-in VM driver"""
+        """Execute bookmark using driver ALREADY ON THE LISTING PAGE"""
         if not self.vm_driver_ready or not self.current_vm_driver:
             print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
             return False
         
         with self.vm_driver_lock:
-            print(f"🔖 BOOKMARK: Using pre-loaded driver for: {url}")
+            print(f"🔖 BOOKMARK: Driver ALREADY on listing page: {url}")
+            print(f"🔖 BOOKMARK: Skipping navigation - proceeding directly to buy button")
             
             try:
                 # Create step log for tracking
                 step_log = {
                     'start_time': time.time(),
-                    'driver_number': 1,  # Always 1 since we use single driver
+                    'driver_number': 1,
                     'steps_completed': [],
                     'failures': [],
                     'success': False,
@@ -4437,9 +4438,9 @@ class VintedScraper:
                     'actual_url': url
                 }
                 
-                # Execute the bookmark sequence
-                success = execute_vm_bookmark_sequences(self.current_vm_driver, url, "preloaded_user", step_log)
-                
+                # CRITICAL CHANGE: Skip navigation, go straight to first buy sequence
+                # Driver is already on the correct page from scraping
+                success = execute_vm_first_buy_sequence(self.current_vm_driver, step_log)
                 self.vm_driver_ready = False  # Mark as used
                 
                 total_time = time.time() - step_log['start_time']
@@ -4557,10 +4558,8 @@ class VintedScraper:
         self.vm_driver_lock = threading.Lock()
         
         # NEW: Initialize VM scraping driver (separate from bookmark driver)
-        self.vm_scraping_driver = None
-        
-        # Initialize the first VM driver during startup FOR BOOKMARKING
-        print("🔄 STARTUP: Preparing initial VM bookmark driver...")
+        # Initialize the first VM driver during startup FOR BOTH SCRAPING AND BOOKMARKING
+        print("🔄 STARTUP: Preparing initial VM driver (for scraping AND bookmarking)...")
         self.prepare_next_vm_driver()
         
         current_listing_title = "No title"
@@ -6320,11 +6319,9 @@ class VintedScraper:
         return True
 
     def search_vinted_with_refresh(self, driver, search_query):
-        """
-        Enhanced search_vinted method with refresh and rescan functionality
-        NOW RUNNING IN VM: This driver is a remote WebDriver connected to VM
-        UPDATED: Restarts the VM driver every 250 cycles to prevent freezing
-        """
+        # CRITICAL: Ignore passed driver, use bookmark driver instead
+        driver = self.current_vm_driver
+        print(f"🔄 SCRAPING: Using bookmark driver for all scraping operations")
         global suitable_listings, current_listing_index
         
         # CLEAR THE VINTED SCANNED IDS FILE AT THE BEGINNING OF EACH RUN
@@ -6390,55 +6387,6 @@ class VintedScraper:
             print(f"🔄 Cycles since last VM driver restart: {cycles_since_restart}")
             print(f"⏰ Time since start: {runtime_formatted}")
             print(f"{'='*60}")
-            
-            # Check if we need to restart the VM driver
-            if cycles_since_restart >= DRIVER_RESTART_INTERVAL:
-                print(f"\n🔄 VM DRIVER RESTART: Reached {DRIVER_RESTART_INTERVAL} cycles")
-                print("🔄 RESTARTING: VM scraping driver to prevent freezing...")
-                
-                try:
-                    # Close current VM driver safely
-                    print("🔄 CLOSING: Current VM driver...")
-                    current_driver.quit()
-                    time.sleep(2)  # Give time for cleanup
-                    
-                    # Create new VM driver
-                    print("🔄 CREATING: New VM driver...")
-                    current_driver = self.setup_vm_scraping_driver()
-                    
-                    if current_driver is None:
-                        print("❌ CRITICAL: Failed to create new VM driver after restart")
-                        break
-                    
-                    # Update the stored reference
-                    self.vm_scraping_driver = current_driver
-                    
-                    print("✅ VM DRIVER RESTART: Successfully restarted VM scraping driver")
-                    cycles_since_restart = 0  # Reset counter
-                    
-                    # Re-navigate to search page after restart
-                    params = {
-                        "search_text": search_query,
-                        "price_from": PRICE_FROM,
-                        "price_to": PRICE_TO,
-                        "currency": CURRENCY,
-                        "order": ORDER,
-                    }
-                    current_driver.get(f"{BASE_URL}?{urlencode(params)}")
-                    
-                    # Wait for page to load after restart
-                    try:
-                        WebDriverWait(current_driver, 20).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
-                        )
-                        print("✅ RESTART: Page loaded successfully after VM driver restart")
-                    except TimeoutException:
-                        print("⚠️ RESTART: Timeout waiting for page after VM driver restart")
-                    
-                except Exception as restart_error:
-                    print(f"❌ RESTART ERROR: Failed to restart VM driver: {restart_error}")
-                    print("💥 CRITICAL: Cannot continue without working VM driver")
-                    break
             
             cycle_listing_counter = 0  # Listings processed in this cycle
             found_already_scanned = False
@@ -7182,18 +7130,17 @@ class VintedScraper:
         
         # Main scraping driver thread - NOW USING VM
         def main_scraping_driver():
-            """Main scraping driver function that runs in VM"""
-            print("🚀 VM SCRAPING THREAD: Starting main scraping driver thread (IN VM)")
+            """Main scraping driver function using bookmark driver"""
+            print("🚀 SCRAPING: Starting scraping using bookmark driver")
             
             # Clear download folder
             self.clear_download_folder()
             
-            # NEW: Setup VM scraping driver instead of local driver
-            print("🚀 VM SCRAPING THREAD: Setting up VM scraping driver...")
-            driver = self.setup_vm_scraping_driver()
+            # Use the already-initialized bookmark driver
+            driver = self.current_vm_driver
             
             if driver is None:
-                print("❌ VM SCRAPING THREAD: Failed to setup VM scraping driver")
+                print("❌ SCRAPING: Bookmark driver not initialized")
                 return
             
             # Store the VM scraping driver reference
