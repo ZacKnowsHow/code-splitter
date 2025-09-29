@@ -1,4 +1,10 @@
 # Continuation from line 6601
+            [cloudflared_path, "tunnel", "--url", f"http://localhost:{port}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
         # Function to read and print cloudflared output asynchronously
         def read_output(proc):
             for line in proc.stdout:
@@ -406,23 +412,143 @@
             self.release_driver(driver_num)
             print(f"✅ SIMULATION: Driver {driver_num} released")
 
+    def setup_vm_scraping_driver(self, vm_ip_address="192.168.56.101"):
+        """
+        Setup a dedicated VM driver for scraping (separate from bookmark driver)
+        Uses Profile 5 to keep it separate from the bookmark driver (Profile 4)
+        """
+        print("🔄 VM SCRAPING: Setting up dedicated VM scraping driver...")
+        
+        # Session cleanup for scraping driver port
+        try:
+            import requests
+            status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+            status_data = status_response.json()
+            
+            if 'value' in status_data and 'nodes' in status_data['value']:
+                for node in status_data['value']['nodes']:
+                    if 'slots' in node:
+                        for slot in node['slots']:
+                            if slot.get('session'):
+                                session_id = slot['session']['sessionId']
+                                print(f"🔄 VM SCRAPING: Found existing session: {session_id}")
+                                delete_response = requests.delete(
+                                    f"http://{vm_ip_address}:4444/session/{session_id}",
+                                    timeout=10
+                                )
+                                print(f"🔄 VM SCRAPING: Cleaned up session: {session_id}")
+        
+        except Exception as e:
+            print(f"🔄 VM SCRAPING: Session cleanup note: {e}")
+        
+        # Chrome options for VM scraping instance (using different profile than bookmark driver)
+        chrome_options = ChromeOptions()
+        chrome_options.add_argument('--user-data-dir=C:\\VintedScraper_Scraping')  # Different user data dir
+        chrome_options.add_argument('--profile-directory=Profile 5')  # Different profile
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        
+        # VM-specific optimizations (same as bookmark driver)
+        chrome_options.add_argument('--force-device-scale-factor=1')
+        chrome_options.add_argument('--high-dpi-support=1')
+        chrome_options.add_argument('--remote-debugging-port=9225')  # Different port from bookmark driver (9224)
+        chrome_options.add_argument('--remote-allow-origins=*')
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--disable-web-security')
+        chrome_options.add_argument('--allow-running-insecure-content')
+        
+        # Prevent session timeout
+        chrome_options.add_argument('--disable-background-timer-throttling')
+        chrome_options.add_argument('--disable-renderer-backgrounding')
+        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+        chrome_options.add_argument('--disable-ipc-flooding-protection')
+        chrome_options.add_argument('--memory-pressure-off')
+        
+        # Set infinite timeouts
+        chrome_options.set_capability('se:idleTimeout', 0)
+        chrome_options.set_capability('se:sessionTimeout', 0)
+        
+        print(f"🔄 VM SCRAPING: Chrome options configured")
+        
+        driver = None
+        
+        try:
+            print("🔄 VM SCRAPING: Connecting to remote WebDriver...")
+            
+            driver = webdriver.Remote(
+                command_executor=f'http://{vm_ip_address}:4444',
+                options=chrome_options
+            )
+            
+            print(f"✅ VM SCRAPING: Successfully created remote WebDriver connection")
+            print(f"✅ VM SCRAPING: Session ID: {driver.session_id}")
+            
+            # Set client-side timeouts
+            try:
+                driver.implicitly_wait(10)
+                driver.set_page_load_timeout(300)
+                driver.set_script_timeout(30)
+                print("✅ VM SCRAPING: Client-side timeouts configured")
+            except Exception as timeout_error:
+                print(f"⚠️ VM SCRAPING: Could not set client timeouts: {timeout_error}")
+            
+            print("🔄 VM SCRAPING: Applying stealth modifications...")
+            stealth_script = """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            window.chrome = {runtime: {}};
+            Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+            
+            Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
+            Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+            Object.defineProperty(screen, 'colorDepth', {get: () => 24});
+            """
+            driver.execute_script(stealth_script)
+            print("✅ VM SCRAPING: Stealth script applied successfully")
+            
+            print(f"✅ VM SCRAPING: Successfully connected to VM Chrome for scraping")
+            return driver
+            
+        except Exception as e:
+            print(f"❌ VM SCRAPING: Failed to connect to VM WebDriver")
+            print(f"❌ VM SCRAPING: Error: {str(e)}")
+            
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
+            
+            return None
 
     def run(self):
-        """Simplified run method without internal booking/buying functionality"""
+        """Modified run method to use VM scraping driver instead of local driver"""
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
         global current_listing_images, current_listing_url, current_suitability, current_expected_revenue
         
         # Check for test modes (keep existing test mode logic)
         if TEST_WHETHER_SUITABLE:
-            # [Keep existing TEST_WHETHER_SUITABLE code unchanged]
-            pass
+            print("🧪 TEST_WHETHER_SUITABLE = True - Starting test mode")
+            driver = self.setup_driver()  # Local driver for test mode
+            if driver:
+                self.test_suitable_urls_mode(driver)
+                driver.quit()
+            return
             
         if TEST_NUMBER_OF_LISTINGS:
-            # [Keep existing TEST_NUMBER_OF_LISTINGS code unchanged]
-            pass
-        
-        # Remove TEST_BOOKMARK_BUYING_FUNCTIONALITY, BOOKMARK_TEST_MODE, BUYING_TEST_MODE blocks
+            print("🧪 TEST_NUMBER_OF_LISTINGS = True - Starting URL collection test")
+            driver = self.setup_driver()  # Local driver for test mode
+            if driver:
+                self.test_url_collection_mode(driver, SEARCH_QUERY)
+                driver.quit()
+            return
         
         # Initialize ALL global variables properly
         suitable_listings = []
@@ -455,51 +581,57 @@
         flask_thread.daemon = True
         flask_thread.start()
         
-        # Main scraping driver thread
+        # Main scraping driver thread - NOW USING VM
         def main_scraping_driver():
-            """Main scraping driver function that runs in its own thread"""
-            print("🚀 SCRAPING THREAD: Starting main scraping driver thread")
+            """Main scraping driver function that runs in VM"""
+            print("🚀 VM SCRAPING THREAD: Starting main scraping driver thread (IN VM)")
             
-            # Clear download folder and start scraping
+            # Clear download folder
             self.clear_download_folder()
-            driver = self.setup_driver()
+            
+            # NEW: Setup VM scraping driver instead of local driver
+            print("🚀 VM SCRAPING THREAD: Setting up VM scraping driver...")
+            driver = self.setup_vm_scraping_driver()
             
             if driver is None:
-                print("❌ SCRAPING THREAD: Failed to setup main driver")
+                print("❌ VM SCRAPING THREAD: Failed to setup VM scraping driver")
                 return
-                
+            
+            # Store the VM scraping driver reference
+            self.vm_scraping_driver = driver
+            
             try:
-                print("🚀 SCRAPING THREAD: Starting Vinted search with refresh...")
+                print("🚀 VM SCRAPING THREAD: Starting Vinted search with refresh (IN VM)...")
                 self.search_vinted_with_refresh(driver, SEARCH_QUERY)
                 
             except Exception as scraping_error:
-                print(f"❌ SCRAPING THREAD ERROR: {scraping_error}")
+                print(f"❌ VM SCRAPING THREAD ERROR: {scraping_error}")
                 import traceback
                 traceback.print_exc()
                 
             finally:
-                print("🧹 SCRAPING THREAD: Cleaning up...")
+                print("🧹 VM SCRAPING THREAD: Cleaning up...")
                 try:
                     driver.quit()
-                    print("✅ SCRAPING THREAD: Main driver closed")
+                    print("✅ VM SCRAPING THREAD: VM scraping driver closed")
                 except:
-                    print("⚠️ SCRAPING THREAD: Error closing main driver")
+                    print("⚠️ VM SCRAPING THREAD: Error closing VM scraping driver")
                 
-                # Clean up VM driver too
+                # Clean up VM bookmark driver too
                 try:
                     if self.current_vm_driver:
                         self.current_vm_driver.quit()
-                        print("✅ SCRAPING THREAD: VM driver closed")
+                        print("✅ VM SCRAPING THREAD: VM bookmark driver closed")
                 except:
-                    print("⚠️ SCRAPING THREAD: Error closing VM driver")
+                    print("⚠️ VM SCRAPING THREAD: Error closing VM bookmark driver")
                     
                 pygame.quit()
                 time.sleep(2)
-                print("🏁 SCRAPING THREAD: Main scraping thread completed")
+                print("🏁 VM SCRAPING THREAD: Main scraping thread completed")
         
         # Create and start the main scraping thread
-        print("🧵 MAIN: Creating main scraping driver thread...")
-        scraping_thread = Thread(target=main_scraping_driver, name="Main-Scraping-Thread")
+        print("🧵 MAIN: Creating main VM scraping driver thread...")
+        scraping_thread = Thread(target=main_scraping_driver, name="VM-Scraping-Thread")
         scraping_thread.daemon = False
         scraping_thread.start()
 
@@ -507,23 +639,23 @@
         pygame_thread = threading.Thread(target=self.run_pygame_window)
         pygame_thread.start()
         
-        print("🧵 MAIN: Main scraping driver thread started")
-        print("🧵 MAIN: Main thread will now wait for scraping thread to complete...")
+        print("🧵 MAIN: VM scraping driver thread started")
+        print("🧵 MAIN: Main thread will now wait for VM scraping thread to complete...")
         
         try:
             # Wait for the scraping thread to complete
             scraping_thread.join()
-            print("✅ MAIN: Scraping thread completed successfully")
+            print("✅ MAIN: VM scraping thread completed successfully")
             
         except KeyboardInterrupt:
             print("\n🛑 MAIN: Keyboard interrupt received")
-            print("⏳ MAIN: Waiting for scraping thread to finish...")
+            print("⏳ MAIN: Waiting for VM scraping thread to finish...")
             scraping_thread.join(timeout=30)
             
             if scraping_thread.is_alive():
-                print("⚠️ MAIN: Scraping thread still alive after timeout")
+                print("⚠️ MAIN: VM scraping thread still alive after timeout")
             else:
-                print("✅ MAIN: Scraping thread finished cleanly")
+                print("✅ MAIN: VM scraping thread finished cleanly")
         
         except Exception as main_error:
             print(f"❌ MAIN THREAD ERROR: {main_error}")

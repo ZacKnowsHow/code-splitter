@@ -138,8 +138,7 @@
             return False
 
     def __init__(self):
-        """Modified init - removed all booking/buying driver related initialization"""
-        # Initialize pygame-related variables similar to FacebookScraper
+        """Modified init - Initialize for VM-based scraping"""
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images
         global current_bounding_boxes, current_listing_url, current_suitability, suitable_listings
@@ -158,9 +157,13 @@
         self.vm_driver_ready = False
         self.vm_driver_lock = threading.Lock()
         
-        # Initialize the first VM driver during startup
-        print("🔄 STARTUP: Preparing initial VM driver...")
+        # NEW: Initialize VM scraping driver (separate from bookmark driver)
+        self.vm_scraping_driver = None
+        
+        # Initialize the first VM driver during startup FOR BOOKMARKING
+        print("🔄 STARTUP: Preparing initial VM bookmark driver...")
         self.prepare_next_vm_driver()
+        
         current_listing_title = "No title"
         current_listing_description = "No description"
         current_listing_join_date = "No join date"
@@ -1920,7 +1923,8 @@
     def search_vinted_with_refresh(self, driver, search_query):
         """
         Enhanced search_vinted method with refresh and rescan functionality
-        UPDATED: Now restarts the main driver every 250 cycles to prevent freezing
+        NOW RUNNING IN VM: This driver is a remote WebDriver connected to VM
+        UPDATED: Restarts the VM driver every 250 cycles to prevent freezing
         """
         global suitable_listings, current_listing_index
         
@@ -1960,7 +1964,7 @@
             model = YOLO(MODEL_WEIGHTS).cpu()
             print("⚠️ YOLO model loaded on CPU (no CUDA available)")
 
-        # Store original driver reference
+        # Store original driver reference (now a VM driver)
         current_driver = driver
         
         # Load previously scanned listing IDs
@@ -1972,42 +1976,45 @@
         refresh_cycle = 1
         is_first_refresh = True
         
-        # NEW: Driver restart tracking
+        # Driver restart tracking (for VM driver)
         DRIVER_RESTART_INTERVAL = 100
         cycles_since_restart = 0
 
-        # Main scanning loop with refresh functionality AND driver restart
+        # Main scanning loop with refresh functionality AND VM driver restart
         while True:
             current_time = time.time()
             runtime_seconds = current_time - self.program_start_time
             runtime_formatted = self.format_runtime(runtime_seconds)
             
             print(f"\n{'='*60}")
-            print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
-            print(f"🔄 Cycles since last driver restart: {cycles_since_restart}")
+            print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle} (IN VM)")
+            print(f"🔄 Cycles since last VM driver restart: {cycles_since_restart}")
             print(f"⏰ Time since start: {runtime_formatted}")
             print(f"{'='*60}")
             
-            # NEW: Check if we need to restart the driver
+            # Check if we need to restart the VM driver
             if cycles_since_restart >= DRIVER_RESTART_INTERVAL:
-                print(f"\n🔄 DRIVER RESTART: Reached {DRIVER_RESTART_INTERVAL} cycles")
-                print("🔄 RESTARTING: Main scraping driver to prevent freezing...")
+                print(f"\n🔄 VM DRIVER RESTART: Reached {DRIVER_RESTART_INTERVAL} cycles")
+                print("🔄 RESTARTING: VM scraping driver to prevent freezing...")
                 
                 try:
-                    # Close current driver safely
-                    print("🔄 CLOSING: Current driver...")
+                    # Close current VM driver safely
+                    print("🔄 CLOSING: Current VM driver...")
                     current_driver.quit()
                     time.sleep(2)  # Give time for cleanup
                     
-                    # Create new driver
-                    print("🔄 CREATING: New driver...")
-                    current_driver = self.setup_driver()
+                    # Create new VM driver
+                    print("🔄 CREATING: New VM driver...")
+                    current_driver = self.setup_vm_scraping_driver()
                     
                     if current_driver is None:
-                        print("❌ CRITICAL: Failed to create new driver after restart")
+                        print("❌ CRITICAL: Failed to create new VM driver after restart")
                         break
                     
-                    print("✅ DRIVER RESTART: Successfully restarted main driver")
+                    # Update the stored reference
+                    self.vm_scraping_driver = current_driver
+                    
+                    print("✅ VM DRIVER RESTART: Successfully restarted VM scraping driver")
                     cycles_since_restart = 0  # Reset counter
                     
                     # Re-navigate to search page after restart
@@ -2025,13 +2032,13 @@
                         WebDriverWait(current_driver, 20).until(
                             EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                         )
-                        print("✅ RESTART: Page loaded successfully after driver restart")
+                        print("✅ RESTART: Page loaded successfully after VM driver restart")
                     except TimeoutException:
-                        print("⚠️ RESTART: Timeout waiting for page after driver restart")
+                        print("⚠️ RESTART: Timeout waiting for page after VM driver restart")
                     
                 except Exception as restart_error:
-                    print(f"❌ RESTART ERROR: Failed to restart driver: {restart_error}")
-                    print("💥 CRITICAL: Cannot continue without working driver")
+                    print(f"❌ RESTART ERROR: Failed to restart VM driver: {restart_error}")
+                    print("💥 CRITICAL: Cannot continue without working VM driver")
                     break
             
             cycle_listing_counter = 0  # Listings processed in this cycle
@@ -2057,7 +2064,7 @@
                     print(f"📄 No listings found on page {page} - moving to next cycle")
                     break
 
-                print(f"📄 Processing page {page} with {len(urls)} listings")
+                print(f"📄 Processing page {page} with {len(urls)} listings (IN VM)")
 
                 for idx, url in enumerate(urls, start=1):
                     cycle_listing_counter += 1
@@ -2082,8 +2089,7 @@
 
                     overall_listing_counter += 1
 
-
-                    # Process the listing (using current_driver instead of driver)
+                    # Process the listing (using VM driver)
                     current_driver.execute_script("window.open();")
                     current_driver.switch_to.window(current_driver.window_handles[-1])
                     current_driver.get(url)
@@ -2104,7 +2110,7 @@
                         print(f"  Total price:  £{total_price:.2f}")
                         print(f"  Uploaded:     {details['uploaded']}")
 
-                        # Download images for the current listing
+                        # Download images for the current listing (using VM driver)
                         listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
                         image_paths = self.download_images_for_listing(current_driver, listing_dir)
 
@@ -2145,7 +2151,7 @@
 
                     finally:
                         current_driver.close()
-                        current_driver.switch_to.window(current_driver.window_handles[0])  # Use index 0 instead of main
+                        current_driver.switch_to.window(current_driver.window_handles[0])
 
                 # Check if we need to break out of page loop
                 if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
@@ -2177,7 +2183,7 @@
                 self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
 
             refresh_cycle += 1
-            cycles_since_restart += 1  # NEW: Increment counter after each cycle
+            cycles_since_restart += 1
             is_first_refresh = False
 
     def start_cloudflare_tunnel(self, port=5000):
@@ -2193,9 +2199,3 @@
         
         # Start the tunnel with the desired command-line arguments
         process = subprocess.Popen(
-            [cloudflared_path, "tunnel", "--url", f"http://localhost:{port}"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        

@@ -1199,15 +1199,15 @@ def base64_encode_image(img):
 # Vinted profit suitability ranges (same structure as Facebook but independent variables)
 def check_vinted_profit_suitability(listing_price, profit_percentage):
     if 10 <= listing_price < 16:
-        return 100 <= profit_percentage <= 600
+        return 149.9 <= profit_percentage <= 600
     elif 16 <= listing_price < 25:
-        return 50 <= profit_percentage <= 400
+        return 99.9 <= profit_percentage <= 400
     elif 25 <= listing_price < 50:
-        return 37.5 <= profit_percentage <= 550
+        return 59.9 <= profit_percentage <= 550
     elif 50 <= listing_price < 100:
-        return 35 <= profit_percentage <= 500
+        return 45 <= profit_percentage <= 500
     elif listing_price >= 100:
-        return 30 <= profit_percentage <= 450
+        return 40 <= profit_percentage <= 450
     else:
         return False
 
