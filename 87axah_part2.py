@@ -1,4 +1,6 @@
 # Continuation from line 2201
+        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+        status_data = status_response.json()
         
         if 'value' in status_data and 'nodes' in status_data['value']:
             for node in status_data['value']['nodes']:
@@ -2197,5 +2199,3 @@ class VintedScraper:
             
             # Handle captcha if present
             result = handle_datadome_audio_captcha(driver)
-
-            if result == "no_captcha":

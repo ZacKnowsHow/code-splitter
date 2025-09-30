@@ -65,7 +65,7 @@ from scipy import signal
 import wave
 import ctypes
 
-#uses custom url for buying in vm, for testing. works same as normal, just with custom url instead.
+
 
 CLICK_PAY_BUTTON = False
 
@@ -94,6 +94,8 @@ NINTENDO_SWITCH_CLASSES = [
 ]
 
 VINTED_SHOW_ALL_LISTINGS = False
+# Add this to the global declarations section (near the top where other globals are defined)
+current_bookmark_status = "Not attempted"
 print_debug = False
 print_images_backend_info = False
 test_bookmark_function = False
@@ -2196,5 +2198,3 @@ def setup_driver_universal(vm_ip_address, config):
     # Session cleanup (existing code)
     try:
         import requests
-        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
-        status_data = status_response.json()
