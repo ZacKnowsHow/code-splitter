@@ -1016,93 +1016,86 @@
 
     def scrape_item_details(self, driver):
         """
-        OPTIMIZED: Faster scraping with minimal waits
+        OPTIMIZED: Single-pass element extraction using JavaScript
+        Waits for page load, then extracts ALL fields in one round-trip
         """
-        # REMOVED: Unnecessary explicit wait - implicit wait already handles this
-        # WebDriverWait(driver, 10).until(
-        #     EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
-        # )
-
-        fields = {
-            "title": "h1.web_ui__Text__title",
-            "price": "p.web_ui__Text__subtitle",
-            "second_price": "div.web_ui__Text__title.web_ui__Text__clickable.web_ui__Text__underline-none",
-            "postage": "h3[data-testid='item-shipping-banner-price']",
-            "description": "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span",
-            "uploaded": "span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold",
-            "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",
-            "username": "span[data-testid='profile-username']",
-        }
-
-        data = {}
+        # Wait for page to be ready (same as original implicit behavior)
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "h1.web_ui__Text__title"))
+            )
+        except TimeoutException:
+            print("Warning: Page load timeout in scrape_item_details")
         
-        # OPTIMIZED: Batch find all elements at once instead of one-by-one
-        for key, sel in fields.items():
-            try:
-                if key == "seller_reviews":
-                    review_selectors = [
-                        "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",
-                        "span[class*='caption'][class*='left']",
-                    ]
-                    
-                    reviews_text = None
-                    for review_sel in review_selectors:
-                        try:
-                            elements = driver.find_elements(By.CSS_SELECTOR, review_sel)
-                            for element in elements:
-                                text = element.text.strip()
-                                if text and (text.isdigit() or "review" in text.lower() or re.search(r'\d+', text)):
-                                    reviews_text = text
-                                    break
-                            if reviews_text:
-                                break
-                        except:
-                            continue
-                    
-                    if reviews_text:
-                        if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
-                            data[key] = "No reviews yet"
-                        elif reviews_text.isdigit():
-                            data[key] = reviews_text
-                        else:
-                            match = re.search(r'(\d+)', reviews_text)
-                            if match:
-                                data[key] = match.group(1)
-                            else:
-                                data[key] = "No reviews yet"
-                    else:
-                        data[key] = "No reviews yet"
-                            
-                elif key == "username":
-                    try:
-                        username_element = driver.find_element(By.CSS_SELECTOR, sel)
-                        username_text = username_element.text.strip()
-                        data[key] = username_text if username_text else "Username not found"
-                    except NoSuchElementException:
-                        data[key] = "Username not found"
-                else:
-                    data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
-                        
-            except NoSuchElementException:
-                if key == "seller_reviews":
-                    data[key] = "No reviews yet"
-                elif key == "username":
-                    data[key] = "Username not found"
-                else:
-                    data[key] = None
-
-        # Keep title formatting
-        if data["title"]:
-            data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
-
-        # Calculate and store total price
-        second_price = self.extract_price(data.get("second_price", "0"))
-        postage = self.extract_price(data.get("postage", "0"))
-        total_price = second_price + postage
+        # Single JavaScript execution that extracts ALL fields at once
+        extract_script = """
+        return {
+            title: document.querySelector('h1.web_ui__Text__title')?.textContent || null,
+            price: document.querySelector('p.web_ui__Text__subtitle')?.textContent || null,
+            second_price: document.querySelector('div.web_ui__Text__title.web_ui__Text__clickable.web_ui__Text__underline-none')?.textContent || null,
+            postage: document.querySelector('h3[data-testid="item-shipping-banner-price"]')?.textContent || null,
+            description: Array.from(document.querySelectorAll('span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span')).map(el => el.textContent).join(' ') || null,
+            uploaded: document.querySelector('span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold')?.textContent || null,
+            username: document.querySelector('span[data-testid="profile-username"]')?.textContent || null,
+            seller_reviews: (() => {
+                const selectors = [
+                    'span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left',
+                    'span[class*="caption"][class*="left"]'
+                ];
+                for (let sel of selectors) {
+                    const elements = document.querySelectorAll(sel);
+                    for (let el of elements) {
+                        const text = el.textContent.trim();
+                        if (text && (text.match(/\\d+/) || text.toLowerCase().includes('review') || text.toLowerCase().includes('no review'))) {
+                            return text;
+                        }
+                    }
+                }
+                return "No reviews yet";
+            })()
+        };
+        """
         
-        self.current_listing_price_float = total_price
-                
-        return data
+        try:
+            # SINGLE round-trip to VM driver - extracts all data at once
+            data = driver.execute_script(extract_script)
+            
+            # Process seller reviews (exact same logic as original)
+            reviews_text = data.get("seller_reviews", "No reviews yet")
+            if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
+                data["seller_reviews"] = "No reviews yet"
+            elif reviews_text.isdigit():
+                data["seller_reviews"] = reviews_text
+            else:
+                import re
+                match = re.search(r'(\d+)', reviews_text)
+                data["seller_reviews"] = match.group(1) if match else "No reviews yet"
+            
+            # Process title (exact same logic as original)
+            if data["title"]:
+                data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
+            
+            # Calculate and store total price (exact same logic as original)
+            second_price = self.extract_price(data.get("second_price", "0"))
+            postage = self.extract_price(data.get("postage", "0"))
+            total_price = second_price + postage
+            self.current_listing_price_float = total_price
+            
+            return data
+            
+        except Exception as e:
+            print(f"Error in optimized scrape_item_details: {e}")
+            # Return same structure as original with None values
+            return {
+                "title": "Error extracting title",
+                "price": None,
+                "second_price": None,
+                "postage": None,
+                "description": None,
+                "uploaded": None,
+                "seller_reviews": "No reviews yet",
+                "username": "Username not found"
+            }
 
     def clear_download_folder(self):
         if os.path.exists(DOWNLOAD_ROOT):
@@ -2199,3 +2192,10 @@
             print(f"  • OS: {os.name}")
             print(f"  • Chrome processes: {self.check_chrome_processes()}")
             
+            return None
+
+    def test_url_collection_mode(self, driver, search_query):
+        """
+        Simple testing mode that only collects URLs and saves listing IDs
+        No bookmarking, no purchasing, no image downloading - just URL collection
+        """

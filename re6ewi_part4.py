@@ -1,11 +1,4 @@
 # Continuation from line 6601
-            return None
-
-    def test_url_collection_mode(self, driver, search_query):
-        """
-        Simple testing mode that only collects URLs and saves listing IDs
-        No bookmarking, no purchasing, no image downloading - just URL collection
-        """
         print("🧪 TEST_NUMBER_OF_LISTINGS MODE: Starting URL collection only")
         
         # Setup search URL with parameters
