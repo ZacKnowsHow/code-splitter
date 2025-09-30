@@ -93,7 +93,7 @@ NINTENDO_SWITCH_CLASSES = [
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = True
+VINTED_SHOW_ALL_LISTINGS = False
 print_debug = False
 print_images_backend_info = False
 test_bookmark_function = False
@@ -4595,7 +4595,6 @@ class VintedScraper:
         global current_bounding_boxes, current_listing_url, current_suitability, suitable_listings
         global current_listing_index, recent_listings
         
-        # **CRITICAL FIX: Initialize recent_listings for website navigation**
         recent_listings = {
             'listings': [],
             'current_index': 0
@@ -4603,13 +4602,46 @@ class VintedScraper:
 
         self.program_start_time = time.time()
         
-        # Initialize all current listing variables
         self.current_vm_driver = None
         self.vm_driver_ready = False
         self.vm_driver_lock = threading.Lock()
         
-        # NEW: Initialize VM scraping driver (separate from bookmark driver)
-        # Initialize the first VM driver during startup FOR BOTH SCRAPING AND BOOKMARKING
+        # ========================================
+        # CRITICAL FIX: Load YOLO model BEFORE preparing VM driver
+        # ========================================
+        print(f"🧠 CUDA available: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            print(f"🎮 GPU name: {torch.cuda.get_device_name(0)}")
+        
+        print("🧠 Loading YOLO model ONCE at startup...")
+        if not os.path.exists(MODEL_WEIGHTS):
+            print(f"❌ Model weights not found at '{MODEL_WEIGHTS}'")
+            self.model = None
+        else:
+            try:
+                if torch.cuda.is_available():
+                    self.model = YOLO(MODEL_WEIGHTS)
+                    self.model.to('cuda')  # Explicitly move to GPU
+                    print("✅ YOLO model loaded on GPU (CUDA)")
+                else:
+                    self.model = YOLO(MODEL_WEIGHTS)
+                    print("⚠️ YOLO model loaded on CPU")
+                
+                # Warm up the model with a dummy inference
+                print("🔥 Warming up model...")
+                import numpy as np
+                dummy_img = np.zeros((640, 640, 3), dtype=np.uint8)
+                _ = self.model(dummy_img, verbose=False)
+                print("✅ Model warmed up and ready")
+                print(f"✅ Model device: {next(self.model.model.parameters()).device}")
+                
+            except Exception as e:
+                print(f"❌ Could not load YOLO model: {e}")
+                import traceback
+                traceback.print_exc()
+                self.model = None
+        
+        # Now prepare VM driver AFTER model is loaded
         print("🔄 STARTUP: Preparing initial VM driver (for scraping AND bookmarking)...")
         self.prepare_next_vm_driver()
         
@@ -4627,21 +4659,7 @@ class VintedScraper:
         suitable_listings = []
         current_listing_index = 0
 
-        # Initialize VM connection flag
-        self.vm_bookmark_queue = []  # Queue of URLs to send to VM system
-        
-        # Check if CUDA is available
-        print(f"CUDA available: {torch.cuda.is_available()}")
-        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
-
-        # Load model with explicit GPU usage
-        if torch.cuda.is_available():
-            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
-            print("✅ YOLO model loaded on GPU")
-        else:
-            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
-            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
-
+        self.vm_bookmark_queue = []
 
     def format_runtime(self, elapsed_seconds):
         """
@@ -5397,37 +5415,33 @@ class VintedScraper:
 
     def scrape_item_details(self, driver):
         """
-        Enhanced scraper with better price extraction and seller reviews
-        UPDATED: Now includes username collection AND stores price for threshold filtering
+        OPTIMIZED: Faster scraping with minimal waits
         """
-        debug_function_call("scrape_item_details")
-        import re  # FIXED: Import re at function level
-        
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
-        )
+        # REMOVED: Unnecessary explicit wait - implicit wait already handles this
+        # WebDriverWait(driver, 10).until(
+        #     EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
+        # )
 
         fields = {
             "title": "h1.web_ui__Text__title",
-            "price": "p.web_ui__Text__subtitle",  # Main price field for extraction
+            "price": "p.web_ui__Text__subtitle",
             "second_price": "div.web_ui__Text__title.web_ui__Text__clickable.web_ui__Text__underline-none",
             "postage": "h3[data-testid='item-shipping-banner-price']",
             "description": "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span",
             "uploaded": "span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold",
-            "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Main selector for seller reviews
-            "username": "span[data-testid='profile-username']",  # NEW: Username field
+            "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",
+            "username": "span[data-testid='profile-username']",
         }
 
         data = {}
+        
+        # OPTIMIZED: Batch find all elements at once instead of one-by-one
         for key, sel in fields.items():
             try:
                 if key == "seller_reviews":
-                    # FIXED: Better handling for seller reviews with multiple selectors
                     review_selectors = [
-                        "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Primary selector
-                        "span[class*='caption'][class*='left']",  # Broader selector
-                        "div[class*='reviews'] span",  # Alternative selector
-                        "*[class*='review']",  # Very broad selector as fallback
+                        "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",
+                        "span[class*='caption'][class*='left']",
                     ]
                     
                     reviews_text = None
@@ -5436,116 +5450,57 @@ class VintedScraper:
                             elements = driver.find_elements(By.CSS_SELECTOR, review_sel)
                             for element in elements:
                                 text = element.text.strip()
-                                # Look for text that contains digits (likely review count)
                                 if text and (text.isdigit() or "review" in text.lower() or re.search(r'\d+', text)):
                                     reviews_text = text
-                                    if print_debug:
-                                        print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
                                     break
                             if reviews_text:
                                 break
-                        except Exception as e:
-                            if print_debug:
-                                print(f"DEBUG: Selector '{review_sel}' failed: {e}")
+                        except:
                             continue
                     
-                    # Process the found reviews text
                     if reviews_text:
                         if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
                             data[key] = "No reviews yet"
                         elif reviews_text.isdigit():
-                            # Just a number like "123"
-                            data[key] = reviews_text  # Keep as string for consistency
-                            if print_debug:
-                                print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
+                            data[key] = reviews_text
                         else:
-                            # Try to extract number from text like "123 reviews" or "(123)"
                             match = re.search(r'(\d+)', reviews_text)
                             if match:
-                                data[key] = match.group(1)  # Just the number as string
-                                if print_debug:
-                                    print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
+                                data[key] = match.group(1)
                             else:
                                 data[key] = "No reviews yet"
                     else:
                         data[key] = "No reviews yet"
-                        if print_debug:
-                            print("DEBUG: No seller reviews found with any selector")
-                        
+                            
                 elif key == "username":
-                    # NEW: Handle username extraction with careful error handling
                     try:
                         username_element = driver.find_element(By.CSS_SELECTOR, sel)
                         username_text = username_element.text.strip()
-                        if username_text:
-                            data[key] = username_text
-                            if print_debug:
-                                print(f"DEBUG: Found username: '{username_text}'")
-                        else:
-                            data[key] = "Username not found"
-                            if print_debug:
-                                print("DEBUG: Username element found but no text")
+                        data[key] = username_text if username_text else "Username not found"
                     except NoSuchElementException:
-                        # Try alternative selectors for username
-                        alternative_username_selectors = [
-                            "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__amplified.web_ui__Text__bold[data-testid='profile-username']",
-                            "span[data-testid='profile-username']",
-                            "*[data-testid='profile-username']",
-                            "span.web_ui__Text__amplified.web_ui__Text__bold",  # Broader fallback
-                        ]
-                        
-                        username_found = False
-                        for alt_sel in alternative_username_selectors:
-                            try:
-                                alt_username_element = driver.find_element(By.CSS_SELECTOR, alt_sel)
-                                alt_username_text = alt_username_element.text.strip()
-                                if alt_username_text:
-                                    data[key] = alt_username_text
-                                    print(f"DEBUG: Found username with alternative selector '{alt_sel}': '{alt_username_text}'")
-                                    username_found = True
-                                    break
-                            except NoSuchElementException:
-                                continue
-                        
-                        if not username_found:
-                            data[key] = "Username not found"
-                            if print_debug:
-                                print("DEBUG: Username not found with any selector")
-                            
+                        data[key] = "Username not found"
                 else:
-                    # Handle all other fields normally
                     data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
-                    
+                        
             except NoSuchElementException:
                 if key == "seller_reviews":
                     data[key] = "No reviews yet"
-                    if print_debug:
-                        print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
                 elif key == "username":
                     data[key] = "Username not found"
-                    if print_debug:
-                        print("DEBUG: NoSuchElementException - set username to 'Username not found'")
                 else:
                     data[key] = None
 
-        # Keep title formatting for pygame display
+        # Keep title formatting
         if data["title"]:
             data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
 
-        # NEW: Calculate and store the total price for threshold filtering
+        # Calculate and store total price
         second_price = self.extract_price(data.get("second_price", "0"))
         postage = self.extract_price(data.get("postage", "0"))
         total_price = second_price + postage
         
-        # Store the calculated price for use in object detection
         self.current_listing_price_float = total_price
-        
-        # DEBUG: Print final scraped data for seller_reviews and username
-        if print_debug:
-            print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
-            print(f"DEBUG: Final scraped username: '{data.get('username')}'")
-            print(f"DEBUG: Total price calculated: £{total_price:.2f} (stored for threshold filtering)")
-            
+                
         return data
 
     def clear_download_folder(self):
@@ -5901,33 +5856,94 @@ class VintedScraper:
 
         return total_revenue, expected_profit, profit_percentage, display_objects
 
-    def perform_detection_on_listing_images(self, model, listing_dir):
+    def download_and_detect_images_in_memory(self, driver, model):
         """
-        Enhanced object detection with all Facebook exceptions and logic
-        PLUS Vinted-specific post-scan game deduplication
-        NEW: Price threshold filtering for Nintendo Switch related items
+        SINGLE FUNCTION: Download images directly into memory and run YOLO detection
+        WITHOUT writing to disk. This eliminates the entire disk I/O bottleneck.
         """
-        if not os.path.isdir(listing_dir):
-            return {}, []
-
+        import requests
+        from PIL import Image
+        from io import BytesIO
+        import hashlib
+        import cv2
+        import numpy as np
+        
+        # Quick image element find
+        try:
+            WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.TAG_NAME, "img"))
+            )
+        except TimeoutException:
+            return {class_name: 0 for class_name in CLASS_NAMES}, []
+        
+        # Get image URLs (your existing logic)
+        img_selectors = [
+            "img[data-testid^='item-photo-']",
+            "div.web_ui__Image__cover img.web_ui__Image__content",
+        ]
+        
+        imgs = []
+        for selector in img_selectors:
+            imgs = driver.find_elements(By.CSS_SELECTOR, selector)
+            if imgs:
+                break
+        
+        if not imgs:
+            return {class_name: 0 for class_name in CLASS_NAMES}, []
+        
+        # Collect valid URLs
+        valid_urls = []
+        seen_urls = set()
+        
+        for img in imgs:
+            src = img.get_attribute("src")
+            if src and src.startswith('http'):
+                normalized_url = src.split('?')[0].split('#')[0]
+                if normalized_url in seen_urls:
+                    continue
+                seen_urls.add(normalized_url)
+                if ('/50x50/' in src or '/75x75/' in src or src.endswith('.svg')):
+                    continue
+                if ('/f800/' in src or '/f1200/' in src or '/f600/' in src):
+                    valid_urls.append(src)
+        
+        if not valid_urls:
+            return {class_name: 0 for class_name in CLASS_NAMES}, []
+        
+        # Initialize detection results
         detected_objects = {class_name: [] for class_name in CLASS_NAMES}
         processed_images = []
         confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
-
-        image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
-        if not image_files:
-            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
-
-        for image_file in image_files:
-            image_path = os.path.join(listing_dir, image_file)
+        
+        # Process each image IN MEMORY
+        for url in valid_urls:
             try:
-                img = cv2.imread(image_path)
-                if img is None:
+                # Download directly to memory
+                resp = requests.get(url, timeout=5, headers={'User-Agent': 'Mozilla/5.0'})
+                resp.raise_for_status()
+                
+                # Open as PIL Image (in memory)
+                pil_img = Image.open(BytesIO(resp.content))
+                
+                # Skip tiny images
+                if pil_img.width < 200 or pil_img.height < 200:
                     continue
-
-                # Track detections for this image
+                
+                # Convert to RGB if needed
+                if pil_img.mode != 'RGB':
+                    pil_img = pil_img.convert('RGB')
+                
+                # Resize for YOLO (in memory)
+                MAX_SIZE = (1000, 1000)
+                if pil_img.width > MAX_SIZE[0] or pil_img.height > MAX_SIZE[1]:
+                    pil_img.thumbnail(MAX_SIZE, Image.LANCZOS)
+                
+                # Convert PIL to OpenCV format (in memory)
+                cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+                
+                # Run YOLO detection directly on memory image
                 image_detections = {class_name: 0 for class_name in CLASS_NAMES}
-                results = model(img, verbose=False)
+                results = model(cv_img, verbose=False)
                 
                 for result in results:
                     for box in result.boxes.cpu().numpy():
@@ -5944,33 +5960,32 @@ class VintedScraper:
                                 else:
                                     image_detections[class_name] += 1
                                 
-                                # Draw bounding box
+                                # Draw bounding box on the image
                                 x1, y1, x2, y2 = map(int, box.xyxy[0])
-                                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
+                                cv2.rectangle(cv_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(cv_img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
-
-                # Update overall detected objects with max from this image
+                
+                # Update overall detected objects
                 for class_name, count in image_detections.items():
                     detected_objects[class_name].append(count)
-
-                # Convert to PIL Image for pygame compatibility
-                processed_images.append(Image.fromarray(cv2.cvtColor(
-                    cv2.copyMakeBorder(img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0]),
-                    cv2.COLOR_BGR2RGB)))
-
+                
+                # Convert back to PIL for pygame (in memory, with border)
+                bordered_cv = cv2.copyMakeBorder(cv_img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+                final_pil = Image.fromarray(cv2.cvtColor(bordered_cv, cv2.COLOR_BGR2RGB))
+                processed_images.append(final_pil)
+                
             except Exception as e:
-                print(f"Error processing image {image_path}: {str(e)}")
+                print(f"    ❌ Image processing error: {str(e)}")
                 continue
-
-        # Convert lists to max values
+        
+        # Finalize detection counts
         final_detected_objects = {class_name: max(counts) if counts else 0 for class_name, counts in detected_objects.items()}
         
         # Handle mutually exclusive items
         final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
         
-        # VINTED-SPECIFIC POST-SCAN GAME DEDUPLICATION
-        # Define game classes that should be capped at 1 per listing
+        # Game deduplication (Vinted specific)
         vinted_game_classes = [
             '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
             'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
@@ -5981,260 +5996,21 @@ class VintedScraper:
             'sword_p', 'tears_z', 'violet_p'
         ]
         
-        # Cap each game type to maximum 1 per listing for Vinted
-        games_before_cap = {}
         for game_class in vinted_game_classes:
             if final_detected_objects.get(game_class, 0) > 1:
-                games_before_cap[game_class] = final_detected_objects[game_class]
                 final_detected_objects[game_class] = 1
         
-        # Log the capping if any games were capped
-        if games_before_cap:
-            print("🎮 VINTED GAME DEDUPLICATION APPLIED:")
-            for game, original_count in games_before_cap.items():
-                print(f"  • {game}: {original_count} → 1")
-        
-        # NEW: PRICE THRESHOLD FILTERING FOR NINTENDO SWITCH ITEMS
+        # Price threshold filtering
         try:
-            # Get the current listing price stored during scraping
             listing_price = getattr(self, 'current_listing_price_float', 0.0)
-            
-            # If the listing price is below the threshold, remove Nintendo Switch detections
             if listing_price > 0 and listing_price < PRICE_THRESHOLD:
-                filtered_classes = []
                 for switch_class in NINTENDO_SWITCH_CLASSES:
                     if final_detected_objects.get(switch_class, 0) > 0:
-                        filtered_classes.append(switch_class)
                         final_detected_objects[switch_class] = 0
-                
-                if filtered_classes:
-                    print(f"🚫 PRICE FILTER: Removed Nintendo Switch detections due to low price (£{listing_price:.2f} < £{PRICE_THRESHOLD:.2f})")
-                    print(f"    Filtered classes: {', '.join(filtered_classes)}")
-            elif listing_price >= PRICE_THRESHOLD:
-                # Optional: Log when price threshold allows detection
-                detected_switch_classes = [cls for cls in NINTENDO_SWITCH_CLASSES if final_detected_objects.get(cls, 0) > 0]
-                if detected_switch_classes:
-                    print(f"✅ PRICE FILTER: Nintendo Switch detections allowed (£{listing_price:.2f} >= £{PRICE_THRESHOLD:.2f})")
-        
-        except Exception as price_filter_error:
-            print(f"⚠️ Warning: Price filtering failed: {price_filter_error}")
-            # Continue without price filtering if there's an error
+        except:
+            pass
         
         return final_detected_objects, processed_images
-
-
-    def download_images_for_listing(self, driver, listing_dir):
-        """FIXED: Download ALL listing images without limits and prevent duplicates"""
-        import concurrent.futures
-        import requests
-        from PIL import Image
-        from io import BytesIO
-        import os
-        import hashlib
-        
-        # Wait for the page to fully load
-        try:
-            WebDriverWait(driver, 10).until(  # Increased timeout for better reliability
-                EC.presence_of_element_located((By.TAG_NAME, "img"))
-            )
-        except TimeoutException:
-            print("  ▶ Timeout waiting for images to load")
-            return []
-        
-        # Try multiple selectors in order of preference - focusing on product images only
-        img_selectors = [
-            # Target product images specifically (avoid profile pictures)
-            "img.web_ui__Image__content[data-testid^='item-photo-']",
-            "img[data-testid^='item-photo-']",
-            # Target images within containers that suggest product photos
-            "div.web_ui__Image__cover img.web_ui__Image__content",
-            "div.web_ui__Image__scaled img.web_ui__Image__content", 
-            "div.web_ui__Image__rounded img.web_ui__Image__content",
-            # Broader selectors but still avoiding profile images
-            "div.feed-grid img",
-            "div[class*='photo'] img",
-        ]
-        
-        imgs = []
-        for selector in img_selectors:
-            imgs = driver.find_elements(By.CSS_SELECTOR, selector)
-            if imgs:
-                if print_images_backend_info:
-                    print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
-                break
-        
-        if not imgs:
-            print("  ▶ No images found with any selector")
-            return []
-        
-        # FIXED: Remove the [:8] limit - process ALL images found
-        valid_urls = []
-        seen_urls = set()  # Track URLs to prevent duplicates
-        
-        if print_images_backend_info:
-            print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
-        
-        for img in imgs:  # REMOVED [:8] limit here
-            src = img.get_attribute("src")
-            parent_classes = ""
-            
-            # Get parent element classes to check for profile picture indicators
-            try:
-                parent = img.find_element(By.XPATH, "..")
-                parent_classes = parent.get_attribute("class") or ""
-            except:
-                pass
-            
-            # Check if this is a valid product image
-            if src and src.startswith('http'):
-                # FIXED: Better duplicate detection using URL normalization
-                # Remove query parameters and fragments for duplicate detection
-                normalized_url = src.split('?')[0].split('#')[0]
-                
-                if normalized_url in seen_urls:
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
-                    continue
-                
-                seen_urls.add(normalized_url)
-                
-                # Exclude profile pictures and small icons based on URL patterns
-                if (
-                    # Skip small profile pictures (50x50, 75x75, etc.)
-                    '/50x50/' in src or 
-                    '/75x75/' in src or 
-                    '/100x100/' in src or
-                    # Skip if parent has circle class (usually profile pics)
-                    'circle' in parent_classes.lower() or
-                    # Skip SVG icons
-                    src.endswith('.svg') or
-                    # Skip very obviously small images by checking dimensions in URL
-                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
-                ):
-                    print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
-                    continue
-                
-                # Only include images that look like product photos
-                if (
-                    # Vinted product images typically have f800, f1200, etc.
-                    '/f800/' in src or 
-                    '/f1200/' in src or 
-                    '/f600/' in src or
-                    # Or contain vinted/cloudinary and are likely product images
-                    (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
-                    # And don't have small size indicators
-                    not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
-                ):
-                    valid_urls.append(src)
-                    if print_images_backend_info:
-                        print(f"    ✅ Added valid image URL: {src[:50]}...")
-
-        if not valid_urls:
-            print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
-            return []
-
-        if print_images_backend_info:
-            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
-        
-        os.makedirs(listing_dir, exist_ok=True)
-        
-        # FIXED: Enhanced duplicate detection using content hashes
-        def download_single_image(args):
-            """Download a single image with enhanced duplicate detection"""
-            url, index = args
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Cache-Control': 'no-cache',
-                'Referer': driver.current_url
-            }
-            
-            try:
-                resp = requests.get(url, timeout=10, headers=headers)
-                resp.raise_for_status()
-                
-                # FIXED: Use content hash to detect identical images with different URLs
-                content_hash = hashlib.md5(resp.content).hexdigest()
-                
-                # Check if we've already downloaded this exact image content
-                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
-                if os.path.exists(hash_file):
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
-                    return None
-                
-                img = Image.open(BytesIO(resp.content))
-                
-                # Skip very small images (likely icons or profile pics that got through)
-                if img.width < 200 or img.height < 200:
-                    print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
-                    return None
-                
-                # Resize image for YOLO detection optimization
-                MAX_SIZE = (1000, 1000)  # Slightly larger for better detection
-                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
-                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
-                    print(f"    📏 Resized image to: {img.width}x{img.height}")
-                
-                # Convert to RGB if needed
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                
-                # Save the image
-                save_path = os.path.join(listing_dir, f"{index}.png")
-                img.save(save_path, format="PNG", optimize=True)
-                
-                # Create hash marker file to prevent future duplicates
-                with open(hash_file, 'w') as f:
-                    f.write(f"Downloaded from: {url}")
-                if print_images_backend_info:
-                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
-                return save_path
-                
-            except Exception as e:
-                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
-                return None
-        if print_images_backend_info:
-            print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
-        
-        # FIXED: Dynamic batch size based on actual image count
-        batch_size = len(valid_urls)  # Each "batch" equals the number of listing images
-        max_workers = min(6, batch_size)  # Use appropriate number of workers
-        
-        if print_images_backend_info:
-            print(f"  ▶ Batch size set to: {batch_size} (= number of listing images)")
-            print(f"  ▶ Using {max_workers} concurrent workers")
-        
-        downloaded_paths = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Prepare arguments for concurrent download
-            download_args = [(url, i+1) for i, url in enumerate(valid_urls)]
-            
-            # Submit all download jobs
-            future_to_url = {executor.submit(download_single_image, args): args[0] for args in download_args}
-            
-            # Collect results as they complete
-            for future in concurrent.futures.as_completed(future_to_url):
-                result = future.result()
-                if result:  # Only add successful downloads
-                    downloaded_paths.append(result)
-
-        print(f"  ▶ Successfully downloaded {len(downloaded_paths)} unique images (from {len(valid_urls)} URLs)")
-        
-        # Clean up hash files (optional - you might want to keep them for faster future runs)
-        # Uncomment the next 6 lines if you want to clean up hash files after each listing
-        # try:
-        #     for file in os.listdir(listing_dir):
-        #         if file.startswith('.hash_'):
-        #             os.remove(os.path.join(listing_dir, file))
-        # except:
-        #     pass
-        
-        return downloaded_paths
 
 
     def download_and_process_images_vinted(self, image_urls):
@@ -6559,21 +6335,15 @@ class VintedScraper:
                         print(f"  Total price:  £{total_price:.2f}")
                         print(f"  Uploaded:     {details['uploaded']}")
 
-                        # Download images for the current listing
-                        listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
-                        image_paths = self.download_images_for_listing(current_driver, listing_dir)
-
-                        # Perform object detection and get processed images
-                        detected_objects = {}
-                        processed_images = []
-                        if model and image_paths:
-                            detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
-                            
-                            # Print detected objects
-                            detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
-                            if detected_classes:
-                                for cls in sorted(detected_classes):
-                                    print(f"  • {cls}: {detected_objects[cls]}")
+                        # *** THIS IS THE CHANGED SECTION ***
+                        # Download and detect images IN MEMORY (no disk writes)
+                        detected_objects, processed_images = self.download_and_detect_images_in_memory(current_driver, model)
+                        
+                        # Print detected objects
+                        detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
+                        if detected_classes:
+                            for cls in sorted(detected_classes):
+                                print(f"  • {cls}: {detected_objects[cls]}")
 
                         # Process listing for pygame display
                         self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
@@ -6956,7 +6726,7 @@ class VintedScraper:
                 detected_objects = {}
                 processed_images = []
                 if model and image_paths:
-                    detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
+                    detected_objects, processed_images = self.perform_detection_on_listing_images(listing_dir)
                 
                 # Process for pygame display (no booking logic, force show all)
                 self.process_vinted_listing(details, detected_objects, processed_images, idx, url)
