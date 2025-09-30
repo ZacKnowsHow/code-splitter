@@ -36,6 +36,8 @@
     chrome_options.add_argument('--disable-gpu')
     chrome_options.add_argument('--disable-web-security')
     chrome_options.add_argument('--allow-running-insecure-content')
+    chrome_options.add_argument("--window-size=1920,1080")
+
 
     
     print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
@@ -2187,15 +2189,13 @@ class VintedScraper:
                 
             else:
                 print("🔄 VM LOGIN: Using email login...")
-                # ... email login logic stays the same ...
             
             # Wait a bit for login process
             time.sleep(random.uniform(3, 5))
+            
+            driver.set_window_size(900, 600)
             
             # Handle captcha if present
             result = handle_datadome_audio_captcha(driver)
 
             if result == "no_captcha":
-                print("✅ VM LOGIN: No captcha present - login successful!")
-                return True
-            elif result == True:

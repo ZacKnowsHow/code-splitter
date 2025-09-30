@@ -1,4 +1,144 @@
 # Continuation from line 6601
+
+                    finally:
+                        # CRITICAL FIX: Safely close tab with validation
+                        try:
+                            # Re-get current driver reference
+                            current_driver = self.current_vm_driver
+                            
+                            if current_driver and self.vm_driver_ready:
+                                # Check if we have multiple windows before closing
+                                if len(current_driver.window_handles) > 1:
+                                    current_driver.close()
+                                    current_driver.switch_to.window(current_driver.window_handles[0])
+                                else:
+                                    print("⚠️ Only one window open, not closing")
+                            else:
+                                print("⚠️ Driver no longer valid, skipping tab close")
+                        except Exception as close_error:
+                            print(f"⚠️ Error closing tab: {close_error}")
+                            # Try to recover by switching to first window
+                            try:
+                                if current_driver and len(current_driver.window_handles) > 0:
+                                    current_driver.switch_to.window(current_driver.window_handles[0])
+                            except:
+                                print("⚠️ Could not recover window state")
+
+                # Check if we need to break out of page loop
+                if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
+                    break
+
+                # Try to go to next page
+                try:
+                    # CRITICAL FIX: Verify driver before pagination
+                    current_driver = self.current_vm_driver
+                    
+                    if not current_driver or not self.vm_driver_ready:
+                        print("⚠️ Driver invalid, cannot paginate")
+                        break
+                    
+                    nxt = current_driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
+                    current_driver.execute_script("arguments[0].click();", nxt)
+                    page += 1
+                    time.sleep(2)
+                except NoSuchElementException:
+                    print("📄 No more pages available - moving to next cycle")
+                    break
+                except Exception as pagination_error:
+                    print(f"❌ Pagination error: {pagination_error}")
+                    break
+
+            # End of page loop - decide whether to continue or refresh
+            if not REFRESH_AND_RESCAN:
+                print("🏁 REFRESH_AND_RESCAN disabled - ending scan")
+                break
+            
+            # CRITICAL FIX: Get fresh driver reference for refresh
+            current_driver = self.current_vm_driver
+            
+            if not current_driver or not self.vm_driver_ready:
+                print("❌ No valid driver for refresh, exiting...")
+                break
+            
+            if found_already_scanned:
+                print(f"🔁 Found already scanned listing - refreshing immediately")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+            elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+            else:
+                print("📄 No more pages and no max reached - refreshing for new listings")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+
+            refresh_cycle += 1
+            cycles_since_restart += 1
+            is_first_refresh = False
+
+    def start_cloudflare_tunnel(self, port=5000):
+        """
+        Starts a Cloudflare Tunnel using the cloudflared binary.
+        Adjust the cloudflared_path if your executable is in a different location.
+        """
+        # Path to the cloudflared executable
+        #pc
+        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #laptop
+        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
+        
+        # Start the tunnel with the desired command-line arguments
+        process = subprocess.Popen(
+            [cloudflared_path, "tunnel", "--url", f"http://localhost:{port}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Function to read and print cloudflared output asynchronously
+        def read_output(proc):
+            for line in proc.stdout:
+                print("[cloudflared]", line.strip())
+        
+        # Start a thread to print cloudflared output so you can see the public URL and any errors
+        threading.Thread(target=read_output, args=(process,), daemon=True).start()
+        
+        # Wait a few seconds for the tunnel to establish (adjust if needed).
+        time.sleep(5)
+        return process
+
+    def run_flask_app(self):
+        try:
+            print("Starting Flask app for https://fk43b0p45crc03r.xyz/")
+            
+            # Run Flask locally - your domain should be configured to tunnel to this
+            app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+            
+        except Exception as e:
+            print(f"Error starting Flask app: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def is_monitoring_active(self):
+        """Check if any monitoring threads are still active"""
+        # Check if current bookmark driver exists (indicates monitoring might be active)
+        if hasattr(self, 'current_bookmark_driver') and self.current_bookmark_driver is not None:
+            try:
+                # Try to access the driver - if it fails, monitoring is done
+                self.current_bookmark_driver.current_url
+                return True
+            except:
+                return False
+        return False
+
+
+    def check_chrome_processes(self):
+        """
+        Debug function to check for running Chrome processes
+        """
+        import psutil
+        chrome_processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                if 'chrome' in proc.info['name'].lower():
                     chrome_processes.append({
                         'pid': proc.info['pid'],
                         'name': proc.info['name'],
