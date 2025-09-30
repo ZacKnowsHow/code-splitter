@@ -1,13 +1,56 @@
 # Continuation from line 2201
+        
+        if 'value' in status_data and 'nodes' in status_data['value']:
+            for node in status_data['value']['nodes']:
+                if 'slots' in node:
+                    for slot in node['slots']:
+                        if slot.get('session'):
+                            session_id = slot['session']['sessionId']
+                            print(f"Found existing session: {session_id}")
+                            delete_response = requests.delete(
+                                f"http://{vm_ip_address}:4444/session/{session_id}",
+                                timeout=10
+                            )
+                            print(f"Cleaned up session: {session_id}")
+    
+    except Exception as e:
+        print(f"Session cleanup failed: {e}")
+    
+    # Chrome options for the VM instance
+    chrome_options = ChromeOptions()
+    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
+    chrome_options.add_argument(f"--profile-directory={config['profile']}")
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    
+    # VM-specific optimizations
+    chrome_options.add_argument('--force-device-scale-factor=1')
+    chrome_options.add_argument('--high-dpi-support=1')
+    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
+    chrome_options.add_argument('--remote-allow-origins=*')
+    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--disable-web-security')
+    chrome_options.add_argument('--allow-running-insecure-content')
+
+    
+    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
+    
     driver = None
     
     try:
-        print("Attempting to connect to LOCAL ChromeDriver...")
+        print("Attempting to connect to remote WebDriver...")
         
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        driver = webdriver.Remote(
+            command_executor=f'http://{vm_ip_address}:4444',
+            options=chrome_options
+        )
         
-        print(f"✓ Successfully created LOCAL WebDriver connection")
+        print(f"✓ Successfully created remote WebDriver connection")
         print(f"Session ID: {driver.session_id}")
         
         print("Applying stealth modifications...")
@@ -25,11 +68,11 @@
         driver.execute_script(stealth_script)
         print("✓ Stealth script applied successfully")
         
-        print(f"✓ Successfully connected to LOCAL Chrome with profile")
+        print(f"✓ Successfully connected to VM Chrome with clean profile")
         return driver
         
     except Exception as e:
-        print(f"✗ Failed to connect to LOCAL WebDriver")
+        print(f"✗ Failed to connect to VM WebDriver")
         print(f"Error: {str(e)}")
         
         if driver:
@@ -2156,46 +2199,3 @@ class VintedScraper:
                 print("✅ VM LOGIN: No captcha present - login successful!")
                 return True
             elif result == True:
-                print("🔄 VM LOGIN: Captcha detected - handling...")
-                if HAS_PYAUDIO:
-                    detector = AudioNumberDetector(driver=driver)
-                    detector.start_listening()
-                    # Wait for captcha completion
-                    print("⏳ VM LOGIN: Waiting for captcha completion...")
-                    return True
-                else:
-                    print("❌ VM LOGIN: Cannot handle captcha - no audio support")
-                    return False
-            else:
-                print("❌ VM LOGIN: Captcha handling failed")
-                return False
-                
-        except Exception as e:
-            print(f"❌ VM LOGIN: Error during login: {e}")
-            return False
-
-    def execute_bookmark_with_preloaded_driver(self, url):
-        """Execute bookmark using driver ALREADY ON THE LISTING PAGE"""
-        if not self.vm_driver_ready or not self.current_vm_driver:
-            print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
-            return False
-        
-        with self.vm_driver_lock:
-            print(f"🔖 BOOKMARK: Driver ALREADY on listing page: {url}")
-            print(f"🔖 BOOKMARK: Skipping navigation - proceeding directly to buy button")
-            
-            try:
-                # Create step log for tracking
-                step_log = {
-                    'start_time': time.time(),
-                    'driver_number': 1,
-                    'steps_completed': [],
-                    'failures': [],
-                    'success': False,
-                    'critical_sequence_completed': False,
-                    'actual_url': url
-                }
-                
-                # CRITICAL CHANGE: Skip navigation, go straight to first buy sequence
-                # Driver is already on the correct page from scraping
-                success = execute_vm_first_buy_sequence(self.current_vm_driver, step_log)
