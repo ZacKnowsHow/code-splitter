@@ -65,7 +65,7 @@ from scipy import signal
 import wave
 import ctypes
 
-#uses custom url for buying in vm, for testing. works same as normal, just with custom url instead.
+
 
 CLICK_PAY_BUTTON = False
 
@@ -94,6 +94,8 @@ NINTENDO_SWITCH_CLASSES = [
 ]
 
 VINTED_SHOW_ALL_LISTINGS = False
+# Add this to the global declarations section (near the top where other globals are defined)
+current_bookmark_status = "Not attempted"
 print_debug = False
 print_images_backend_info = False
 test_bookmark_function = False
@@ -4464,11 +4466,24 @@ class VintedScraper:
                 print(f"❌ Failures: {len(step_log['failures'])}")
                 print(f"🏆 Overall success: {'YES' if success else 'NO'}")
                 
+                # Store bookmark result for this URL
+                self.last_bookmark_result = {
+                    'url': url,
+                    'success': success,
+                    'timestamp': time.time()
+                }
+                
                 return success
                 
             except Exception as e:
                 print(f"❌ BOOKMARK: Error using pre-loaded driver: {e}")
                 self.vm_driver_ready = False
+                # Store failure result
+                self.last_bookmark_result = {
+                    'url': url,
+                    'success': False,
+                    'timestamp': time.time()
+                }
                 return False
 
     def prepare_next_vm_driver(self):
@@ -4606,6 +4621,10 @@ class VintedScraper:
         self.vm_driver_ready = False
         self.vm_driver_lock = threading.Lock()
         
+        # NEW: Track bookmark results for pygame display
+        self.last_bookmark_result = None
+        self.bookmark_results_by_url = {}  # Store all bookmark results keyed by URL
+        
         # ========================================
         # CRITICAL FIX: Load YOLO model BEFORE preparing VM driver
         # ========================================
@@ -4670,6 +4689,106 @@ class VintedScraper:
         seconds = int(elapsed_seconds % 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
+    def render_suitability_with_bookmark(self, screen, font, text, rect, suitability_color, bookmark_color):
+        """
+        Render suitability text with bookmark status in different color
+        Splits text at double newline to separate suitability from bookmark status
+        """
+        try:
+            # Split text into suitability and bookmark parts
+            parts = text.split('\n\n')
+            
+            if len(parts) == 1:
+                # No bookmark status, just render suitability
+                self.render_text_in_rect(screen, font, text, rect, suitability_color)
+                return
+            
+            suitability_text = parts[0]
+            bookmark_text = parts[1] if len(parts) > 1 else ""
+            
+            # Calculate space for each part
+            # Wrap suitability text
+            suitability_lines = []
+            words = suitability_text.split()
+            current_line = []
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                test_width, _ = font.size(test_line)
+                if test_width <= rect.width - 10:
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        suitability_lines.append(' '.join(current_line))
+                        current_line = [word]
+                    else:
+                        suitability_lines.append(word)
+            if current_line:
+                suitability_lines.append(' '.join(current_line))
+            
+            # Wrap bookmark text
+            bookmark_lines = []
+            words = bookmark_text.split()
+            current_line = []
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                test_width, _ = font.size(test_line)
+                if test_width <= rect.width - 10:
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        bookmark_lines.append(' '.join(current_line))
+                        current_line = [word]
+                    else:
+                        bookmark_lines.append(word)
+            if current_line:
+                bookmark_lines.append(' '.join(current_line))
+            
+            # Calculate total height needed
+            total_lines = len(suitability_lines) + len(bookmark_lines)
+            line_height = font.get_linesize()
+            total_height = total_lines * line_height + 10  # 10px gap between sections
+            
+            # Scale font if needed
+            if total_height > rect.height:
+                scale_factor = rect.height / total_height
+                new_font_size = max(1, int(font.get_height() * scale_factor))
+                try:
+                    font = pygame.font.Font(None, new_font_size)
+                    line_height = font.get_linesize()
+                except pygame.error:
+                    pass  # Keep original font if scaling fails
+            
+            # Render suitability lines
+            y = rect.top + 5
+            for line in suitability_lines:
+                try:
+                    text_surface = font.render(line, True, suitability_color)
+                    text_rect = text_surface.get_rect(centerx=rect.centerx, top=y)
+                    screen.blit(text_surface, text_rect)
+                    y += line_height
+                except pygame.error as e:
+                    print(f"Error rendering suitability line: {e}")
+                    continue
+            
+            # Add gap
+            y += 5
+            
+            # Render bookmark lines
+            for line in bookmark_lines:
+                try:
+                    text_surface = font.render(line, True, bookmark_color)
+                    text_rect = text_surface.get_rect(centerx=rect.centerx, top=y)
+                    screen.blit(text_surface, text_rect)
+                    y += line_height
+                except pygame.error as e:
+                    print(f"Error rendering bookmark line: {e}")
+                    continue
+                    
+        except Exception as e:
+            print(f"Error in render_suitability_with_bookmark: {e}")
+            # Fallback to simple rendering
+            self.render_text_in_rect(screen, font, text, rect, suitability_color)
+
 
     def run_pygame_window(self):
         global LOCK_POSITION, current_listing_index, suitable_listings
@@ -4692,7 +4811,8 @@ class VintedScraper:
             'click': pygame.font.Font(None, 28),
             'suitability': pygame.font.Font(None, 28),
             'reviews': pygame.font.Font(None, 28),
-            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
+            'exact_time': pygame.font.Font(None, 22),
+            'bookmark_status': pygame.font.Font(None, 24)  # NEW: Font for bookmark status
         }
         dragging = False
         resizing = False
@@ -4729,7 +4849,8 @@ class VintedScraper:
                                 bounding_boxes=current_listing['bounding_boxes'],
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
-                                seller_reviews=current_listing.get('seller_reviews')
+                                seller_reviews=current_listing.get('seller_reviews'),
+                                bookmark_status=current_listing.get('bookmark_status', 'Not attempted')  # NEW
                             )
                     elif event.key == pygame.K_LEFT:
                         if suitable_listings:
@@ -4752,7 +4873,8 @@ class VintedScraper:
                                 bounding_boxes=current_listing['bounding_boxes'],
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
-                                seller_reviews=current_listing.get('seller_reviews')
+                                seller_reviews=current_listing.get('seller_reviews'),
+                                bookmark_status=current_listing.get('bookmark_status', 'Not attempted')  # NEW
                             )
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left mouse button
@@ -4821,8 +4943,28 @@ class VintedScraper:
                 elif i == 3:  # Rectangle 4 (index 3) - Click to open
                     click_text = "CLICK TO OPEN LISTING IN CHROME"
                     self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
-                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
-                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason AND Bookmark Status
+                    # NEW: Combine suitability and bookmark status
+                    combined_text = current_suitability
+                    if 'current_bookmark_status' in globals() and current_bookmark_status:
+                        combined_text = f"{current_suitability}\n\n{current_bookmark_status}"
+                    
+                    # Determine color based on bookmark status
+                    if 'current_bookmark_status' in globals() and current_bookmark_status:
+                        if "successful" in current_bookmark_status.lower():
+                            bookmark_color = (0, 255, 0)  # Green for success
+                        elif "failed" in current_bookmark_status.lower():
+                            bookmark_color = (255, 0, 0)  # Red for failure
+                        else:
+                            bookmark_color = (128, 128, 128)  # Gray for not attempted
+                    else:
+                        bookmark_color = (128, 128, 128)  # Gray default
+                    
+                    # Use red for unsuitable, green for suitable, but show bookmark status in appropriate color
+                    base_color = (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0)
+                    
+                    # Render with multi-color support
+                    self.render_suitability_with_bookmark(screen, fonts['suitability'], combined_text, rect, base_color, bookmark_color)
                 elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
                     self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
 
@@ -5021,10 +5163,12 @@ class VintedScraper:
             print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
    
             raise
-    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
+
+    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None, bookmark_status=None):
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
         global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
+        global current_bookmark_status
 
         # CRITICAL FIX 1: Don't clear existing images when switching between listings
         # Only clear if we're setting NEW images (not switching to existing listing)
@@ -5084,7 +5228,8 @@ class VintedScraper:
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
-
+        current_bookmark_status = bookmark_status if bookmark_status else "Not attempted"  # NEW: Set bookmark status
+        
     # Supporting helper function for better timeout management
     def calculate_dynamic_timeout(base_timeout, elapsed_time, max_total_time):
         """
@@ -5507,6 +5652,7 @@ class VintedScraper:
         IMMEDIATELY process a suitable listing with pre-loaded VM driver
         The VM driver should already be logged in and waiting
         FIXED: Properly preserve timestamps and images for pygame display
+        ENHANCED: Track bookmark success/failure and store in listing info
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -5605,6 +5751,9 @@ class VintedScraper:
             is_suitable = True
             print(f"✅ SUITABLE: {suitability_reason}")
 
+        # Initialize bookmark status
+        bookmark_status = "Not attempted"
+        
         # ============= VM PROCESSING =============
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
             print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver")
@@ -5615,11 +5764,27 @@ class VintedScraper:
                 success = self.execute_bookmark_with_preloaded_driver(url)
                 if success:
                     print(f"✅ VM PROCESS COMPLETED: Listing has been bookmarked successfully")
+                    bookmark_status = "Bookmark successful"
                 else:
                     print(f"❌ VM PROCESS FAILED: Bookmark attempt was unsuccessful")
+                    bookmark_status = "Bookmark failed"
+                
+                # Store bookmark result for this URL
+                self.bookmark_results_by_url[url] = {
+                    'success': success,
+                    'status': bookmark_status,
+                    'timestamp': time.time()
+                }
+                
             except Exception as vm_error:
                 print(f"❌ VM PROCESS ERROR: {vm_error}")
                 print(f"⚠️  Continuing with scraping despite VM error...")
+                bookmark_status = "Bookmark failed"
+                self.bookmark_results_by_url[url] = {
+                    'success': False,
+                    'status': bookmark_status,
+                    'timestamp': time.time()
+                }
             
             # CRITICAL: After processing, prepare the NEXT driver
             try:
@@ -5632,6 +5797,12 @@ class VintedScraper:
             print(f"▶️  SCRAPING RESUMED: VM process complete, continuing with search...")
         else:
             print(f"❌ UNSUITABLE LISTING: Skipping VM process, continuing with scraping")
+            bookmark_status = "Not suitable - not attempted"
+            self.bookmark_results_by_url[url] = {
+                'success': False,
+                'status': bookmark_status,
+                'timestamp': time.time()
+            }
 
         # CRITICAL FIX: Generate exact UK time when creating listing info and store it permanently
         from datetime import datetime
@@ -5650,7 +5821,7 @@ class VintedScraper:
             except Exception as e:
                 print(f"Error copying image for storage: {e}")
 
-        # Create final listing info with exact append time and preserved images
+        # Create final listing info with exact append time, preserved images, AND bookmark status
         final_listing_info = {
             'title': details.get("title", "No title"),
             'description': details.get("description", "No description"),
@@ -5663,7 +5834,8 @@ class VintedScraper:
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
             'suitability': suitability_reason,
-            'seller_reviews': seller_reviews
+            'seller_reviews': seller_reviews,
+            'bookmark_status': bookmark_status  # NEW: Add bookmark status
         }
 
         # Determine whether to display on website/pygame
@@ -5678,6 +5850,7 @@ class VintedScraper:
                     f"Price: £{total_price:.2f}\n"
                     f"Expected Profit: £{expected_profit:.2f}\n"
                     f"Profit %: {profit_percentage:.2f}%\n"
+                    f"Bookmark: {bookmark_status}\n"
                 )
                 
                 self.send_pushover_notification(
@@ -5699,9 +5872,9 @@ class VintedScraper:
             self.update_listing_details(**final_listing_info)
 
             if is_suitable:
-                print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
+                print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%) - {bookmark_status}")
             else:
-                print(f"➕ Added unsuitable listing (SHOW_ALL mode): £{total_price:.2f}")
+                print(f"➕ Added unsuitable listing (SHOW_ALL mode): £{total_price:.2f} - {bookmark_status}")
 
         if not should_add_to_display:
             print(f"❌ Listing not added to display: {suitability_reason}")
@@ -6982,6 +7155,7 @@ class VintedScraper:
         global suitable_listings, current_listing_index, recent_listings, current_listing_title, current_listing_price
         global current_listing_description, current_listing_join_date, current_detected_items, current_profit
         global current_listing_images, current_listing_url, current_suitability, current_expected_revenue
+        global current_bookmark_status  # NEW
         
         # Check for test modes (keep existing test mode logic)
         if TEST_WHETHER_SUITABLE:
@@ -7022,9 +7196,10 @@ class VintedScraper:
         current_listing_url = ""
         current_suitability = "Suitability unknown"
         current_seller_reviews = "No reviews yet"
+        current_bookmark_status = "Not attempted"  # NEW
         
         # Initialize pygame display with default values
-        self.update_listing_details("", "", "", "0", 0, 0, {}, [], {})
+        self.update_listing_details("", "", "", "0", 0, 0, {}, [], {}, bookmark_status="Not attempted")
         
         # Start Flask app in separate thread
         flask_thread = threading.Thread(target=self.run_flask_app)
