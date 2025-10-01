@@ -93,7 +93,7 @@ NINTENDO_SWITCH_CLASSES = [
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = True
 # Add this to the global declarations section (near the top where other globals are defined)
 current_bookmark_status = "Not attempted"
 print_debug = False
