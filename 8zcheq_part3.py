@@ -185,27 +185,32 @@
             self.driver_manager.invalidate_driver()
             print(f"⚠️ NEXT DRIVER: Old driver invalidated in manager (Session: {old_session})")
             
-            # Now safely close the old driver
+            # CRITICAL FIX: Close the old driver IMMEDIATELY before any other operations
             if old_driver:
                 try:
+                    print(f"🔄 NEXT DRIVER: Closing old driver IMMEDIATELY (Session: {old_session})")
                     old_driver.quit()
-                    print(f"✅ NEXT DRIVER: Closed old driver (Session: {old_session})")
+                    print(f"✅ NEXT DRIVER: Old driver closed successfully (Session: {old_session})")
                 except Exception as close_error:
                     print(f"⚠️ NEXT DRIVER: Error closing old driver: {close_error}")
             
-            # Small delay to ensure clean session termination
-            time.sleep(1)
+            # CRITICAL: Wait for old driver to fully close before proceeding
+            print("⏳ NEXT DRIVER: Waiting 2 seconds for old driver to fully terminate...")
+            time.sleep(2)
             
-            # Clear browser data for new session
+            # Now clear browser data for NEW session (no old driver interfering)
+            print("🔄 NEXT DRIVER: Old driver confirmed closed, now clearing browser data for NEW session...")
             clear_browser_data_universal("192.168.56.101", {
                 "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
                 "profile": "Profile 4", 
                 "port": 9224
             })
             
+            # Small delay after clearing
             time.sleep(1)
             
             # Create new VM driver
+            print("🔄 NEXT DRIVER: Creating new VM driver...")
             new_driver = setup_driver_universal("192.168.56.101", {
                 "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
                 "profile": "Profile 4", 
@@ -234,6 +239,7 @@
                 return
             
             # Login the new driver
+            print("🔄 NEXT DRIVER: Logging in new driver...")
             success = self.login_vm_driver(new_driver)
             
             if success:
@@ -261,7 +267,7 @@
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images
         global current_bounding_boxes, current_listing_url, current_suitability, suitable_listings
-        global current_listing_index, recent_listings
+        global current_listing_index, recent_listings, current_seller_reviews, current_bookmark_status
         
         print("🔧 INIT: Starting VintedScraper initialization...")
         
@@ -367,6 +373,8 @@
         current_bounding_boxes = {}
         current_listing_url = ""
         current_suitability = "Suitability unknown"
+        current_seller_reviews = "No reviews yet"  # FIXED: Added this line
+        current_bookmark_status = "Not attempted"  # FIXED: Added this line
         suitable_listings = []
         current_listing_index = 0
         
@@ -484,6 +492,8 @@
 
     def run_pygame_window(self):
         global LOCK_POSITION, current_listing_index, suitable_listings
+        global current_seller_reviews, current_bookmark_status  # FIXED: Added this line
+        
         screen, clock = self.initialize_pygame_window()
         rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
             pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
@@ -504,7 +514,7 @@
             'suitability': pygame.font.Font(None, 28),
             'reviews': pygame.font.Font(None, 28),
             'exact_time': pygame.font.Font(None, 22),
-            'bookmark_status': pygame.font.Font(None, 24)  # NEW: Font for bookmark status
+            'bookmark_status': pygame.font.Font(None, 24)
         }
         dragging = False
         resizing = False
@@ -532,17 +542,17 @@
                             self.update_listing_details(
                                 title=current_listing['title'],
                                 description=current_listing['description'],
-                                join_date=current_listing['join_date'],  # FIXED: Use stored timestamp
+                                join_date=current_listing['join_date'],
                                 price=current_listing['price'],
                                 expected_revenue=current_listing['expected_revenue'],
                                 profit=current_listing['profit'],
                                 detected_items=current_listing['detected_items'],
-                                processed_images=stored_images,  # FIXED: Pass stored images
+                                processed_images=stored_images,
                                 bounding_boxes=current_listing['bounding_boxes'],
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
                                 seller_reviews=current_listing.get('seller_reviews'),
-                                bookmark_status=current_listing.get('bookmark_status', 'Not attempted')  # NEW
+                                bookmark_status=current_listing.get('bookmark_status', 'Not attempted')
                             )
                     elif event.key == pygame.K_LEFT:
                         if suitable_listings:
@@ -556,17 +566,17 @@
                             self.update_listing_details(
                                 title=current_listing['title'],
                                 description=current_listing['description'],
-                                join_date=current_listing['join_date'],  # FIXED: Use stored timestamp
+                                join_date=current_listing['join_date'],
                                 price=current_listing['price'],
                                 expected_revenue=current_listing['expected_revenue'],
                                 profit=current_listing['profit'],
                                 detected_items=current_listing['detected_items'],
-                                processed_images=stored_images,  # FIXED: Pass stored images
+                                processed_images=stored_images,
                                 bounding_boxes=current_listing['bounding_boxes'],
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
                                 seller_reviews=current_listing.get('seller_reviews'),
-                                bookmark_status=current_listing.get('bookmark_status', 'Not attempted')  # NEW
+                                bookmark_status=current_listing.get('bookmark_status', 'Not attempted')
                             )
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left mouse button
@@ -623,7 +633,7 @@
                     self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
                 elif i == 8:  # Rectangle 9 (index 8) - FIXED: Shows exact stored timestamp
                     time_label = "Appended:"
-                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
+                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))
                 elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
                     self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
                 elif i == 9:  # Rectangle 10 (index 9) - Profit
@@ -658,7 +668,7 @@
                     # Render with multi-color support
                     self.render_suitability_with_bookmark(screen, fonts['suitability'], combined_text, rect, base_color, bookmark_color)
                 elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
-                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
+                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))
 
             screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
 
@@ -2189,13 +2199,3 @@
                         print(f"  Postage:      {details['postage']} ({postage:.2f})")
                         print(f"  Total price:  £{total_price:.2f}")
                         print(f"  Uploaded:     {details['uploaded']}")
-
-                        # Download and detect images
-                        detected_objects, processed_images = self.download_and_detect_images_in_memory(current_driver, model)
-                        
-                        # Print detected objects
-                        detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
-                        if detected_classes:
-                            for cls in sorted(detected_classes):
-                                print(f"  • {cls}: {detected_objects[cls]}")
-
