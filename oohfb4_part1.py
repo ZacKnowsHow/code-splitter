@@ -76,11 +76,9 @@ VM_BOOKMARK_URLS = [
 ]
 
 # tests whether the listing is suitable for buying based on URL rather than scanning
-TEST_WHETHER_SUITABLE = False
+TEST_WHETHER_SUITABLE = True
 TEST_SUITABLE_URLS = [
-    'https://www.vinted.co.uk/items/6963376052-nintendo-switch?referrer=catalog',
-    'https://www.vinted.co.uk/items/6963025596-nintendo-switch-oled-model-the-legend-of-zelda-tears-of-the-kingdom-edition?referrer=catalog',
-    'https://www.vinted.co.uk/items/6970192196-nintendo-switch-lite-in-grey?referrer=catalog'
+    'https://www.vinted.co.uk/items/7186136504-nintendo-switch-with-games-and-accessories?referrer=catalog'
 ]
 
 # tests the number of listings found by the search
@@ -234,11 +232,11 @@ GAME_CLASSES = [
 
 title_must_contain = ["nintendo", "pokemon", "zelda", "mario", "animal crossing", "minecraft", 'oled', 'lite', 'pokémon', 'switch game',
                     'switch bundle', 'nintendo bundle', 'switch with games', 'modded switch']
-title_forbidden_words = ['unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
+title_forbidden_words = ['nintendo switch 2', 'unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
                         'joycon', 'snes', 'gamecube', 'n64', 'damaged', 'circuit', 'kart live', 'ds', 'tablet only', 'ringfit', 'ring fit'
                         'repair', '™', 'each', 'empty game', 'just game case', 'empty case', 'arcade', 'wii', 'tv frame', 'joy-con',
                         'for parts', 'won’t charge', 'spares & repair', 'xbox', 'prices in description', 'collector set', 'collectors set'
-                        'read description', 'joy pads', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
+                        'read description', 'joy pads', '3ds','2ds','gameboy', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
 description_forbidden_words = ['faulty', 'not post', 'jailbreak', 'scam', 'visit us', 'opening hours', 'open 7 days', 'am - ',
                                 'store', 'telephone', 'email', 'call us', '+44', '07', 'kart live', 'circuit', '.shop', 'our website',
                                 'website:', 'empty game', 'just game case', 'empty case', 'each', 'spares and repairs', 'prices are',
@@ -2198,3 +2196,5 @@ def setup_driver_universal(vm_ip_address, config):
     # Session cleanup (existing code)
     try:
         import requests
+        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+        status_data = status_response.json()

@@ -1,4 +1,86 @@
 # Continuation from line 4401
+    def fetch_price(self, class_name):
+        if class_name in ['lite_box', 'oled_box', 'oled_in_tv', 'switch_box', 'switch_in_tv', 'other_mario']:
+            return None
+        price = BASE_PRICES.get(class_name, 0)
+        delivery_cost = 5.0 if class_name in ['lite', 'oled', 'switch'] else 3.5
+        final_price = price + delivery_cost
+        return final_price
+    
+    def fetch_all_prices(self):
+        all_prices = {class_name: self.fetch_price(class_name) for class_name in class_names if self.fetch_price(class_name) is not None}
+        all_prices.update({
+            'lite_box': all_prices.get('lite', 0) * 1.05, 
+            'oled_box': all_prices.get('oled', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_white', 0) - 15, 
+            'oled_in_tv': all_prices.get('oled', 0) + all_prices.get('tv_white', 0) - 10, 
+            'switch_box': all_prices.get('switch', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_black', 0) - 5, 
+            'switch_in_tv': all_prices.get('switch', 0) + all_prices.get('tv_black', 0) - 3.5, 
+            'other_mario': 22.5,
+            'miscellaneous_games': 5  # ADDED: Price for miscellaneous games (£5 each)
+        })
+        return all_prices
+        
+    def login_vm_driver(self, driver):
+        """Login the VM driver and wait on homepage - extracted from main_vm_driver logic"""
+        try:
+            print("🔄 VM LOGIN: Starting login process...")
+            
+            # Clear browser data first
+            print("🔄 VM LOGIN: Clearing cookies...")
+            driver.delete_all_cookies()
+            
+            # Navigate to Vinted
+            print("🔄 VM LOGIN: Navigating to vinted.co.uk...")
+            driver.get("https://vinted.co.uk")
+            
+            # Random delay after page load
+            time.sleep(random.uniform(2, 4))
+            
+            # Wait for and accept cookies
+            print("🔄 VM LOGIN: Accepting cookies...")
+            if wait_and_click(driver, By.ID, "onetrust-accept-btn-handler", 15):
+                print("✅ VM LOGIN: Cookie consent accepted")
+            else:
+                print("⚠️ VM LOGIN: Cookie consent button not found")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            # Click Sign up | Log in button
+            print("🔄 VM LOGIN: Looking for login button...")
+            signup_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
+            )
+            
+            human_like_delay()
+            action = move_to_element_naturally(driver, signup_button)
+            time.sleep(random.uniform(0.1, 0.3))
+            action.click().perform()
+            print("✅ VM LOGIN: Clicked Sign up | Log in button")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            if google_login:
+                print("🔄 VM LOGIN: Using Google login...")
+                google_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
+                )
+                
+                human_like_delay()
+                action = move_to_element_naturally(driver, google_button)
+                time.sleep(random.uniform(0.1, 0.3))
+                action.click().perform()
+                print("✅ VM LOGIN: Clicked Continue with Google")
+                
+            else:
+                print("🔄 VM LOGIN: Using email login...")
+            
+            # Wait a bit for login process
+            time.sleep(random.uniform(3, 5))
+            
+            driver.set_window_size(900, 600)
+            
+            # Handle captcha if present
+            result = handle_datadome_audio_captcha(driver)
 
             if result == "no_captcha":
                 print("✅ VM LOGIN: No captcha present - login successful!")
@@ -24,93 +106,92 @@
 
 
     def execute_bookmark_with_preloaded_driver(self, url):
-        """Execute bookmark using driver ALREADY ON THE LISTING PAGE"""
-        if not self.vm_driver_ready or not self.current_vm_driver:
-            print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
+        """Execute bookmark using driver from manager"""
+        
+        # Get current driver from manager
+        bookmark_driver = self.driver_manager.get_driver()
+        
+        if not bookmark_driver or not self.driver_manager.is_ready():
+            print("❌ BOOKMARK: No valid driver available in manager")
             return False
         
-        with self.vm_driver_lock:
-            print(f"🔖 BOOKMARK: Driver ALREADY on listing page: {url}")
-            print(f"🔖 BOOKMARK: Skipping navigation - proceeding directly to buy button")
-            
-            # Store the driver reference before it might be changed
-            bookmark_driver = self.current_vm_driver
-            
+        driver_session = self.driver_manager.get_session_id()
+        print(f"🔖 BOOKMARK: Using driver from manager (Session: {driver_session})")
+        print(f"🔖 BOOKMARK: Driver ALREADY on listing page: {url}")
+        
+        try:
+            # Verify driver is still valid
             try:
-                # Verify driver is still valid
-                try:
-                    _ = bookmark_driver.current_url
-                except Exception as driver_check_error:
-                    print(f"❌ BOOKMARK: Driver is no longer valid: {driver_check_error}")
-                    self.vm_driver_ready = False
-                    return False
-                
-                # Create step log for tracking
-                step_log = {
-                    'start_time': time.time(),
-                    'driver_number': 1,
-                    'steps_completed': [],
-                    'failures': [],
-                    'success': False,
-                    'critical_sequence_completed': False,
-                    'actual_url': url
-                }
-                
-                # Execute first buy sequence
-                success = execute_vm_first_buy_sequence(bookmark_driver, step_log)
-                self.vm_driver_ready = False  # Mark as used
-                
-                total_time = time.time() - step_log['start_time']
-                print(f"📊 BOOKMARK ANALYSIS:")
-                print(f"⏱️  Total time: {total_time:.2f}s")
-                print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
-                print(f"❌ Failures: {len(step_log['failures'])}")
-                print(f"🏆 Overall success: {'YES' if success else 'NO'}")
-                
-                # Store bookmark result for this URL
-                self.last_bookmark_result = {
-                    'url': url,
-                    'success': success,
-                    'timestamp': time.time()
-                }
-                
-                return success
-                
-            except Exception as e:
-                print(f"❌ BOOKMARK: Error using pre-loaded driver: {e}")
-                self.vm_driver_ready = False
-                # Store failure result
-                self.last_bookmark_result = {
-                    'url': url,
-                    'success': False,
-                    'timestamp': time.time()
-                }
+                _ = bookmark_driver.current_url
+            except Exception as driver_check_error:
+                print(f"❌ BOOKMARK: Driver is no longer valid: {driver_check_error}")
+                self.driver_manager.invalidate_driver()
                 return False
+            
+            # Create step log for tracking
+            step_log = {
+                'start_time': time.time(),
+                'driver_number': 1,
+                'steps_completed': [],
+                'failures': [],
+                'success': False,
+                'critical_sequence_completed': False,
+                'actual_url': url
+            }
+            
+            # Execute first buy sequence
+            success = execute_vm_first_buy_sequence(bookmark_driver, step_log)
+            
+            # Driver is now used - invalidate in manager
+            self.driver_manager.invalidate_driver()
+            print(f"⚠️ BOOKMARK: Driver marked as used in manager")
+            
+            total_time = time.time() - step_log['start_time']
+            print(f"📊 BOOKMARK ANALYSIS:")
+            print(f"⏱️  Total time: {total_time:.2f}s")
+            print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
+            print(f"❌ Failures: {len(step_log['failures'])}")
+            print(f"🏆 Overall success: {'YES' if success else 'NO'}")
+            
+            # Store bookmark result
+            self.last_bookmark_result = {
+                'url': url,
+                'success': success,
+                'timestamp': time.time()
+            }
+            
+            return success
+            
+        except Exception as e:
+            print(f"❌ BOOKMARK: Error using driver: {e}")
+            self.driver_manager.invalidate_driver()
+            self.last_bookmark_result = {
+                'url': url,
+                'success': False,
+                'timestamp': time.time()
+            }
+            return False
 
     def prepare_next_vm_driver(self):
         """Prepare the NEXT VM driver after current one is used"""
         print("🔄 NEXT DRIVER: Preparing next VM driver...")
         
         try:
-            # CRITICAL FIX: Store reference to old driver before creating new one
-            old_driver = self.current_vm_driver
+            # Get old driver from manager
+            old_driver = self.driver_manager.get_driver()
+            old_session = self.driver_manager.get_session_id()
             
-            # Set to None BEFORE closing to prevent race conditions
-            self.current_vm_driver = None
-            self.vm_driver_ready = False
+            # Invalidate old driver in manager FIRST
+            self.driver_manager.invalidate_driver()
+            print(f"⚠️ NEXT DRIVER: Old driver invalidated in manager (Session: {old_session})")
             
             # Now safely close the old driver
             if old_driver:
                 try:
-                    # Verify the driver session is still valid before closing
-                    try:
-                        _ = old_driver.session_id
-                        old_driver.quit()
-                        print("✅ NEXT DRIVER: Closed previous driver")
-                    except Exception as session_error:
-                        print(f"⚠️ NEXT DRIVER: Previous driver session already closed: {session_error}")
+                    old_driver.quit()
+                    print(f"✅ NEXT DRIVER: Closed old driver (Session: {old_session})")
                 except Exception as close_error:
-                    print(f"⚠️ NEXT DRIVER: Error closing previous driver: {close_error}")
+                    print(f"⚠️ NEXT DRIVER: Error closing old driver: {close_error}")
             
             # Small delay to ensure clean session termination
             time.sleep(1)
@@ -122,7 +203,7 @@
                 "port": 9224
             })
             
-            time.sleep(1)  # Brief delay
+            time.sleep(1)
             
             # Create new VM driver
             new_driver = setup_driver_universal("192.168.56.101", {
@@ -133,83 +214,56 @@
             
             if not new_driver:
                 print("❌ NEXT DRIVER: Failed to create new VM driver")
-                self.vm_driver_ready = False
+                # ADDED: Ensure manager knows there's no driver
+                self.driver_manager.set_driver(None)
                 return
             
             # Verify new driver is functional
             try:
                 _ = new_driver.current_url
-                print(f"✅ NEXT DRIVER: New driver verified (Session: {new_driver.session_id})")
+                new_session = new_driver.session_id
+                print(f"✅ NEXT DRIVER: New driver verified (Session: {new_session})")
             except Exception as verify_error:
                 print(f"❌ NEXT DRIVER: New driver verification failed: {verify_error}")
                 try:
                     new_driver.quit()
                 except:
                     pass
-                self.vm_driver_ready = False
+                # ADDED: Ensure manager knows there's no driver
+                self.driver_manager.set_driver(None)
                 return
             
             # Login the new driver
             success = self.login_vm_driver(new_driver)
             
             if success:
-                # CRITICAL: Only set current_vm_driver after successful login
-                self.current_vm_driver = new_driver
-                self.vm_driver_ready = True
-                print("✅ NEXT DRIVER: New VM driver ready and logged in")
+                # Register new driver with manager
+                self.driver_manager.set_driver(new_driver)
+                print("✅ NEXT DRIVER: New VM driver registered with manager and ready")
             else:
                 print("❌ NEXT DRIVER: Failed to login new VM driver")
                 try:
                     new_driver.quit()
                 except:
                     pass
-                self.vm_driver_ready = False
+                # ADDED: Ensure manager knows there's no driver
+                self.driver_manager.set_driver(None)
                 
         except Exception as e:
             print(f"❌ NEXT DRIVER: Error preparing next driver: {e}")
             import traceback
             traceback.print_exc()
-            self.current_vm_driver = None
-            self.vm_driver_ready = False
-
-
-    def prepare_initial_vm_driver(self):
-        """Prepare the initial VM driver during startup - called ONCE at the beginning"""
-        print("🚀 STARTUP: Preparing initial VM driver for immediate use")
-        
-        try:
-            # Create and setup the first VM driver
-            self.current_vm_driver = setup_driver_universal("192.168.56.101", {
-                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
-                "profile": "Profile 4", 
-                "port": 9224
-            })
-            
-            if not self.current_vm_driver:
-                print("❌ STARTUP: Failed to create initial VM driver")
-                return False
-            
-            # Clear cookies and login
-            success = self.login_vm_driver(self.current_vm_driver)
-            
-            if success:
-                self.vm_driver_ready = True
-                print("✅ STARTUP: Initial VM driver ready and logged in - waiting for first listing")
-                return True
-            else:
-                print("❌ STARTUP: Failed to login initial VM driver")
-                return False
-                
-        except Exception as e:
-            print(f"❌ STARTUP: Error preparing initial VM driver: {e}")
-            return False
+            # ADDED: Ensure manager knows there's no driver on exception
+            self.driver_manager.set_driver(None)
 
     def __init__(self):
-        """Modified init - Initialize for VM-based scraping"""
+        """Modified init - Initialize for VM-based scraping with driver manager"""
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images
         global current_bounding_boxes, current_listing_url, current_suitability, suitable_listings
         global current_listing_index, recent_listings
+        
+        print("🔧 INIT: Starting VintedScraper initialization...")
         
         recent_listings = {
             'listings': [],
@@ -218,17 +272,18 @@
 
         self.program_start_time = time.time()
         
-        self.current_vm_driver = None
-        self.vm_driver_ready = False
-        self.vm_driver_lock = threading.Lock()
+        # NEW: Initialize centralized driver manager FIRST
+        self.driver_manager = DriverManager()
+        print("🔧 INIT: Driver manager created")
         
-        # NEW: Track bookmark results for pygame display
+        # Track bookmark results
         self.last_bookmark_result = None
-        self.bookmark_results_by_url = {}  # Store all bookmark results keyed by URL
+        self.bookmark_results_by_url = {}
         
-        # ========================================
-        # CRITICAL FIX: Load YOLO model BEFORE preparing VM driver
-        # ========================================
+        # Initialize VM bookmark queue
+        self.vm_bookmark_queue = []
+        
+        # Load YOLO model
         print(f"🧠 CUDA available: {torch.cuda.is_available()}")
         if torch.cuda.is_available():
             print(f"🎮 GPU name: {torch.cuda.get_device_name(0)}")
@@ -241,13 +296,12 @@
             try:
                 if torch.cuda.is_available():
                     self.model = YOLO(MODEL_WEIGHTS)
-                    self.model.to('cuda')  # Explicitly move to GPU
+                    self.model.to('cuda')
                     print("✅ YOLO model loaded on GPU (CUDA)")
                 else:
                     self.model = YOLO(MODEL_WEIGHTS)
                     print("⚠️ YOLO model loaded on CPU")
                 
-                # Warm up the model with a dummy inference
                 print("🔥 Warming up model...")
                 import numpy as np
                 dummy_img = np.zeros((640, 640, 3), dtype=np.uint8)
@@ -261,10 +315,47 @@
                 traceback.print_exc()
                 self.model = None
         
-        # Now prepare VM driver AFTER model is loaded
-        print("🔄 STARTUP: Preparing initial VM driver (for scraping AND bookmarking)...")
-        self.prepare_next_vm_driver()
+        # Prepare initial VM driver AFTER driver manager is created
+        print("🔄 INIT: Preparing initial VM driver...")
+        try:
+            # Clear browser data first
+            clear_browser_data_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            time.sleep(1)
+            
+            # Create initial driver
+            initial_driver = setup_driver_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            if not initial_driver:
+                print("❌ INIT: Failed to create initial VM driver")
+            else:
+                # Login the initial driver
+                success = self.login_vm_driver(initial_driver)
+                
+                if success:
+                    # Register with driver manager
+                    self.driver_manager.set_driver(initial_driver)
+                    print("✅ INIT: Initial VM driver ready and registered with manager")
+                else:
+                    print("❌ INIT: Failed to login initial VM driver")
+                    try:
+                        initial_driver.quit()
+                    except:
+                        pass
+        except Exception as init_driver_error:
+            print(f"❌ INIT: Error preparing initial driver: {init_driver_error}")
+            import traceback
+            traceback.print_exc()
         
+        # Initialize listing variables
         current_listing_title = "No title"
         current_listing_description = "No description"
         current_listing_join_date = "No join date"
@@ -278,8 +369,8 @@
         current_suitability = "Suitability unknown"
         suitable_listings = []
         current_listing_index = 0
-
-        self.vm_bookmark_queue = []
+        
+        print("✅ INIT: VintedScraper initialization complete")
 
     def format_runtime(self, elapsed_seconds):
         """
@@ -1251,9 +1342,7 @@
     def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter):
         """
         IMMEDIATELY process a suitable listing with pre-loaded VM driver
-        The VM driver should already be logged in and waiting
-        FIXED: Properly preserve timestamps and images for pygame display
-        ENHANCED: Track bookmark success/failure and store in listing info
+        FIXED: Uses driver manager instead of instance attributes
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -1357,10 +1446,10 @@
         
         # ============= VM PROCESSING =============
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver")
+            print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver from manager")
             print(f"⏸️  SCRAPING IS PAUSED UNTIL VM PROCESS COMPLETES")
             
-            # Call the new function that uses the pre-loaded driver
+            # Call the bookmark function that uses driver manager
             try:
                 success = self.execute_bookmark_with_preloaded_driver(url)
                 if success:
@@ -1417,7 +1506,7 @@
         preserved_images = []
         for img in processed_images:
             try:
-                img_copy = img.copy()  # Create independent copy
+                img_copy = img.copy()
                 preserved_images.append(img_copy)
             except Exception as e:
                 print(f"Error copying image for storage: {e}")
@@ -1426,17 +1515,17 @@
         final_listing_info = {
             'title': details.get("title", "No title"),
             'description': details.get("description", "No description"),
-            'join_date': exact_append_time,  # CRITICAL: This timestamp must be preserved
+            'join_date': exact_append_time,
             'price': str(total_price),
             'expected_revenue': total_revenue,
             'profit': expected_profit,
             'detected_items': detected_objects,
-            'processed_images': preserved_images,  # CRITICAL: Store deep copies of images
+            'processed_images': preserved_images,
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
             'suitability': suitability_reason,
             'seller_reviews': seller_reviews,
-            'bookmark_status': bookmark_status  # NEW: Add bookmark status
+            'bookmark_status': bookmark_status
         }
 
         # Determine whether to display on website/pygame
@@ -1547,9 +1636,10 @@
     def calculate_vinted_revenue(self, detected_objects, listing_price, title, description=""):
         """
         Enhanced revenue calculation with all Facebook logic
+        MODIFIED: Now adds miscellaneous games to detected_objects for visibility
         """
         debug_function_call("calculate_vinted_revenue")
-        import re  # FIXED: Import re at function level
+        import re
         
         # List of game-related classes
         game_classes = [
@@ -1565,15 +1655,23 @@
         # Get all prices
         all_prices = self.fetch_all_prices()
 
-        # Count detected games
+        # Count detected games from YOLO detection
         detected_games_count = sum(detected_objects.get(game, 0) for game in game_classes)
 
         # Detect anonymous games from title and description
         text_games_count = self.detect_anonymous_games_vinted(title, description)
 
-        # Calculate miscellaneous games
+        # Calculate miscellaneous games (games mentioned in text but not detected by YOLO)
         misc_games_count = max(0, text_games_count - detected_games_count)
-        misc_games_revenue = misc_games_count * 5 # Using same price as Facebook
+        misc_games_revenue = misc_games_count * 5  # Using £5 per miscellaneous game
+
+        # CRITICAL NEW CODE: Add miscellaneous games to detected_objects for visibility
+        if misc_games_count > 0:
+            detected_objects['miscellaneous_games'] = misc_games_count
+            print(f"💰 REVENUE: Added {misc_games_count} miscellaneous games (£{misc_games_revenue:.2f}) to detected objects")
+        else:
+            # Ensure key doesn't exist if count is 0
+            detected_objects.pop('miscellaneous_games', None)
 
         # Handle box adjustments (same as Facebook)
         adjustments = {
@@ -1590,11 +1688,14 @@
         # Remove switch_screen if present
         detected_objects.pop('switch_screen', None)
 
-        # Detect SD card and add revenue
-        total_revenue = misc_games_revenue
-
         # Calculate revenue from detected objects
+        total_revenue = misc_games_revenue  # Start with miscellaneous games revenue
+
         for item, count in detected_objects.items():
+            # Skip miscellaneous_games since we already counted it
+            if item == 'miscellaneous_games':
+                continue
+                
             if isinstance(count, str):
                 count_match = re.match(r'(\d+)', count)
                 count = int(count_match.group(1)) if count_match else 0
@@ -1611,15 +1712,15 @@
         profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
 
         print(f"Listing Price: £{listing_price:.2f}")
+        if misc_games_count > 0:
+            print(f"Miscellaneous Games: {misc_games_count} games @ £5 = £{misc_games_revenue:.2f}")
         print(f"Total Expected Revenue: £{total_revenue:.2f}")
         print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
 
-        # CRITICAL FIX: Filter out zero-count items for display (matching Facebook behavior)
+        # CRITICAL: Filter out zero-count items for display (matching Facebook behavior)
         display_objects = {k: v for k, v in detected_objects.items() if v > 0}
 
-        # Add miscellaneous games to display if present
-        if misc_games_count > 0:
-            display_objects['misc_games'] = misc_games_count
+        # Note: miscellaneous_games is already in detected_objects if count > 0, so it will appear in display_objects
 
         return total_revenue, expected_profit, profit_percentage, display_objects
 
@@ -1912,33 +2013,22 @@
         
         return True
 
-    def get_current_driver_safely(self):
-        """
-        Safely get the current driver with validation
-        Returns None if driver is not valid
-        """
-        try:
-            if not self.current_vm_driver or not self.vm_driver_ready:
-                return None
-            
-            # Test if driver is still responsive
-            _ = self.current_vm_driver.session_id
-            return self.current_vm_driver
-            
-        except Exception as e:
-            print(f"⚠️ Driver validation failed: {e}")
-            self.vm_driver_ready = False
-            return None
 
     def search_vinted_with_refresh(self, driver, search_query):
-        # CRITICAL FIX: Don't use passed driver parameter - track current driver properly
-        print(f"🔄 SCRAPING: Using bookmark driver for all scraping operations")
+        """
+        MODIFIED: Always get current driver from manager
+        driver parameter is IGNORED - we use manager
+        """
+        print(f"🔄 SCRAPING: Using driver manager for all scraping operations")
         global suitable_listings, current_listing_index
         
-        # CLEAR THE VINTED SCANNED IDS FILE AT THE BEGINNING OF EACH RUN
+        # CRITICAL: Ignore passed driver parameter - always use manager
+        print(f"⚠️ SCRAPING: Ignoring passed driver parameter - using driver manager")
+        
+        # Clear scanned IDs file
         try:
             with open(VINTED_SCANNED_IDS_FILE, 'w') as f:
-                pass  # This creates an empty file, clearing any existing content
+                pass
             print(f"✅ Cleared {VINTED_SCANNED_IDS_FILE} at the start of the run")
         except Exception as e:
             print(f"⚠️ Warning: Could not clear {VINTED_SCANNED_IDS_FILE}: {e}")
@@ -1950,26 +2040,13 @@
         # Ensure root download folder exists
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
-        # Load YOLO Model Once
-        print("🧠 Loading object detection model...")
-        if not os.path.exists(MODEL_WEIGHTS):
-            print(f"❌ Critical Error: Model weights not found at '{MODEL_WEIGHTS}'. Detection will be skipped.")
-        else:
-            try:
-                print("✅ Model loaded successfully.")
-            except Exception as e:
-                print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
+        # Load YOLO Model
+        print("🧠 Model already loaded in __init__")
+        model = self.model
         
-        print(f"CUDA available: {torch.cuda.is_available()}")
-        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
-
-        # Load model with explicit GPU usage
-        if torch.cuda.is_available():
-            model = YOLO(MODEL_WEIGHTS).cuda()
-            print("✅ YOLO model loaded on GPU")
-        else:
-            model = YOLO(MODEL_WEIGHTS).cpu()
-            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+        if not model:
+            print("❌ No model available for detection")
+            return
 
         # Load previously scanned listing IDs
         scanned_ids = self.load_scanned_vinted_ids()
@@ -1979,51 +2056,55 @@
         overall_listing_counter = 0
         refresh_cycle = 1
         is_first_refresh = True
-        
-        # Driver restart tracking (for VM driver)
-        DRIVER_RESTART_INTERVAL = 100
         cycles_since_restart = 0
 
-        # Main scanning loop with refresh functionality AND VM driver restart
+        # Main scanning loop
         while True:
-            driver.set_window_size(800, 600)
-
-            # CRITICAL FIX: Get current driver at start of each cycle
-            current_driver = self.current_vm_driver
+            # CRITICAL: Get current driver from manager at start of each cycle
+            current_driver = self.driver_manager.get_driver()
             
-            if not current_driver or not self.vm_driver_ready:
-                print("❌ SCRAPING: No valid driver available, attempting to prepare new driver...")
+            if not current_driver or not self.driver_manager.is_ready():
+                print("❌ SCRAPING: No valid driver in manager, attempting to prepare new driver...")
                 self.prepare_next_vm_driver()
-                current_driver = self.current_vm_driver
+                current_driver = self.driver_manager.get_driver()
                 
                 if not current_driver:
-                    print("❌ SCRAPING: Failed to get valid driver, exiting...")
+                    print("❌ SCRAPING: Failed to get valid driver from manager, exiting...")
                     break
             
+            driver_session = self.driver_manager.get_session_id()
             current_time = time.time()
             runtime_seconds = current_time - self.program_start_time
             runtime_formatted = self.format_runtime(runtime_seconds)
             
             print(f"\n{'='*60}")
-            print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle} (IN VM)")
-            print(f"🔄 Cycles since last VM driver restart: {cycles_since_restart}")
+            print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
+            print(f"🔄 Cycles since last driver restart: {cycles_since_restart}")
             print(f"⏰ Time since start: {runtime_formatted}")
-            print(f"⏰ Current driver session: {current_driver.session_id if current_driver else 'None'}")
+            print(f"🚗 Current driver session: {driver_session}")
             print(f"{'='*60}")
             
-            cycle_listing_counter = 0  # Listings processed in this cycle
+            cycle_listing_counter = 0
             found_already_scanned = False
-            
-            # Reset to first page for each cycle
             page = 1
             
             while True:  # Page loop
-                # CRITICAL FIX: Re-check driver validity at start of each page
-                current_driver = self.current_vm_driver
+                # CRITICAL: Refresh driver reference from manager for each page
+                current_driver = self.driver_manager.get_driver()
                 
-                if not current_driver or not self.vm_driver_ready:
-                    print("⚠️ Driver became invalid during page processing")
-                    break
+                if not current_driver or not self.driver_manager.is_ready():
+                    print("⚠️ SCRAPING: Driver became invalid during page processing")
+                    print("🔄 SCRAPING: Attempting to get fresh driver from manager...")
+                    self.prepare_next_vm_driver()
+                    current_driver = self.driver_manager.get_driver()
+                    
+                    if not current_driver:
+                        print("❌ SCRAPING: Cannot get valid driver, breaking page loop")
+                        break
+                    else:
+                        print(f"✅ SCRAPING: Got fresh driver (Session: {self.driver_manager.get_session_id()})")
+                
+                current_driver.set_window_size(800, 600)
                 
                 try:
                     WebDriverWait(current_driver, 5).until(
@@ -2033,7 +2114,7 @@
                     print("⚠️ Timeout waiting for page to load - moving to next cycle")
                     break
 
-                # Get listing URLs from current page
+                # Get listing URLs
                 try:
                     els = current_driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
                     urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
@@ -2045,14 +2126,14 @@
                     print(f"📄 No listings found on page {page} - moving to next cycle")
                     break
 
-                print(f"📄 Processing page {page} with {len(urls)} listings (IN VM)")
+                print(f"📄 Processing page {page} with {len(urls)} listings")
 
                 for idx, url in enumerate(urls, start=1):
                     cycle_listing_counter += 1
                     
                     print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
                     
-                    # Extract listing ID and check if already scanned
+                    # Check for duplicate
                     listing_id = self.extract_vinted_listing_id(url)
                     
                     if REFRESH_AND_RESCAN and listing_id:
@@ -2062,7 +2143,7 @@
                             found_already_scanned = True
                             break
                     
-                    # Check if we've hit the maximum listings for this cycle
+                    # Check max listings per cycle
                     if REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
                         print(f"📊 Reached MAX_LISTINGS_VINTED_TO_SCAN ({MAX_LISTINGS_VINTED_TO_SCAN})")
                         print(f"🔄 Initiating refresh cycle...")
@@ -2070,14 +2151,21 @@
 
                     overall_listing_counter += 1
 
-                    # CRITICAL FIX: Re-check driver before opening new tab
-                    current_driver = self.current_vm_driver
+                    # CRITICAL: Get fresh driver from manager before opening tab
+                    current_driver = self.driver_manager.get_driver()
                     
-                    if not current_driver or not self.vm_driver_ready:
-                        print("⚠️ Driver became invalid, skipping listing")
-                        continue
+                    if not current_driver or not self.driver_manager.is_ready():
+                        print("⚠️ SCRAPING: Driver invalid before opening tab, getting fresh driver...")
+                        self.prepare_next_vm_driver()
+                        current_driver = self.driver_manager.get_driver()
+                        
+                        if not current_driver:
+                            print("❌ SCRAPING: Cannot get valid driver, skipping listing")
+                            continue
+                        else:
+                            print(f"✅ SCRAPING: Got fresh driver (Session: {self.driver_manager.get_session_id()})")
 
-                    # Process the listing (using VM driver)
+                    # Process the listing
                     try:
                         current_driver.execute_script("window.open();")
                         current_driver.switch_to.window(current_driver.window_handles[-1])
@@ -2102,8 +2190,7 @@
                         print(f"  Total price:  £{total_price:.2f}")
                         print(f"  Uploaded:     {details['uploaded']}")
 
-                        # *** THIS IS THE CHANGED SECTION ***
-                        # Download and detect images IN MEMORY (no disk writes)
+                        # Download and detect images
                         detected_objects, processed_images = self.download_and_detect_images_in_memory(current_driver, model)
                         
                         # Print detected objects
@@ -2112,90 +2199,3 @@
                             for cls in sorted(detected_classes):
                                 print(f"  • {cls}: {detected_objects[cls]}")
 
-                        # Process listing for pygame display
-                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
-
-                        # Mark this listing as scanned
-                        if listing_id:
-                            scanned_ids.add(listing_id)
-                            self.save_vinted_listing_id(listing_id)
-                            print(f"✅ Saved listing ID: {listing_id}")
-
-                        print("-" * 40)
-                        self.cleanup_processed_images(processed_images)
-                        listing_end_time = time.time()
-                        elapsed_time = listing_end_time - listing_start_time
-                        print(f"⏱️ Listing {overall_listing_counter} processing completed in {elapsed_time:.2f} seconds")
-                        driver.set_window_size(800, 600)
-
-                        
-                    except Exception as e:
-                        print(f"  ❌ ERROR scraping listing: {e}")
-                        # Still mark as scanned even if there was an error
-                        if listing_id:
-                            scanned_ids.add(listing_id)
-                            self.save_vinted_listing_id(listing_id)
-
-                    finally:
-                        # CRITICAL FIX: Safely close tab with validation
-                        try:
-                            # Re-get current driver reference
-                            current_driver = self.current_vm_driver
-                            
-                            if current_driver and self.vm_driver_ready:
-                                # Check if we have multiple windows before closing
-                                if len(current_driver.window_handles) > 1:
-                                    current_driver.close()
-                                    current_driver.switch_to.window(current_driver.window_handles[0])
-                                else:
-                                    print("⚠️ Only one window open, not closing")
-                            else:
-                                print("⚠️ Driver no longer valid, skipping tab close")
-                        except Exception as close_error:
-                            print(f"⚠️ Error closing tab: {close_error}")
-                            # Try to recover by switching to first window
-                            try:
-                                if current_driver and len(current_driver.window_handles) > 0:
-                                    current_driver.switch_to.window(current_driver.window_handles[0])
-                            except:
-                                print("⚠️ Could not recover window state")
-
-                # Check if we need to break out of page loop
-                if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
-                    break
-
-                # Try to go to next page
-                try:
-                    # CRITICAL FIX: Verify driver before pagination
-                    current_driver = self.current_vm_driver
-                    
-                    if not current_driver or not self.vm_driver_ready:
-                        print("⚠️ Driver invalid, cannot paginate")
-                        break
-                    
-                    nxt = current_driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
-                    current_driver.execute_script("arguments[0].click();", nxt)
-                    page += 1
-                    time.sleep(2)
-                except NoSuchElementException:
-                    print("📄 No more pages available - moving to next cycle")
-                    break
-                except Exception as pagination_error:
-                    print(f"❌ Pagination error: {pagination_error}")
-                    break
-
-            # End of page loop - decide whether to continue or refresh
-            if not REFRESH_AND_RESCAN:
-                print("🏁 REFRESH_AND_RESCAN disabled - ending scan")
-                break
-            
-            # CRITICAL FIX: Get fresh driver reference for refresh
-            current_driver = self.current_vm_driver
-            
-            if not current_driver or not self.vm_driver_ready:
-                print("❌ No valid driver for refresh, exiting...")
-                break
-            
-            if found_already_scanned:
-                print(f"🔁 Found already scanned listing - refreshing immediately")
-                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
