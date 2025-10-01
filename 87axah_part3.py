@@ -1,4 +1,6 @@
 # Continuation from line 4401
+
+            if result == "no_captcha":
                 print("✅ VM LOGIN: No captcha present - login successful!")
                 return True
             elif result == True:
@@ -65,11 +67,24 @@
                 print(f"❌ Failures: {len(step_log['failures'])}")
                 print(f"🏆 Overall success: {'YES' if success else 'NO'}")
                 
+                # Store bookmark result for this URL
+                self.last_bookmark_result = {
+                    'url': url,
+                    'success': success,
+                    'timestamp': time.time()
+                }
+                
                 return success
                 
             except Exception as e:
                 print(f"❌ BOOKMARK: Error using pre-loaded driver: {e}")
                 self.vm_driver_ready = False
+                # Store failure result
+                self.last_bookmark_result = {
+                    'url': url,
+                    'success': False,
+                    'timestamp': time.time()
+                }
                 return False
 
     def prepare_next_vm_driver(self):
@@ -207,6 +222,10 @@
         self.vm_driver_ready = False
         self.vm_driver_lock = threading.Lock()
         
+        # NEW: Track bookmark results for pygame display
+        self.last_bookmark_result = None
+        self.bookmark_results_by_url = {}  # Store all bookmark results keyed by URL
+        
         # ========================================
         # CRITICAL FIX: Load YOLO model BEFORE preparing VM driver
         # ========================================
@@ -271,6 +290,106 @@
         seconds = int(elapsed_seconds % 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
+    def render_suitability_with_bookmark(self, screen, font, text, rect, suitability_color, bookmark_color):
+        """
+        Render suitability text with bookmark status in different color
+        Splits text at double newline to separate suitability from bookmark status
+        """
+        try:
+            # Split text into suitability and bookmark parts
+            parts = text.split('\n\n')
+            
+            if len(parts) == 1:
+                # No bookmark status, just render suitability
+                self.render_text_in_rect(screen, font, text, rect, suitability_color)
+                return
+            
+            suitability_text = parts[0]
+            bookmark_text = parts[1] if len(parts) > 1 else ""
+            
+            # Calculate space for each part
+            # Wrap suitability text
+            suitability_lines = []
+            words = suitability_text.split()
+            current_line = []
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                test_width, _ = font.size(test_line)
+                if test_width <= rect.width - 10:
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        suitability_lines.append(' '.join(current_line))
+                        current_line = [word]
+                    else:
+                        suitability_lines.append(word)
+            if current_line:
+                suitability_lines.append(' '.join(current_line))
+            
+            # Wrap bookmark text
+            bookmark_lines = []
+            words = bookmark_text.split()
+            current_line = []
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                test_width, _ = font.size(test_line)
+                if test_width <= rect.width - 10:
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        bookmark_lines.append(' '.join(current_line))
+                        current_line = [word]
+                    else:
+                        bookmark_lines.append(word)
+            if current_line:
+                bookmark_lines.append(' '.join(current_line))
+            
+            # Calculate total height needed
+            total_lines = len(suitability_lines) + len(bookmark_lines)
+            line_height = font.get_linesize()
+            total_height = total_lines * line_height + 10  # 10px gap between sections
+            
+            # Scale font if needed
+            if total_height > rect.height:
+                scale_factor = rect.height / total_height
+                new_font_size = max(1, int(font.get_height() * scale_factor))
+                try:
+                    font = pygame.font.Font(None, new_font_size)
+                    line_height = font.get_linesize()
+                except pygame.error:
+                    pass  # Keep original font if scaling fails
+            
+            # Render suitability lines
+            y = rect.top + 5
+            for line in suitability_lines:
+                try:
+                    text_surface = font.render(line, True, suitability_color)
+                    text_rect = text_surface.get_rect(centerx=rect.centerx, top=y)
+                    screen.blit(text_surface, text_rect)
+                    y += line_height
+                except pygame.error as e:
+                    print(f"Error rendering suitability line: {e}")
+                    continue
+            
+            # Add gap
+            y += 5
+            
+            # Render bookmark lines
+            for line in bookmark_lines:
+                try:
+                    text_surface = font.render(line, True, bookmark_color)
+                    text_rect = text_surface.get_rect(centerx=rect.centerx, top=y)
+                    screen.blit(text_surface, text_rect)
+                    y += line_height
+                except pygame.error as e:
+                    print(f"Error rendering bookmark line: {e}")
+                    continue
+                    
+        except Exception as e:
+            print(f"Error in render_suitability_with_bookmark: {e}")
+            # Fallback to simple rendering
+            self.render_text_in_rect(screen, font, text, rect, suitability_color)
+
 
     def run_pygame_window(self):
         global LOCK_POSITION, current_listing_index, suitable_listings
@@ -293,7 +412,8 @@
             'click': pygame.font.Font(None, 28),
             'suitability': pygame.font.Font(None, 28),
             'reviews': pygame.font.Font(None, 28),
-            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
+            'exact_time': pygame.font.Font(None, 22),
+            'bookmark_status': pygame.font.Font(None, 24)  # NEW: Font for bookmark status
         }
         dragging = False
         resizing = False
@@ -330,7 +450,8 @@
                                 bounding_boxes=current_listing['bounding_boxes'],
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
-                                seller_reviews=current_listing.get('seller_reviews')
+                                seller_reviews=current_listing.get('seller_reviews'),
+                                bookmark_status=current_listing.get('bookmark_status', 'Not attempted')  # NEW
                             )
                     elif event.key == pygame.K_LEFT:
                         if suitable_listings:
@@ -353,7 +474,8 @@
                                 bounding_boxes=current_listing['bounding_boxes'],
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
-                                seller_reviews=current_listing.get('seller_reviews')
+                                seller_reviews=current_listing.get('seller_reviews'),
+                                bookmark_status=current_listing.get('bookmark_status', 'Not attempted')  # NEW
                             )
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left mouse button
@@ -422,8 +544,28 @@
                 elif i == 3:  # Rectangle 4 (index 3) - Click to open
                     click_text = "CLICK TO OPEN LISTING IN CHROME"
                     self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
-                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
-                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason AND Bookmark Status
+                    # NEW: Combine suitability and bookmark status
+                    combined_text = current_suitability
+                    if 'current_bookmark_status' in globals() and current_bookmark_status:
+                        combined_text = f"{current_suitability}\n\n{current_bookmark_status}"
+                    
+                    # Determine color based on bookmark status
+                    if 'current_bookmark_status' in globals() and current_bookmark_status:
+                        if "successful" in current_bookmark_status.lower():
+                            bookmark_color = (0, 255, 0)  # Green for success
+                        elif "failed" in current_bookmark_status.lower():
+                            bookmark_color = (255, 0, 0)  # Red for failure
+                        else:
+                            bookmark_color = (128, 128, 128)  # Gray for not attempted
+                    else:
+                        bookmark_color = (128, 128, 128)  # Gray default
+                    
+                    # Use red for unsuitable, green for suitable, but show bookmark status in appropriate color
+                    base_color = (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0)
+                    
+                    # Render with multi-color support
+                    self.render_suitability_with_bookmark(screen, fonts['suitability'], combined_text, rect, base_color, bookmark_color)
                 elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
                     self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
 
@@ -622,10 +764,12 @@
             print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
    
             raise
-    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
+
+    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None, bookmark_status=None):
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
         global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
+        global current_bookmark_status
 
         # CRITICAL FIX 1: Don't clear existing images when switching between listings
         # Only clear if we're setting NEW images (not switching to existing listing)
@@ -685,7 +829,8 @@
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
-
+        current_bookmark_status = bookmark_status if bookmark_status else "Not attempted"  # NEW: Set bookmark status
+        
     # Supporting helper function for better timeout management
     def calculate_dynamic_timeout(base_timeout, elapsed_time, max_total_time):
         """
@@ -1108,6 +1253,7 @@
         IMMEDIATELY process a suitable listing with pre-loaded VM driver
         The VM driver should already be logged in and waiting
         FIXED: Properly preserve timestamps and images for pygame display
+        ENHANCED: Track bookmark success/failure and store in listing info
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -1206,6 +1352,9 @@
             is_suitable = True
             print(f"✅ SUITABLE: {suitability_reason}")
 
+        # Initialize bookmark status
+        bookmark_status = "Not attempted"
+        
         # ============= VM PROCESSING =============
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
             print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver")
@@ -1216,11 +1365,27 @@
                 success = self.execute_bookmark_with_preloaded_driver(url)
                 if success:
                     print(f"✅ VM PROCESS COMPLETED: Listing has been bookmarked successfully")
+                    bookmark_status = "Bookmark successful"
                 else:
                     print(f"❌ VM PROCESS FAILED: Bookmark attempt was unsuccessful")
+                    bookmark_status = "Bookmark failed"
+                
+                # Store bookmark result for this URL
+                self.bookmark_results_by_url[url] = {
+                    'success': success,
+                    'status': bookmark_status,
+                    'timestamp': time.time()
+                }
+                
             except Exception as vm_error:
                 print(f"❌ VM PROCESS ERROR: {vm_error}")
                 print(f"⚠️  Continuing with scraping despite VM error...")
+                bookmark_status = "Bookmark failed"
+                self.bookmark_results_by_url[url] = {
+                    'success': False,
+                    'status': bookmark_status,
+                    'timestamp': time.time()
+                }
             
             # CRITICAL: After processing, prepare the NEXT driver
             try:
@@ -1233,6 +1398,12 @@
             print(f"▶️  SCRAPING RESUMED: VM process complete, continuing with search...")
         else:
             print(f"❌ UNSUITABLE LISTING: Skipping VM process, continuing with scraping")
+            bookmark_status = "Not suitable - not attempted"
+            self.bookmark_results_by_url[url] = {
+                'success': False,
+                'status': bookmark_status,
+                'timestamp': time.time()
+            }
 
         # CRITICAL FIX: Generate exact UK time when creating listing info and store it permanently
         from datetime import datetime
@@ -1251,7 +1422,7 @@
             except Exception as e:
                 print(f"Error copying image for storage: {e}")
 
-        # Create final listing info with exact append time and preserved images
+        # Create final listing info with exact append time, preserved images, AND bookmark status
         final_listing_info = {
             'title': details.get("title", "No title"),
             'description': details.get("description", "No description"),
@@ -1264,7 +1435,8 @@
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
             'suitability': suitability_reason,
-            'seller_reviews': seller_reviews
+            'seller_reviews': seller_reviews,
+            'bookmark_status': bookmark_status  # NEW: Add bookmark status
         }
 
         # Determine whether to display on website/pygame
@@ -1279,6 +1451,7 @@
                     f"Price: £{total_price:.2f}\n"
                     f"Expected Profit: £{expected_profit:.2f}\n"
                     f"Profit %: {profit_percentage:.2f}%\n"
+                    f"Bookmark: {bookmark_status}\n"
                 )
                 
                 self.send_pushover_notification(
@@ -1300,9 +1473,9 @@
             self.update_listing_details(**final_listing_info)
 
             if is_suitable:
-                print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
+                print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%) - {bookmark_status}")
             else:
-                print(f"➕ Added unsuitable listing (SHOW_ALL mode): £{total_price:.2f}")
+                print(f"➕ Added unsuitable listing (SHOW_ALL mode): £{total_price:.2f} - {bookmark_status}")
 
         if not should_add_to_display:
             print(f"❌ Listing not added to display: {suitability_reason}")
@@ -2026,176 +2199,3 @@
             if found_already_scanned:
                 print(f"🔁 Found already scanned listing - refreshing immediately")
                 self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
-            elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
-                print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
-                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
-            else:
-                print("📄 No more pages and no max reached - refreshing for new listings")
-                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
-
-            refresh_cycle += 1
-            cycles_since_restart += 1
-            is_first_refresh = False
-
-    def start_cloudflare_tunnel(self, port=5000):
-        """
-        Starts a Cloudflare Tunnel using the cloudflared binary.
-        Adjust the cloudflared_path if your executable is in a different location.
-        """
-        # Path to the cloudflared executable
-        #pc
-        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
-        #laptop
-        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
-        
-        # Start the tunnel with the desired command-line arguments
-        process = subprocess.Popen(
-            [cloudflared_path, "tunnel", "--url", f"http://localhost:{port}"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        
-        # Function to read and print cloudflared output asynchronously
-        def read_output(proc):
-            for line in proc.stdout:
-                print("[cloudflared]", line.strip())
-        
-        # Start a thread to print cloudflared output so you can see the public URL and any errors
-        threading.Thread(target=read_output, args=(process,), daemon=True).start()
-        
-        # Wait a few seconds for the tunnel to establish (adjust if needed).
-        time.sleep(5)
-        return process
-
-    def run_flask_app(self):
-        try:
-            print("Starting Flask app for https://fk43b0p45crc03r.xyz/")
-            
-            # Run Flask locally - your domain should be configured to tunnel to this
-            app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
-            
-        except Exception as e:
-            print(f"Error starting Flask app: {e}")
-            import traceback
-            traceback.print_exc()
-
-    def is_monitoring_active(self):
-        """Check if any monitoring threads are still active"""
-        # Check if current bookmark driver exists (indicates monitoring might be active)
-        if hasattr(self, 'current_bookmark_driver') and self.current_bookmark_driver is not None:
-            try:
-                # Try to access the driver - if it fails, monitoring is done
-                self.current_bookmark_driver.current_url
-                return True
-            except:
-                return False
-        return False
-
-
-    def check_chrome_processes(self):
-        """
-        Debug function to check for running Chrome processes
-        """
-        import psutil
-        chrome_processes = []
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                if 'chrome' in proc.info['name'].lower():
-                    chrome_processes.append({
-                        'pid': proc.info['pid'],
-                        'name': proc.info['name'],
-                        'cmdline': ' '.join(proc.info['cmdline'][:3]) if proc.info['cmdline'] else ''
-                    })
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        
-        print(f"🔖 CHROME PROCESSES: Found {len(chrome_processes)} running Chrome processes")
-        for proc in chrome_processes[:5]:  # Show first 5
-            print(f"  • PID: {proc['pid']}, Name: {proc['name']}")
-        
-        return len(chrome_processes)
-
-    def setup_driver_enhanced_debug(self):
-        """
-        Enhanced setup_driver with comprehensive debugging
-        """
-        print("🚀 ENHANCED DRIVER SETUP: Starting...")
-        
-        # Check for existing Chrome processes
-        self.check_chrome_processes()
-        
-        chrome_opts = Options()
-        
-        # Basic preferences
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,
-            "profile.default_content_setting_values.popups": 0,
-            "download.prompt_for_download": False,
-        }
-        chrome_opts.add_experimental_option("prefs", prefs)
-        
-        # User data directory setup
-        print(f"🚀 USER DATA DIR: {PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--user-data-dir={PERMANENT_USER_DATA_DIR}")
-        chrome_opts.add_argument(f"--profile-directory=Default")
-        
-        # Check if user data directory exists and is accessible
-        try:
-            if not os.path.exists(PERMANENT_USER_DATA_DIR):
-                os.makedirs(PERMANENT_USER_DATA_DIR, exist_ok=True)
-                print(f"🚀 CREATED: User data directory")
-            else:
-                print(f"🚀 EXISTS: User data directory found")
-        except Exception as dir_error:
-            print(f"🚀 DIR ERROR: {dir_error}")
-        
-        # Core stability arguments (minimal set)
-        chrome_opts.add_argument("--no-sandbox")
-        chrome_opts.add_argument("--disable-dev-shm-usage")
-        chrome_opts.add_argument("--disable-gpu")
-        chrome_opts.add_argument("--disable-software-rasterizer")
-        
-        # Remove potentially problematic arguments
-        chrome_opts.add_argument("--headless")  # Try without headless first
-        
-        # Keep some logging for debugging
-        chrome_opts.add_argument("--log-level=3")  # More detailed logging
-        chrome_opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-        
-        try:
-            service = Service(
-                ChromeDriverManager().install()
-            )
-            
-            print("🚀 CREATING: Chrome driver...")
-            driver = webdriver.Chrome(service=service, options=chrome_opts)
-            
-            # Set timeouts
-            driver.implicitly_wait(10)
-            driver.set_page_load_timeout(30)
-            driver.set_script_timeout(30)
-            
-            print("✅ SUCCESS: Chrome driver initialized successfully")
-            return driver
-            
-        except Exception as e:
-            print(f"❌ CRITICAL ERROR: Chrome driver failed: {e}")
-            print(f"❌ ERROR TYPE: {type(e).__name__}")
-            
-            import traceback
-            print(f"❌ TRACEBACK:\n{traceback.format_exc()}")
-            
-            # Show system info for debugging
-            print("🔧 SYSTEM INFO:")
-            print(f"  • Python: {sys.version}")
-            print(f"  • OS: {os.name}")
-            print(f"  • Chrome processes: {self.check_chrome_processes()}")
-            
-            return None
-
-    def test_url_collection_mode(self, driver, search_query):
-        """
-        Simple testing mode that only collects URLs and saves listing IDs
-        No bookmarking, no purchasing, no image downloading - just URL collection
-        """
