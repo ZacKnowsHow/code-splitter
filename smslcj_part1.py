@@ -65,7 +65,7 @@ from scipy import signal
 import wave
 import ctypes
 
-
+#uses custom url for buying in vm, for testing. works same as normal, just with custom url instead.
 
 CLICK_PAY_BUTTON = False
 
@@ -78,7 +78,9 @@ VM_BOOKMARK_URLS = [
 # tests whether the listing is suitable for buying based on URL rather than scanning
 TEST_WHETHER_SUITABLE = False
 TEST_SUITABLE_URLS = [
-    'https://www.vinted.co.uk/items/7186136504-nintendo-switch-with-games-and-accessories?referrer=catalog'
+    'https://www.vinted.co.uk/items/6963376052-nintendo-switch?referrer=catalog',
+    'https://www.vinted.co.uk/items/6963025596-nintendo-switch-oled-model-the-legend-of-zelda-tears-of-the-kingdom-edition?referrer=catalog',
+    'https://www.vinted.co.uk/items/6970192196-nintendo-switch-lite-in-grey?referrer=catalog'
 ]
 
 # tests the number of listings found by the search
@@ -92,8 +94,6 @@ NINTENDO_SWITCH_CLASSES = [
 ]
 
 VINTED_SHOW_ALL_LISTINGS = True
-# Add this to the global declarations section (near the top where other globals are defined)
-current_bookmark_status = "Not attempted"
 print_debug = False
 print_images_backend_info = False
 test_bookmark_function = False
@@ -104,6 +104,7 @@ bookmark_stopwatch_length = 540
 buying_driver_click_pay_wait_time = 7.5
 actually_purchase_listing = True
 wait_for_bookmark_stopwatch_to_buy = False
+bookmark_stopwatch_start = None
 test_purchase_not_true = False #uses the url below rather than the one from the web page
 test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1?referrer=catalog"
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
@@ -147,8 +148,8 @@ CLASS_NAMES = [
    'tv_black', 'tv_white', 'violet_p'
 ]
 
-GENERAL_CONFIDENCE_MIN = 0.6
-HIGHER_CONFIDENCE_MIN = 0.65
+GENERAL_CONFIDENCE_MIN = 0.5
+HIGHER_CONFIDENCE_MIN = 0.55
 HIGHER_CONFIDENCE_ITEMS = { 'controller': HIGHER_CONFIDENCE_MIN, 'tv_white': HIGHER_CONFIDENCE_MIN, 'tv_black': HIGHER_CONFIDENCE_MIN }
 
 ####VINTED ^^^^
@@ -232,11 +233,11 @@ GAME_CLASSES = [
 
 title_must_contain = ["nintendo", "pokemon", "zelda", "mario", "animal crossing", "minecraft", 'oled', 'lite', 'pokémon', 'switch game',
                     'switch bundle', 'nintendo bundle', 'switch with games', 'modded switch']
-title_forbidden_words = ['nintendo switch 2', 'unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
+title_forbidden_words = ['unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
                         'joycon', 'snes', 'gamecube', 'n64', 'damaged', 'circuit', 'kart live', 'ds', 'tablet only', 'ringfit', 'ring fit'
                         'repair', '™', 'each', 'empty game', 'just game case', 'empty case', 'arcade', 'wii', 'tv frame', 'joy-con',
                         'for parts', 'won’t charge', 'spares & repair', 'xbox', 'prices in description', 'collector set', 'collectors set'
-                        'read description', 'joy pads', '3ds','2ds','gameboy', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
+                        'read description', 'joy pads', 'spares and repairs', 'neon', 'spares or repairs', 'dock cover', '3d print']
 description_forbidden_words = ['faulty', 'not post', 'jailbreak', 'scam', 'visit us', 'opening hours', 'open 7 days', 'am - ',
                                 'store', 'telephone', 'email', 'call us', '+44', '07', 'kart live', 'circuit', '.shop', 'our website',
                                 'website:', 'empty game', 'just game case', 'empty case', 'each', 'spares and repairs', 'prices are',
@@ -1921,6 +1922,11 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                     print(f"❌ DRIVER {step_log['driver_number']}: All pay click methods failed")
                     return False
         
+        bookmark_stopwatch_end = time.time()
+        elapsed_time = bookmark_stopwatch_end - bookmark_stopwatch_start
+        print(f"Bookmark Stopwatch stopped. Total time: {elapsed_time:.2f} seconds")
+
+
         if pay_clicked:
             # CRITICAL: Exact 0.25 second wait (same as main scraper)
             print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Waiting exactly seconds...")
@@ -2192,9 +2198,3 @@ def clear_browser_data_universal(vm_ip_address, config):
 
 def setup_driver_universal(vm_ip_address, config):
     """Universal setup function for any driver configuration"""
-    
-    # Session cleanup (existing code)
-    try:
-        import requests
-        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
-        status_data = status_response.json()
