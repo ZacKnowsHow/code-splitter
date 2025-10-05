@@ -1,4 +1,5 @@
 # Continuation from line 2201
+                if (element.shadowRoot) {
                     let clearButton = element.shadowRoot.querySelector('#clearButton');
                     if (clearButton) {
                         console.log('Found clear button via recursive search');
@@ -2198,4 +2199,3 @@ class VintedScraper:
     def send_pushover_notification(self, title, message, api_token, user_key):
         """
         Send a notification via Pushover
-        :param title: Notification title
