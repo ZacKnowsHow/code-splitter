@@ -1,4 +1,41 @@
 # Continuation from line 6601
+
+    def search_vinted_with_refresh(self, driver, search_query):
+        """
+        Enhanced search_vinted method with refresh and rescan functionality
+        UPDATED: Now restarts the main driver every 250 cycles to prevent freezing
+        """
+        global suitable_listings, current_listing_index
+        
+        # CLEAR THE VINTED SCANNED IDS FILE AT THE BEGINNING OF EACH RUN
+        try:
+            with open(VINTED_SCANNED_IDS_FILE, 'w') as f:
+                pass  # This creates an empty file, clearing any existing content
+            print(f"✅ Cleared {VINTED_SCANNED_IDS_FILE} at the start of the run")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not clear {VINTED_SCANNED_IDS_FILE}: {e}")
+        
+        # Clear previous results
+        suitable_listings.clear()
+        current_listing_index = 0
+        
+        # Ensure root download folder exists
+        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
+
+        # Load YOLO Model Once
+        print("🧠 Loading object detection model...")
+        if not os.path.exists(MODEL_WEIGHTS):
+            print(f"❌ Critical Error: Model weights not found at '{MODEL_WEIGHTS}'. Detection will be skipped.")
+        else:
+            try:
+                print("✅ Model loaded successfully.")
+            except Exception as e:
+                print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
+        
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
+
+        # Load model with explicit GPU usage
         if torch.cuda.is_available():
             model = YOLO(MODEL_WEIGHTS).cuda()
             print("✅ YOLO model loaded on GPU")

@@ -1,4 +1,5 @@
 # Continuation from line 4401
+        :param title: Notification title
         :param message: Notification message
         :param api_token: Pushover API token
         :param user_key: Pushover user key
@@ -125,8 +126,11 @@
 
     def execute_bookmark_with_preloaded_driver(self, url):
         """Execute bookmark using the already logged-in VM driver"""
+        global current_bookmark_status
+        
         if not self.vm_driver_ready or not self.current_vm_driver:
             print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
+            current_bookmark_status = "BOOKMARK FAILED: No driver"
             return False
         
         with self.vm_driver_lock:
@@ -136,7 +140,7 @@
                 # Create step log for tracking
                 step_log = {
                     'start_time': time.time(),
-                    'driver_number': 1,  # Always 1 since we use single driver
+                    'driver_number': 1,
                     'steps_completed': [],
                     'failures': [],
                     'success': False,
@@ -156,10 +160,19 @@
                 print(f"❌ Failures: {len(step_log['failures'])}")
                 print(f"🏆 Overall success: {'YES' if success else 'NO'}")
                 
+                # Set bookmark status based on success
+                if success:
+                    current_bookmark_status = "✅ BOOKMARK SUCCEEDED"
+                    print(f"✅ BOOKMARK STATUS: Success")
+                else:
+                    current_bookmark_status = "❌ BOOKMARK FAILED"
+                    print(f"❌ BOOKMARK STATUS: Failed")
+                
                 return success
                 
             except Exception as e:
                 print(f"❌ BOOKMARK: Error using pre-loaded driver: {e}")
+                current_bookmark_status = f"❌ BOOKMARK FAILED: {str(e)[:30]}"
                 self.vm_driver_ready = False
                 return False
 
@@ -296,7 +309,8 @@
 
 
     def run_pygame_window(self):
-        global LOCK_POSITION, current_listing_index, suitable_listings
+        global LOCK_POSITION, current_listing_index, suitable_listings, current_bookmark_status
+        
         screen, clock = self.initialize_pygame_window()
         rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
             pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
@@ -304,6 +318,7 @@
             pygame.Rect(0, 360, 240, 240), pygame.Rect(240, 360, 240, 120), pygame.Rect(240, 480, 240, 120),
             pygame.Rect(480, 360, 160, 240), pygame.Rect(640, 360, 160, 240)
         ]
+        
         fonts = {
             'number': pygame.font.Font(None, 24),
             'price': pygame.font.Font(None, 36),
@@ -316,8 +331,10 @@
             'click': pygame.font.Font(None, 28),
             'suitability': pygame.font.Font(None, 28),
             'reviews': pygame.font.Font(None, 28),
-            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
+            'exact_time': pygame.font.Font(None, 22),
+            'bookmark_status': pygame.font.Font(None, 24)  # NEW: Font for bookmark status
         }
+        
         dragging = False
         resizing = False
         drag_rect = None
@@ -335,52 +352,47 @@
                     elif event.key == pygame.K_RIGHT:
                         if suitable_listings:
                             current_listing_index = (current_listing_index + 1) % len(suitable_listings)
-                            # CRITICAL FIX: Properly switch to stored listing data including images
                             current_listing = suitable_listings[current_listing_index]
-                            
-                            # FIXED: Pass the stored images from the listing, not empty list
                             stored_images = current_listing.get('processed_images', [])
                             
                             self.update_listing_details(
                                 title=current_listing['title'],
                                 description=current_listing['description'],
-                                join_date=current_listing['join_date'],  # FIXED: Use stored timestamp
+                                join_date=current_listing['join_date'],
                                 price=current_listing['price'],
                                 expected_revenue=current_listing['expected_revenue'],
                                 profit=current_listing['profit'],
                                 detected_items=current_listing['detected_items'],
-                                processed_images=stored_images,  # FIXED: Pass stored images
+                                processed_images=stored_images,
                                 bounding_boxes=current_listing['bounding_boxes'],
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
-                                seller_reviews=current_listing.get('seller_reviews')
+                                seller_reviews=current_listing.get('seller_reviews'),
+                                bookmark_status=current_listing.get('bookmark_status')
                             )
                     elif event.key == pygame.K_LEFT:
                         if suitable_listings:
                             current_listing_index = (current_listing_index - 1) % len(suitable_listings)
-                            # CRITICAL FIX: Properly switch to stored listing data including images
                             current_listing = suitable_listings[current_listing_index]
-                            
-                            # FIXED: Pass the stored images from the listing, not empty list
                             stored_images = current_listing.get('processed_images', [])
                             
                             self.update_listing_details(
                                 title=current_listing['title'],
                                 description=current_listing['description'],
-                                join_date=current_listing['join_date'],  # FIXED: Use stored timestamp
+                                join_date=current_listing['join_date'],
                                 price=current_listing['price'],
                                 expected_revenue=current_listing['expected_revenue'],
                                 profit=current_listing['profit'],
                                 detected_items=current_listing['detected_items'],
-                                processed_images=stored_images,  # FIXED: Pass stored images
+                                processed_images=stored_images,
                                 bounding_boxes=current_listing['bounding_boxes'],
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
-                                seller_reviews=current_listing.get('seller_reviews')
+                                seller_reviews=current_listing.get('seller_reviews'),
+                                bookmark_status=current_listing.get('bookmark_status')
                             )
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:  # Left mouse button
-                        # Check if rectangle 4 was clicked
+                    if event.button == 1:
                         if rectangles[3].collidepoint(event.pos):
                             if suitable_listings and 0 <= current_listing_index < len(suitable_listings):
                                 current_url = suitable_listings[current_listing_index].get('url')
@@ -431,9 +443,21 @@
                     self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
                 elif i == 7:  # Rectangle 8 (index 7) - Description
                     self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
-                elif i == 8:  # Rectangle 9 (index 8) - FIXED: Shows exact stored timestamp
+                elif i == 8:  # Rectangle 9 (index 8) - Join Date + Bookmark Status
                     time_label = "Appended:"
-                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
+                    # NEW: Combine join date and bookmark status
+                    combined_text = f"{time_label}\n{current_listing_join_date}\n\n{current_bookmark_status}"
+                    
+                    # Determine color based on bookmark status
+                    if "SUCCEEDED" in current_bookmark_status:
+                        status_color = (0, 200, 0)  # Green for success
+                    elif "FAILED" in current_bookmark_status:
+                        status_color = (255, 0, 0)  # Red for failure
+                    else:
+                        status_color = (100, 100, 100)  # Gray for no attempt
+                    
+                    # Render with appropriate color
+                    self.render_text_in_rect(screen, fonts['bookmark_status'], combined_text, rect, status_color)
                 elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
                     self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
                 elif i == 9:  # Rectangle 10 (index 9) - Profit
@@ -448,7 +472,7 @@
                 elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
                     self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
                 elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
-                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
+                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))
 
             screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
 
@@ -645,10 +669,16 @@
             print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
    
             raise
-    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
+
+    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None, bookmark_status=None):
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
         global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
+        global current_bookmark_status
+
+        # Handle bookmark status
+        if bookmark_status:
+            current_bookmark_status = bookmark_status
 
         # CRITICAL FIX 1: Don't clear existing images when switching between listings
         # Only clear if we're setting NEW images (not switching to existing listing)
@@ -708,6 +738,7 @@
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
+
 
     # Supporting helper function for better timeout management
     def calculate_dynamic_timeout(base_timeout, elapsed_time, max_total_time):
@@ -1339,14 +1370,15 @@
             shutil.rmtree(DOWNLOAD_ROOT)
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
-        
+            
     def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter):
         """
         IMMEDIATELY process a suitable listing with pre-loaded VM driver
         The VM driver should already be logged in and waiting
         FIXED: Properly preserve timestamps and images for pygame display
+        UPDATED: Now stores bookmark status in listing info
         """
-        global suitable_listings, current_listing_index, recent_listings
+        global suitable_listings, current_listing_index, recent_listings, current_bookmark_status
 
         print(f"🚀 REAL-TIME: Immediately processing listing with PRE-LOADED VM driver")
         print(f"🔗 URL: {url}")
@@ -1444,6 +1476,9 @@
             print(f"✅ SUITABLE: {suitability_reason}")
 
         # ============= VM PROCESSING =============
+        # Initialize bookmark status before processing
+        bookmark_status = "No bookmark attempted"
+        
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
             print(f"⏱️ TIMER: Starting timer for listing: {url[:50]}...")
             start_listing_timer(url)
@@ -1453,18 +1488,18 @@
             
             # Call the new function that uses the pre-loaded driver
             try:
-                # Pass the URL to the bookmark function so it can stop the timer
                 success = self.execute_bookmark_with_preloaded_driver(url)
                 if success:
                     print(f"✅ VM PROCESS COMPLETED: Listing has been bookmarked successfully")
+                    bookmark_status = current_bookmark_status  # Get the status set by execute_bookmark
                 else:
                     print(f"❌ VM PROCESS FAILED: Bookmark attempt was unsuccessful")
-                    # Stop timer on failure
+                    bookmark_status = current_bookmark_status
                     stop_listing_timer(url, stage='failed')
             except Exception as vm_error:
                 print(f"❌ VM PROCESS ERROR: {vm_error}")
                 print(f"⚠️  Continuing with scraping despite VM error...")
-                # Stop timer on error
+                bookmark_status = f"❌ BOOKMARK FAILED: {str(vm_error)[:30]}"
                 stop_listing_timer(url, stage='error')
             
             # CRITICAL: After processing, prepare the NEXT driver
@@ -1478,6 +1513,7 @@
             print(f"▶️  SCRAPING RESUMED: VM process complete, continuing with search...")
         else:
             print(f"❌ UNSUITABLE LISTING: Skipping VM process, continuing with scraping")
+            bookmark_status = "Unsuitable - no bookmark"
 
         # CRITICAL FIX: Generate exact UK time when creating listing info and store it permanently
         from datetime import datetime
@@ -1491,25 +1527,26 @@
         preserved_images = []
         for img in processed_images:
             try:
-                img_copy = img.copy()  # Create independent copy
+                img_copy = img.copy()
                 preserved_images.append(img_copy)
             except Exception as e:
                 print(f"Error copying image for storage: {e}")
 
-        # Create final listing info with exact append time and preserved images
+        # Create final listing info with exact append time, preserved images, AND bookmark status
         final_listing_info = {
             'title': details.get("title", "No title"),
             'description': details.get("description", "No description"),
-            'join_date': exact_append_time,  # CRITICAL: This timestamp must be preserved
+            'join_date': exact_append_time,
             'price': str(total_price),
             'expected_revenue': total_revenue,
             'profit': expected_profit,
             'detected_items': detected_objects,
-            'processed_images': preserved_images,  # CRITICAL: Store deep copies of images
+            'processed_images': preserved_images,
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
             'suitability': suitability_reason,
-            'seller_reviews': seller_reviews
+            'seller_reviews': seller_reviews,
+            'bookmark_status': bookmark_status  # NEW: Store bookmark status
         }
 
         # Determine whether to display on website/pygame
@@ -1553,7 +1590,7 @@
             print(f"❌ Listing not added to display: {suitability_reason}")
 
         print(f"🔄 REAL-TIME PROCESSING COMPLETE: Ready to resume scraping")
-
+        
     # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
     def send_to_vm_bookmark_system(self, url):
         """
@@ -2162,40 +2199,3 @@
             time.sleep(wait_after_max_reached_vinted)
         
         return True
-
-    def search_vinted_with_refresh(self, driver, search_query):
-        """
-        Enhanced search_vinted method with refresh and rescan functionality
-        UPDATED: Now restarts the main driver every 250 cycles to prevent freezing
-        """
-        global suitable_listings, current_listing_index
-        
-        # CLEAR THE VINTED SCANNED IDS FILE AT THE BEGINNING OF EACH RUN
-        try:
-            with open(VINTED_SCANNED_IDS_FILE, 'w') as f:
-                pass  # This creates an empty file, clearing any existing content
-            print(f"✅ Cleared {VINTED_SCANNED_IDS_FILE} at the start of the run")
-        except Exception as e:
-            print(f"⚠️ Warning: Could not clear {VINTED_SCANNED_IDS_FILE}: {e}")
-        
-        # Clear previous results
-        suitable_listings.clear()
-        current_listing_index = 0
-        
-        # Ensure root download folder exists
-        os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
-
-        # Load YOLO Model Once
-        print("🧠 Loading object detection model...")
-        if not os.path.exists(MODEL_WEIGHTS):
-            print(f"❌ Critical Error: Model weights not found at '{MODEL_WEIGHTS}'. Detection will be skipped.")
-        else:
-            try:
-                print("✅ Model loaded successfully.")
-            except Exception as e:
-                print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
-        
-        print(f"CUDA available: {torch.cuda.is_available()}")
-        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
-
-        # Load model with explicit GPU usage

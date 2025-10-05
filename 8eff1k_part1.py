@@ -110,6 +110,7 @@ actually_purchase_listing = True
 wait_for_bookmark_stopwatch_to_buy = False
 listing_timers = {}
 listing_timers_lock = Lock()
+current_bookmark_status = "No bookmark attempted"
 bookmark_stopwatch_start = None
 test_purchase_not_true = False #uses the url below rather than the one from the web page
 test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1?referrer=catalog"
@@ -2197,4 +2198,3 @@ def clear_browser_data_universal(vm_ip_address, config):
             
             // Strategy 2: Search all shadow roots recursively
             function searchShadowRoots(element) {
-                if (element.shadowRoot) {
