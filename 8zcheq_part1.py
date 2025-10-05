@@ -76,7 +76,7 @@ VM_BOOKMARK_URLS = [
 ]
 
 # tests whether the listing is suitable for buying based on URL rather than scanning
-TEST_WHETHER_SUITABLE = True
+TEST_WHETHER_SUITABLE = False
 TEST_SUITABLE_URLS = [
     'https://www.vinted.co.uk/items/7186136504-nintendo-switch-with-games-and-accessories?referrer=catalog'
 ]

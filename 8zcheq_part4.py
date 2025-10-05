@@ -1,4 +1,14 @@
 # Continuation from line 6601
+
+                        # Download and detect images
+                        detected_objects, processed_images = self.download_and_detect_images_in_memory(current_driver, model)
+                        
+                        # Print detected objects
+                        detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
+                        if detected_classes:
+                            for cls in sorted(detected_classes):
+                                print(f"  • {cls}: {detected_objects[cls]}")
+
                         # Process listing
                         self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
 
