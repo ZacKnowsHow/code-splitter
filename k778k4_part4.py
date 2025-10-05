@@ -1,4 +1,148 @@
 # Continuation from line 6601
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
+        # Store original driver reference
+        current_driver = driver
+        
+        # Load previously scanned listing IDs
+        scanned_ids = self.load_scanned_vinted_ids()
+        print(f"📚 Loaded {len(scanned_ids)} previously scanned listing IDs")
+
+        page = 1
+        overall_listing_counter = 0
+        refresh_cycle = 1
+        is_first_refresh = True
+        
+        # NEW: Driver restart tracking
+        DRIVER_RESTART_INTERVAL = 100
+        cycles_since_restart = 0
+
+        # Main scanning loop with refresh functionality AND driver restart
+        while True:
+            print(f"\n{'='*60}")
+            print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
+            print(f"🔄 Cycles since last driver restart: {cycles_since_restart}")
+            print(f"{'='*60}")
+            
+            # NEW: Check if we need to restart the driver
+            if cycles_since_restart >= DRIVER_RESTART_INTERVAL:
+                print(f"\n🔄 DRIVER RESTART: Reached {DRIVER_RESTART_INTERVAL} cycles")
+                print("🔄 RESTARTING: Main scraping driver to prevent freezing...")
+                
+                try:
+                    # Close current driver safely
+                    print("🔄 CLOSING: Current driver...")
+                    current_driver.quit()
+                    time.sleep(2)  # Give time for cleanup
+                    
+                    # Create new driver
+                    print("🔄 CREATING: New driver...")
+                    current_driver = self.setup_driver()
+                    
+                    if current_driver is None:
+                        print("❌ CRITICAL: Failed to create new driver after restart")
+                        break
+                    
+                    print("✅ DRIVER RESTART: Successfully restarted main driver")
+                    cycles_since_restart = 0  # Reset counter
+                    
+                    # Re-navigate to search page after restart
+                    params = {
+                        "search_text": search_query,
+                        "price_from": PRICE_FROM,
+                        "price_to": PRICE_TO,
+                        "currency": CURRENCY,
+                        "order": ORDER,
+                    }
+                    current_driver.get(f"{BASE_URL}?{urlencode(params)}")
+                    
+                    # Wait for page to load after restart
+                    try:
+                        WebDriverWait(current_driver, 20).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                        )
+                        print("✅ RESTART: Page loaded successfully after driver restart")
+                    except TimeoutException:
+                        print("⚠️ RESTART: Timeout waiting for page after driver restart")
+                    
+                except Exception as restart_error:
+                    print(f"❌ RESTART ERROR: Failed to restart driver: {restart_error}")
+                    print("💥 CRITICAL: Cannot continue without working driver")
+                    break
+            
+            cycle_listing_counter = 0  # Listings processed in this cycle
+            found_already_scanned = False
+            
+            # Reset to first page for each cycle
+            page = 1
+            
+            while True:  # Page loop
+                try:
+                    WebDriverWait(current_driver, 20).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                    )
+                except TimeoutException:
+                    print("⚠️ Timeout waiting for page to load - moving to next cycle")
+                    break
+
+                # Get listing URLs from current page
+                els = current_driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
+                urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
+                
+                if not urls:
+                    print(f"📄 No listings found on page {page} - moving to next cycle")
+                    break
+
+                print(f"📄 Processing page {page} with {len(urls)} listings")
+
+                for idx, url in enumerate(urls, start=1):
+                    cycle_listing_counter += 1
+                    
+                    print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
+                    
+                    # Extract listing ID and check if already scanned
+                    listing_id = self.extract_vinted_listing_id(url)
+                    
+                    if REFRESH_AND_RESCAN and listing_id:
+                        if listing_id in scanned_ids:
+                            print(f"🔁 DUPLICATE DETECTED: Listing ID {listing_id} already scanned")
+                            print(f"🔄 Initiating refresh and rescan process...")
+                            found_already_scanned = True
+                            break
+                    
+                    # Check if we've hit the maximum listings for this cycle
+                    if REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                        print(f"📊 Reached MAX_LISTINGS_VINTED_TO_SCAN ({MAX_LISTINGS_VINTED_TO_SCAN})")
+                        print(f"🔄 Initiating refresh cycle...")
+                        break
+
+                    overall_listing_counter += 1
+
+
+                    # Process the listing (using current_driver instead of driver)
+                    current_driver.execute_script("window.open();")
+                    current_driver.switch_to.window(current_driver.window_handles[-1])
+                    current_driver.get(url)
+
+                    try:
+                        listing_start_time = time.time()
+                        details = self.scrape_item_details(current_driver)
+                        second_price = self.extract_price(details["second_price"])
+                        postage = self.extract_price(details["postage"])
+                        total_price = second_price + postage
+
+                        print(f"  Link:         {url}")
+                        print(f"  Title:        {details['title']}")
+                        print(f"  Username:     {details.get('username', 'Username not found')}")
+                        print(f"  Price:        {details['price']}")
+                        print(f"  Second price: {details['second_price']} ({second_price:.2f})")
+                        print(f"  Postage:      {details['postage']} ({postage:.2f})")
+                        print(f"  Total price:  £{total_price:.2f}")
                         print(f"  Uploaded:     {details['uploaded']}")
 
                         # Download images for the current listing
