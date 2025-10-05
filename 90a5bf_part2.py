@@ -1,4 +1,103 @@
 # Continuation from line 2201
+                    let clearButton = element.shadowRoot.querySelector('#clearButton');
+                    if (clearButton) {
+                        console.log('Found clear button via recursive search');
+                        clearButton.click();
+                        return true;
+                    }
+                    
+                    // Search nested shadow roots
+                    let shadowElements = element.shadowRoot.querySelectorAll('*');
+                    for (let el of shadowElements) {
+                        if (searchShadowRoots(el)) return true;
+                    }
+                }
+                return false;
+            }
+            
+            let allElements = document.querySelectorAll('*');
+            for (let el of allElements) {
+                if (searchShadowRoots(el)) return true;
+            }
+            
+            // Strategy 3: Look for cr-button elements in shadow roots
+            function findCrButton(element) {
+                if (element.shadowRoot) {
+                    let crButtons = element.shadowRoot.querySelectorAll('cr-button');
+                    for (let btn of crButtons) {
+                        if (btn.id === 'clearButton' || btn.textContent.includes('Delete data')) {
+                            console.log('Found cr-button via strategy 3');
+                            btn.click();
+                            return true;
+                        }
+                    }
+                    
+                    let shadowElements = element.shadowRoot.querySelectorAll('*');
+                    for (let el of shadowElements) {
+                        if (findCrButton(el)) return true;
+                    }
+                }
+                return false;
+            }
+            
+            for (let el of allElements) {
+                if (findCrButton(el)) return true;
+            }
+            
+            console.log('Clear button not found in any shadow root');
+            return false;
+        }
+        
+        return findAndClickClearButton();
+        """
+        
+        # Execute the Shadow DOM navigation script
+        result = clear_driver.execute_script(shadow_dom_script)
+        
+        if result:
+            print("✓ Successfully clicked clear data button via Shadow DOM!")
+            print("Step 5: Waiting for data clearing to complete...")
+            time.sleep(2)  # Wait for clearing process
+            print("✓ Browser data clearing completed successfully!")
+        else:
+            print("✗ Failed to find clear button in Shadow DOM")
+            
+            # Fallback: Try to trigger clear via keyboard shortcut
+            print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
+            try:
+                from selenium.webdriver.common.keys import Keys
+                body = clear_driver.find_element(By.TAG_NAME, "body")
+                body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
+                time.sleep(1)
+                # Try to press Enter to confirm
+                body.send_keys(Keys.ENTER)
+                time.sleep(1)
+                print("✓ Fallback keyboard shortcut attempted")
+            except Exception as fallback_error:
+                print(f"✗ Fallback also failed: {fallback_error}")
+        
+    except Exception as e:
+        print(f"✗ Browser data clearing failed: {str(e)}")
+        print("Continuing with main execution anyway...")
+        import traceback
+        traceback.print_exc()
+    
+    finally:
+        if clear_driver:
+            try:
+                print("Step 6: Closing temporary driver...")
+                clear_driver.quit()
+                print("✓ Temporary driver closed successfully")
+            except Exception as e:
+                print(f"Warning: Failed to close temporary driver: {e}")
+        
+        print("=" * 50)
+        print("BROWSER DATA CLEAR COMPLETE")
+        print("=" * 50)
+        time.sleep(0.5)  # Brief pause before continuing
+
+def setup_driver_universal(vm_ip_address, config):
+    """Universal setup function for any driver configuration"""
     
     # Session cleanup (existing code)
     try:
@@ -2100,102 +2199,3 @@ class VintedScraper:
         """
         Send a notification via Pushover
         :param title: Notification title
-        :param message: Notification message
-        :param api_token: Pushover API token
-        :param user_key: Pushover user key
-        """
-        try:
-            url = "https://api.pushover.net/1/messages.json"
-            payload = {
-                "token": api_token,
-                "user": user_key,
-                "title": title,
-                "message": message
-            }
-            response = requests.post(url, data=payload)
-            if response.status_code == 200:
-                print(f"Notification sent successfully: {title}")
-            else:
-                print(f"Failed to send notification. Status code: {response.status_code}")
-                print(f"Response: {response.text}")
-        except Exception as e:
-            print(f"Error sending Pushover notification: {str(e)}")
-
-    def fetch_price(self, class_name):
-        if class_name in ['lite_box', 'oled_box', 'oled_in_tv', 'switch_box', 'switch_in_tv', 'other_mario']:
-            return None
-        price = BASE_PRICES.get(class_name, 0)
-        delivery_cost = 5.0 if class_name in ['lite', 'oled', 'switch'] else 3.5
-        final_price = price + delivery_cost
-        return final_price
-    def fetch_all_prices(self):
-        all_prices = {class_name: self.fetch_price(class_name) for class_name in class_names if self.fetch_price(class_name) is not None}
-        all_prices.update({
-            'lite_box': all_prices.get('lite', 0) * 1.05, 
-            'oled_box': all_prices.get('oled', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_white', 0) - 15, 
-            'oled_in_tv': all_prices.get('oled', 0) + all_prices.get('tv_white', 0) - 10, 
-            'switch_box': all_prices.get('switch', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_black', 0) - 5, 
-            'switch_in_tv': all_prices.get('switch', 0) + all_prices.get('tv_black', 0) - 3.5, 
-            'other_mario': 22.5,
-            'anonymous_games': 5  # Add price for anonymous games
-        })
-        return all_prices
-        
-    def login_vm_driver(self, driver):
-        """Login the VM driver and wait on homepage - extracted from main_vm_driver logic"""
-        try:
-            print("🔄 VM LOGIN: Starting login process...")
-            
-            # Clear browser data first
-            print("🔄 VM LOGIN: Clearing cookies...")
-            driver.delete_all_cookies()
-            
-            # Navigate to Vinted
-            print("🔄 VM LOGIN: Navigating to vinted.co.uk...")
-            driver.get("https://vinted.co.uk")
-            
-            # Random delay after page load
-            time.sleep(random.uniform(2, 4))
-            
-            # Wait for and accept cookies
-            print("🔄 VM LOGIN: Accepting cookies...")
-            if wait_and_click(driver, By.ID, "onetrust-accept-btn-handler", 15):
-                print("✅ VM LOGIN: Cookie consent accepted")
-            else:
-                print("⚠️ VM LOGIN: Cookie consent button not found")
-            
-            time.sleep(random.uniform(1, 2))
-            
-            # Click Sign up | Log in button
-            print("🔄 VM LOGIN: Looking for login button...")
-            signup_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
-            )
-            
-            human_like_delay()
-            action = move_to_element_naturally(driver, signup_button)
-            time.sleep(random.uniform(0.1, 0.3))
-            action.click().perform()
-            print("✅ VM LOGIN: Clicked Sign up | Log in button")
-            
-            time.sleep(random.uniform(1, 2))
-            
-            if google_login:
-                print("🔄 VM LOGIN: Using Google login...")
-                google_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
-                )
-                
-                human_like_delay()
-                action = move_to_element_naturally(driver, google_button)
-                time.sleep(random.uniform(0.1, 0.3))
-                action.click().perform()
-                print("✅ VM LOGIN: Clicked Continue with Google")
-                
-            else:
-                print("🔄 VM LOGIN: Using email login...")
-                # ... email login logic stays the same ...
-            
-            # Wait a bit for login process
-            time.sleep(random.uniform(3, 5))
-            

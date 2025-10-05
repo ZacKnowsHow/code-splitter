@@ -1,4 +1,103 @@
 # Continuation from line 4401
+        :param message: Notification message
+        :param api_token: Pushover API token
+        :param user_key: Pushover user key
+        """
+        try:
+            url = "https://api.pushover.net/1/messages.json"
+            payload = {
+                "token": api_token,
+                "user": user_key,
+                "title": title,
+                "message": message
+            }
+            response = requests.post(url, data=payload)
+            if response.status_code == 200:
+                print(f"Notification sent successfully: {title}")
+            else:
+                print(f"Failed to send notification. Status code: {response.status_code}")
+                print(f"Response: {response.text}")
+        except Exception as e:
+            print(f"Error sending Pushover notification: {str(e)}")
+
+    def fetch_price(self, class_name):
+        if class_name in ['lite_box', 'oled_box', 'oled_in_tv', 'switch_box', 'switch_in_tv', 'other_mario']:
+            return None
+        price = BASE_PRICES.get(class_name, 0)
+        delivery_cost = 5.0 if class_name in ['lite', 'oled', 'switch'] else 3.5
+        final_price = price + delivery_cost
+        return final_price
+    def fetch_all_prices(self):
+        all_prices = {class_name: self.fetch_price(class_name) for class_name in class_names if self.fetch_price(class_name) is not None}
+        all_prices.update({
+            'lite_box': all_prices.get('lite', 0) * 1.05, 
+            'oled_box': all_prices.get('oled', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_white', 0) - 15, 
+            'oled_in_tv': all_prices.get('oled', 0) + all_prices.get('tv_white', 0) - 10, 
+            'switch_box': all_prices.get('switch', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_black', 0) - 5, 
+            'switch_in_tv': all_prices.get('switch', 0) + all_prices.get('tv_black', 0) - 3.5, 
+            'other_mario': 22.5,
+            'anonymous_games': 5  # Add price for anonymous games
+        })
+        return all_prices
+        
+    def login_vm_driver(self, driver):
+        """Login the VM driver and wait on homepage - extracted from main_vm_driver logic"""
+        try:
+            print("🔄 VM LOGIN: Starting login process...")
+            
+            # Clear browser data first
+            print("🔄 VM LOGIN: Clearing cookies...")
+            driver.delete_all_cookies()
+            
+            # Navigate to Vinted
+            print("🔄 VM LOGIN: Navigating to vinted.co.uk...")
+            driver.get("https://vinted.co.uk")
+            
+            # Random delay after page load
+            time.sleep(random.uniform(2, 4))
+            
+            # Wait for and accept cookies
+            print("🔄 VM LOGIN: Accepting cookies...")
+            if wait_and_click(driver, By.ID, "onetrust-accept-btn-handler", 15):
+                print("✅ VM LOGIN: Cookie consent accepted")
+            else:
+                print("⚠️ VM LOGIN: Cookie consent button not found")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            # Click Sign up | Log in button
+            print("🔄 VM LOGIN: Looking for login button...")
+            signup_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
+            )
+            
+            human_like_delay()
+            action = move_to_element_naturally(driver, signup_button)
+            time.sleep(random.uniform(0.1, 0.3))
+            action.click().perform()
+            print("✅ VM LOGIN: Clicked Sign up | Log in button")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            if google_login:
+                print("🔄 VM LOGIN: Using Google login...")
+                google_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
+                )
+                
+                human_like_delay()
+                action = move_to_element_naturally(driver, google_button)
+                time.sleep(random.uniform(0.1, 0.3))
+                action.click().perform()
+                print("✅ VM LOGIN: Clicked Continue with Google")
+                
+            else:
+                print("🔄 VM LOGIN: Using email login...")
+                # ... email login logic stays the same ...
+            
+            # Wait a bit for login process
+            time.sleep(random.uniform(3, 5))
+            
             # Handle captcha if present
             result = handle_datadome_audio_captcha(driver)
 
@@ -1202,19 +1301,27 @@
 
         # ============= VM PROCESSING =============
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
+            print(f"⏱️ TIMER: Starting timer for listing: {url[:50]}...")
+            start_listing_timer(url)
+            
             print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver")
             print(f"⏸️  SCRAPING IS PAUSED UNTIL VM PROCESS COMPLETES")
             
             # Call the new function that uses the pre-loaded driver
             try:
+                # Pass the URL to the bookmark function so it can stop the timer
                 success = self.execute_bookmark_with_preloaded_driver(url)
                 if success:
                     print(f"✅ VM PROCESS COMPLETED: Listing has been bookmarked successfully")
                 else:
                     print(f"❌ VM PROCESS FAILED: Bookmark attempt was unsuccessful")
+                    # Stop timer on failure
+                    stop_listing_timer(url, stage='failed')
             except Exception as vm_error:
                 print(f"❌ VM PROCESS ERROR: {vm_error}")
                 print(f"⚠️  Continuing with scraping despite VM error...")
+                # Stop timer on error
+                stop_listing_timer(url, stage='error')
             
             # CRITICAL: After processing, prepare the NEXT driver
             try:
@@ -2092,110 +2199,3 @@
                         print(f"  Second price: {details['second_price']} ({second_price:.2f})")
                         print(f"  Postage:      {details['postage']} ({postage:.2f})")
                         print(f"  Total price:  £{total_price:.2f}")
-                        print(f"  Uploaded:     {details['uploaded']}")
-
-                        # Download images for the current listing
-                        listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
-                        image_paths = self.download_images_for_listing(current_driver, listing_dir)
-
-                        # Perform object detection and get processed images
-                        detected_objects = {}
-                        processed_images = []
-                        if model and image_paths:
-                            detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
-                            
-                            # Print detected objects
-                            detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
-                            if detected_classes:
-                                for cls in sorted(detected_classes):
-                                    print(f"  • {cls}: {detected_objects[cls]}")
-
-                        # Process listing for pygame display
-                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
-
-                        # Mark this listing as scanned
-                        if listing_id:
-                            scanned_ids.add(listing_id)
-                            self.save_vinted_listing_id(listing_id)
-                            print(f"✅ Saved listing ID: {listing_id}")
-
-                        print("-" * 40)
-                        self.cleanup_processed_images(processed_images)
-                        listing_end_time = time.time()
-                        elapsed_time = listing_end_time - listing_start_time
-                        print(f"⏱️ Listing {overall_listing_counter} processing completed in {elapsed_time:.2f} seconds")
-
-                        
-                    except Exception as e:
-                        print(f"  ❌ ERROR scraping listing: {e}")
-                        # Still mark as scanned even if there was an error
-                        if listing_id:
-                            scanned_ids.add(listing_id)
-                            self.save_vinted_listing_id(listing_id)
-
-                    finally:
-                        current_driver.close()
-                        current_driver.switch_to.window(current_driver.window_handles[0])  # Use index 0 instead of main
-
-                # Check if we need to break out of page loop
-                if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
-                    break
-
-                # Try to go to next page
-                try:
-                    nxt = current_driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
-                    current_driver.execute_script("arguments[0].click();", nxt)
-                    page += 1
-                    time.sleep(2)
-                except NoSuchElementException:
-                    print("📄 No more pages available - moving to next cycle")
-                    break
-
-            # End of page loop - decide whether to continue or refresh
-            if not REFRESH_AND_RESCAN:
-                print("🏁 REFRESH_AND_RESCAN disabled - ending scan")
-                break
-            
-            if found_already_scanned:
-                print(f"🔁 Found already scanned listing - refreshing immediately")
-                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
-            elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
-                print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
-                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
-            else:
-                print("📄 No more pages and no max reached - refreshing for new listings")
-                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
-
-            refresh_cycle += 1
-            cycles_since_restart += 1  # NEW: Increment counter after each cycle
-            is_first_refresh = False
-
-    def start_cloudflare_tunnel(self, port=5000):
-        """
-        Starts a Cloudflare Tunnel using the cloudflared binary.
-        Adjust the cloudflared_path if your executable is in a different location.
-        """
-        # Path to the cloudflared executable
-        #pc
-        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
-        #laptop
-        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
-        
-        # Start the tunnel with the desired command-line arguments
-        process = subprocess.Popen(
-            [cloudflared_path, "tunnel", "--url", f"http://localhost:{port}"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        
-        # Function to read and print cloudflared output asynchronously
-        def read_output(proc):
-            for line in proc.stdout:
-                print("[cloudflared]", line.strip())
-        
-        # Start a thread to print cloudflared output so you can see the public URL and any errors
-        threading.Thread(target=read_output, args=(process,), daemon=True).start()
-        
-        # Wait a few seconds for the tunnel to establish (adjust if needed).
-        time.sleep(5)
