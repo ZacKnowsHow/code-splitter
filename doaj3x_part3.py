@@ -1715,6 +1715,9 @@
                 
                 item_revenue = item_price * count
                 total_revenue += item_revenue
+        for item, count in detected_objects.items():
+            if count > 0:
+                print(f"DEBUG ITEM: {item} = {count}, price = {all_prices.get(item, 'NOT IN PRICES')}")
 
         expected_profit = total_revenue - listing_price
         profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
@@ -2196,6 +2199,3 @@
         # Wait for new listings (except first refresh)
         if not is_first_refresh:
             print(f"⏳ Waiting {wait_after_max_reached_vinted} seconds for new listings...")
-            time.sleep(wait_after_max_reached_vinted)
-        
-        return True

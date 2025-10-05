@@ -1,4 +1,7 @@
 # Continuation from line 6601
+            time.sleep(wait_after_max_reached_vinted)
+        
+        return True
 
     def search_vinted_with_refresh(self, driver, search_query):
         """
