@@ -1,4 +1,111 @@
 # Continuation from line 6601
+                        print(f"  Uploaded:     {details['uploaded']}")
+
+                        # Download images for the current listing
+                        listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
+                        image_paths = self.download_images_for_listing(current_driver, listing_dir)
+
+                        # Perform object detection and get processed images
+                        detected_objects = {}
+                        processed_images = []
+                        if model and image_paths:
+                            detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
+                            
+                            # Print detected objects
+                            detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
+                            if detected_classes:
+                                for cls in sorted(detected_classes):
+                                    print(f"  • {cls}: {detected_objects[cls]}")
+
+                        # Process listing for pygame display
+                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
+
+                        # Mark this listing as scanned
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+                            print(f"✅ Saved listing ID: {listing_id}")
+
+                        print("-" * 40)
+                        self.cleanup_processed_images(processed_images)
+                        listing_end_time = time.time()
+                        elapsed_time = listing_end_time - listing_start_time
+                        print(f"⏱️ Listing {overall_listing_counter} processing completed in {elapsed_time:.2f} seconds")
+
+                        
+                    except Exception as e:
+                        print(f"  ❌ ERROR scraping listing: {e}")
+                        # Still mark as scanned even if there was an error
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+
+                    finally:
+                        current_driver.close()
+                        current_driver.switch_to.window(current_driver.window_handles[0])  # Use index 0 instead of main
+
+                # Check if we need to break out of page loop
+                if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
+                    break
+
+                # Try to go to next page
+                try:
+                    nxt = current_driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
+                    current_driver.execute_script("arguments[0].click();", nxt)
+                    page += 1
+                    time.sleep(2)
+                except NoSuchElementException:
+                    print("📄 No more pages available - moving to next cycle")
+                    break
+
+            # End of page loop - decide whether to continue or refresh
+            if not REFRESH_AND_RESCAN:
+                print("🏁 REFRESH_AND_RESCAN disabled - ending scan")
+                break
+            
+            if found_already_scanned:
+                print(f"🔁 Found already scanned listing - refreshing immediately")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+            elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+            else:
+                print("📄 No more pages and no max reached - refreshing for new listings")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+
+            refresh_cycle += 1
+            cycles_since_restart += 1  # NEW: Increment counter after each cycle
+            is_first_refresh = False
+
+    def start_cloudflare_tunnel(self, port=5000):
+        """
+        Starts a Cloudflare Tunnel using the cloudflared binary.
+        Adjust the cloudflared_path if your executable is in a different location.
+        """
+        # Path to the cloudflared executable
+        #pc
+        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #laptop
+        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
+        
+        # Start the tunnel with the desired command-line arguments
+        process = subprocess.Popen(
+            [cloudflared_path, "tunnel", "--url", f"http://localhost:{port}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Function to read and print cloudflared output asynchronously
+        def read_output(proc):
+            for line in proc.stdout:
+                print("[cloudflared]", line.strip())
+        
+        # Start a thread to print cloudflared output so you can see the public URL and any errors
+        threading.Thread(target=read_output, args=(process,), daemon=True).start()
+        
+        # Wait a few seconds for the tunnel to establish (adjust if needed).
+        time.sleep(5)
         return process
 
     def run_flask_app(self):
