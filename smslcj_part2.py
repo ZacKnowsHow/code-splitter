@@ -1,4 +1,10 @@
 # Continuation from line 2201
+    
+    # Session cleanup (existing code)
+    try:
+        import requests
+        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
+        status_data = status_response.json()
         
         if 'value' in status_data and 'nodes' in status_data['value']:
             for node in status_data['value']['nodes']:
@@ -34,10 +40,9 @@
     chrome_options.add_argument('--disable-extensions')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument("--start-maximized")
     chrome_options.add_argument('--disable-web-security')
     chrome_options.add_argument('--allow-running-insecure-content')
-    chrome_options.add_argument("--window-size=1920,1080")
-
 
     
     print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
@@ -1201,15 +1206,15 @@ def base64_encode_image(img):
 # Vinted profit suitability ranges (same structure as Facebook but independent variables)
 def check_vinted_profit_suitability(listing_price, profit_percentage):
     if 10 <= listing_price < 16:
-        return 149.9 <= profit_percentage <= 600
+        return 100 <= profit_percentage <= 600
     elif 16 <= listing_price < 25:
-        return 99.9 <= profit_percentage <= 400
+        return 50 <= profit_percentage <= 400
     elif 25 <= listing_price < 50:
-        return 59.9 <= profit_percentage <= 550
+        return 37.5 <= profit_percentage <= 550
     elif 50 <= listing_price < 100:
-        return 45 <= profit_percentage <= 500
+        return 35 <= profit_percentage <= 500
     elif listing_price >= 100:
-        return 40 <= profit_percentage <= 450
+        return 30 <= profit_percentage <= 450
     else:
         return False
 
@@ -2076,89 +2081,6 @@ def render_main_page():
         print(f"ERROR in render_main_page: {e}")
         print(f"Traceback: {error_details}")
         return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
-
-
-class DriverManager:
-    """
-    Centralized driver management system
-    Ensures all parts of the code always use the current active driver
-    """
-    def __init__(self):
-        self._current_driver = None
-        self._driver_lock = threading.Lock()
-        self._driver_ready = False
-        self._driver_session_id = None
-        print("🔧 DRIVER MANAGER: Initialized")
-    
-    def set_driver(self, driver):
-        """Set the current active driver"""
-        with self._driver_lock:
-            old_session = self._driver_session_id
-            try:
-                self._current_driver = driver
-                self._driver_session_id = driver.session_id if driver else None
-                self._driver_ready = driver is not None
-                
-                if driver:
-                    print(f"✅ DRIVER MANAGER: New driver set (Session: {self._driver_session_id})")
-                    if old_session and old_session != self._driver_session_id:
-                        print(f"🔄 DRIVER MANAGER: Driver changed from {old_session} to {self._driver_session_id}")
-                else:
-                    print(f"⚠️ DRIVER MANAGER: Driver set to None (was: {old_session})")
-            except Exception as e:
-                print(f"❌ DRIVER MANAGER: Error setting driver: {e}")
-                self._current_driver = None
-                self._driver_ready = False
-                self._driver_session_id = None
-    
-    def get_driver(self):
-        """Get the current active driver with validation"""
-        with self._driver_lock:
-            if not self._current_driver or not self._driver_ready:
-                return None
-            
-            # Validate driver is still alive
-            try:
-                _ = self._current_driver.session_id
-                return self._current_driver
-            except Exception as e:
-                print(f"⚠️ DRIVER MANAGER: Driver validation failed: {e}")
-                self._driver_ready = False
-                return None
-    
-    def is_ready(self):
-        """Check if driver is ready"""
-        with self._driver_lock:
-            return self._driver_ready and self._current_driver is not None
-    
-    def get_session_id(self):
-        """Get current driver session ID"""
-        with self._driver_lock:
-            return self._driver_session_id
-    
-    def invalidate_driver(self):
-        """Mark current driver as invalid without closing it"""
-        with self._driver_lock:
-            old_session = self._driver_session_id
-            self._driver_ready = False
-            print(f"⚠️ DRIVER MANAGER: Driver invalidated (Session: {old_session})")
-    
-    def close_driver(self):
-        """Close the current driver safely"""
-        with self._driver_lock:
-            if self._current_driver:
-                try:
-                    session = self._driver_session_id
-                    self._current_driver.quit()
-                    print(f"✅ DRIVER MANAGER: Driver closed (Session: {session})")
-                except Exception as e:
-                    print(f"⚠️ DRIVER MANAGER: Error closing driver: {e}")
-                finally:
-                    self._current_driver = None
-                    self._driver_ready = False
-                    self._driver_session_id = None
-
-
 class VintedScraper:
 
     def restart_driver_if_dead(self, driver):
@@ -2199,3 +2121,81 @@ class VintedScraper:
         except Exception as e:
             print(f"Error sending Pushover notification: {str(e)}")
 
+    def fetch_price(self, class_name):
+        if class_name in ['lite_box', 'oled_box', 'oled_in_tv', 'switch_box', 'switch_in_tv', 'other_mario']:
+            return None
+        price = BASE_PRICES.get(class_name, 0)
+        delivery_cost = 5.0 if class_name in ['lite', 'oled', 'switch'] else 3.5
+        final_price = price + delivery_cost
+        return final_price
+    def fetch_all_prices(self):
+        all_prices = {class_name: self.fetch_price(class_name) for class_name in class_names if self.fetch_price(class_name) is not None}
+        all_prices.update({
+            'lite_box': all_prices.get('lite', 0) * 1.05, 
+            'oled_box': all_prices.get('oled', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_white', 0) - 15, 
+            'oled_in_tv': all_prices.get('oled', 0) + all_prices.get('tv_white', 0) - 10, 
+            'switch_box': all_prices.get('switch', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_black', 0) - 5, 
+            'switch_in_tv': all_prices.get('switch', 0) + all_prices.get('tv_black', 0) - 3.5, 
+            'other_mario': 22.5,
+            'anonymous_games': 5  # Add price for anonymous games
+        })
+        return all_prices
+        
+    def login_vm_driver(self, driver):
+        """Login the VM driver and wait on homepage - extracted from main_vm_driver logic"""
+        try:
+            print("🔄 VM LOGIN: Starting login process...")
+            
+            # Clear browser data first
+            print("🔄 VM LOGIN: Clearing cookies...")
+            driver.delete_all_cookies()
+            
+            # Navigate to Vinted
+            print("🔄 VM LOGIN: Navigating to vinted.co.uk...")
+            driver.get("https://vinted.co.uk")
+            
+            # Random delay after page load
+            time.sleep(random.uniform(2, 4))
+            
+            # Wait for and accept cookies
+            print("🔄 VM LOGIN: Accepting cookies...")
+            if wait_and_click(driver, By.ID, "onetrust-accept-btn-handler", 15):
+                print("✅ VM LOGIN: Cookie consent accepted")
+            else:
+                print("⚠️ VM LOGIN: Cookie consent button not found")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            # Click Sign up | Log in button
+            print("🔄 VM LOGIN: Looking for login button...")
+            signup_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
+            )
+            
+            human_like_delay()
+            action = move_to_element_naturally(driver, signup_button)
+            time.sleep(random.uniform(0.1, 0.3))
+            action.click().perform()
+            print("✅ VM LOGIN: Clicked Sign up | Log in button")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            if google_login:
+                print("🔄 VM LOGIN: Using Google login...")
+                google_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
+                )
+                
+                human_like_delay()
+                action = move_to_element_naturally(driver, google_button)
+                time.sleep(random.uniform(0.1, 0.3))
+                action.click().perform()
+                print("✅ VM LOGIN: Clicked Continue with Google")
+                
+            else:
+                print("🔄 VM LOGIN: Using email login...")
+                # ... email login logic stays the same ...
+            
+            # Wait a bit for login process
+            time.sleep(random.uniform(3, 5))
+            

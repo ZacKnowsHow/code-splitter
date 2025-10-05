@@ -1,84 +1,4 @@
 # Continuation from line 4401
-    def fetch_price(self, class_name):
-        if class_name in ['lite_box', 'oled_box', 'oled_in_tv', 'switch_box', 'switch_in_tv', 'other_mario']:
-            return None
-        price = BASE_PRICES.get(class_name, 0)
-        delivery_cost = 5.0 if class_name in ['lite', 'oled', 'switch'] else 3.5
-        final_price = price + delivery_cost
-        return final_price
-    
-    def fetch_all_prices(self):
-        all_prices = {class_name: self.fetch_price(class_name) for class_name in class_names if self.fetch_price(class_name) is not None}
-        all_prices.update({
-            'lite_box': all_prices.get('lite', 0) * 1.05, 
-            'oled_box': all_prices.get('oled', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_white', 0) - 15, 
-            'oled_in_tv': all_prices.get('oled', 0) + all_prices.get('tv_white', 0) - 10, 
-            'switch_box': all_prices.get('switch', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_black', 0) - 5, 
-            'switch_in_tv': all_prices.get('switch', 0) + all_prices.get('tv_black', 0) - 3.5, 
-            'other_mario': 22.5,
-            'miscellaneous_games': 5  # ADDED: Price for miscellaneous games (£5 each)
-        })
-        return all_prices
-        
-    def login_vm_driver(self, driver):
-        """Login the VM driver and wait on homepage - extracted from main_vm_driver logic"""
-        try:
-            print("🔄 VM LOGIN: Starting login process...")
-            
-            # Clear browser data first
-            print("🔄 VM LOGIN: Clearing cookies...")
-            driver.delete_all_cookies()
-            
-            # Navigate to Vinted
-            print("🔄 VM LOGIN: Navigating to vinted.co.uk...")
-            driver.get("https://vinted.co.uk")
-            
-            # Random delay after page load
-            time.sleep(random.uniform(2, 4))
-            
-            # Wait for and accept cookies
-            print("🔄 VM LOGIN: Accepting cookies...")
-            if wait_and_click(driver, By.ID, "onetrust-accept-btn-handler", 15):
-                print("✅ VM LOGIN: Cookie consent accepted")
-            else:
-                print("⚠️ VM LOGIN: Cookie consent button not found")
-            
-            time.sleep(random.uniform(1, 2))
-            
-            # Click Sign up | Log in button
-            print("🔄 VM LOGIN: Looking for login button...")
-            signup_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
-            )
-            
-            human_like_delay()
-            action = move_to_element_naturally(driver, signup_button)
-            time.sleep(random.uniform(0.1, 0.3))
-            action.click().perform()
-            print("✅ VM LOGIN: Clicked Sign up | Log in button")
-            
-            time.sleep(random.uniform(1, 2))
-            
-            if google_login:
-                print("🔄 VM LOGIN: Using Google login...")
-                google_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
-                )
-                
-                human_like_delay()
-                action = move_to_element_naturally(driver, google_button)
-                time.sleep(random.uniform(0.1, 0.3))
-                action.click().perform()
-                print("✅ VM LOGIN: Clicked Continue with Google")
-                
-            else:
-                print("🔄 VM LOGIN: Using email login...")
-            
-            # Wait a bit for login process
-            time.sleep(random.uniform(3, 5))
-            
-            driver.set_window_size(900, 600)
-            
             # Handle captcha if present
             result = handle_datadome_audio_captcha(driver)
 
@@ -104,264 +24,148 @@
             print(f"❌ VM LOGIN: Error during login: {e}")
             return False
 
-
     def execute_bookmark_with_preloaded_driver(self, url):
-        """Execute bookmark using driver from manager"""
-        
-        # Get current driver from manager
-        bookmark_driver = self.driver_manager.get_driver()
-        
-        if not bookmark_driver or not self.driver_manager.is_ready():
-            print("❌ BOOKMARK: No valid driver available in manager")
+        """Execute bookmark using the already logged-in VM driver"""
+        if not self.vm_driver_ready or not self.current_vm_driver:
+            print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
             return False
         
-        driver_session = self.driver_manager.get_session_id()
-        print(f"🔖 BOOKMARK: Using driver from manager (Session: {driver_session})")
-        print(f"🔖 BOOKMARK: Driver ALREADY on listing page: {url}")
-        
-        try:
-            # Verify driver is still valid
+        with self.vm_driver_lock:
+            print(f"🔖 BOOKMARK: Using pre-loaded driver for: {url}")
+            
             try:
-                _ = bookmark_driver.current_url
-            except Exception as driver_check_error:
-                print(f"❌ BOOKMARK: Driver is no longer valid: {driver_check_error}")
-                self.driver_manager.invalidate_driver()
+                # Create step log for tracking
+                step_log = {
+                    'start_time': time.time(),
+                    'driver_number': 1,  # Always 1 since we use single driver
+                    'steps_completed': [],
+                    'failures': [],
+                    'success': False,
+                    'critical_sequence_completed': False,
+                    'actual_url': url
+                }
+                
+                # Execute the bookmark sequence
+                success = execute_vm_bookmark_sequences(self.current_vm_driver, url, "preloaded_user", step_log)
+                
+                self.vm_driver_ready = False  # Mark as used
+                
+                total_time = time.time() - step_log['start_time']
+                print(f"📊 BOOKMARK ANALYSIS:")
+                print(f"⏱️  Total time: {total_time:.2f}s")
+                print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
+                print(f"❌ Failures: {len(step_log['failures'])}")
+                print(f"🏆 Overall success: {'YES' if success else 'NO'}")
+                
+                return success
+                
+            except Exception as e:
+                print(f"❌ BOOKMARK: Error using pre-loaded driver: {e}")
+                self.vm_driver_ready = False
                 return False
-            
-            # Create step log for tracking
-            step_log = {
-                'start_time': time.time(),
-                'driver_number': 1,
-                'steps_completed': [],
-                'failures': [],
-                'success': False,
-                'critical_sequence_completed': False,
-                'actual_url': url
-            }
-            
-            # Execute first buy sequence
-            success = execute_vm_first_buy_sequence(bookmark_driver, step_log)
-            
-            # Driver is now used - invalidate in manager
-            self.driver_manager.invalidate_driver()
-            print(f"⚠️ BOOKMARK: Driver marked as used in manager")
-            
-            total_time = time.time() - step_log['start_time']
-            print(f"📊 BOOKMARK ANALYSIS:")
-            print(f"⏱️  Total time: {total_time:.2f}s")
-            print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
-            print(f"❌ Failures: {len(step_log['failures'])}")
-            print(f"🏆 Overall success: {'YES' if success else 'NO'}")
-            
-            # Store bookmark result
-            self.last_bookmark_result = {
-                'url': url,
-                'success': success,
-                'timestamp': time.time()
-            }
-            
-            return success
-            
-        except Exception as e:
-            print(f"❌ BOOKMARK: Error using driver: {e}")
-            self.driver_manager.invalidate_driver()
-            self.last_bookmark_result = {
-                'url': url,
-                'success': False,
-                'timestamp': time.time()
-            }
-            return False
 
     def prepare_next_vm_driver(self):
         """Prepare the NEXT VM driver after current one is used"""
         print("🔄 NEXT DRIVER: Preparing next VM driver...")
         
         try:
-            # Get old driver from manager
-            old_driver = self.driver_manager.get_driver()
-            old_session = self.driver_manager.get_session_id()
-            
-            # Invalidate old driver in manager FIRST
-            self.driver_manager.invalidate_driver()
-            print(f"⚠️ NEXT DRIVER: Old driver invalidated in manager (Session: {old_session})")
-            
-            # CRITICAL FIX: Close the old driver IMMEDIATELY before any other operations
-            if old_driver:
+            # Close current driver if it exists
+            if self.current_vm_driver:
                 try:
-                    print(f"🔄 NEXT DRIVER: Closing old driver IMMEDIATELY (Session: {old_session})")
-                    old_driver.quit()
-                    print(f"✅ NEXT DRIVER: Old driver closed successfully (Session: {old_session})")
-                except Exception as close_error:
-                    print(f"⚠️ NEXT DRIVER: Error closing old driver: {close_error}")
+                    self.current_vm_driver.quit()
+                    print("✅ NEXT DRIVER: Closed previous driver")
+                except:
+                    print("⚠️ NEXT DRIVER: Error closing previous driver")
             
-            # CRITICAL: Wait for old driver to fully close before proceeding
-            print("⏳ NEXT DRIVER: Waiting 2 seconds for old driver to fully terminate...")
-            time.sleep(2)
-            
-            # Now clear browser data for NEW session (no old driver interfering)
-            print("🔄 NEXT DRIVER: Old driver confirmed closed, now clearing browser data for NEW session...")
+            # Clear browser data for new session
             clear_browser_data_universal("192.168.56.101", {
                 "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
                 "profile": "Profile 4", 
                 "port": 9224
             })
             
-            # Small delay after clearing
-            time.sleep(1)
+            time.sleep(1)  # Brief delay
             
             # Create new VM driver
-            print("🔄 NEXT DRIVER: Creating new VM driver...")
-            new_driver = setup_driver_universal("192.168.56.101", {
+            self.current_vm_driver = setup_driver_universal("192.168.56.101", {
                 "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
                 "profile": "Profile 4", 
                 "port": 9224
             })
             
-            if not new_driver:
+            if not self.current_vm_driver:
                 print("❌ NEXT DRIVER: Failed to create new VM driver")
-                # ADDED: Ensure manager knows there's no driver
-                self.driver_manager.set_driver(None)
-                return
-            
-            # Verify new driver is functional
-            try:
-                _ = new_driver.current_url
-                new_session = new_driver.session_id
-                print(f"✅ NEXT DRIVER: New driver verified (Session: {new_session})")
-            except Exception as verify_error:
-                print(f"❌ NEXT DRIVER: New driver verification failed: {verify_error}")
-                try:
-                    new_driver.quit()
-                except:
-                    pass
-                # ADDED: Ensure manager knows there's no driver
-                self.driver_manager.set_driver(None)
+                self.vm_driver_ready = False
                 return
             
             # Login the new driver
-            print("🔄 NEXT DRIVER: Logging in new driver...")
-            success = self.login_vm_driver(new_driver)
+            success = self.login_vm_driver(self.current_vm_driver)
             
             if success:
-                # Register new driver with manager
-                self.driver_manager.set_driver(new_driver)
-                print("✅ NEXT DRIVER: New VM driver registered with manager and ready")
+                self.vm_driver_ready = True
+                print("✅ NEXT DRIVER: New VM driver ready and logged in")
             else:
                 print("❌ NEXT DRIVER: Failed to login new VM driver")
-                try:
-                    new_driver.quit()
-                except:
-                    pass
-                # ADDED: Ensure manager knows there's no driver
-                self.driver_manager.set_driver(None)
+                self.vm_driver_ready = False
                 
         except Exception as e:
             print(f"❌ NEXT DRIVER: Error preparing next driver: {e}")
-            import traceback
-            traceback.print_exc()
-            # ADDED: Ensure manager knows there's no driver on exception
-            self.driver_manager.set_driver(None)
+            self.vm_driver_ready = False
+
+
+    def prepare_initial_vm_driver(self):
+        """Prepare the initial VM driver during startup - called ONCE at the beginning"""
+        print("🚀 STARTUP: Preparing initial VM driver for immediate use")
+        
+        try:
+            # Create and setup the first VM driver
+            self.current_vm_driver = setup_driver_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224
+            })
+            
+            if not self.current_vm_driver:
+                print("❌ STARTUP: Failed to create initial VM driver")
+                return False
+            
+            # Clear cookies and login
+            success = self.login_vm_driver(self.current_vm_driver)
+            
+            if success:
+                self.vm_driver_ready = True
+                print("✅ STARTUP: Initial VM driver ready and logged in - waiting for first listing")
+                return True
+            else:
+                print("❌ STARTUP: Failed to login initial VM driver")
+                return False
+                
+        except Exception as e:
+            print(f"❌ STARTUP: Error preparing initial VM driver: {e}")
+            return False
 
     def __init__(self):
-        """Modified init - Initialize for VM-based scraping with driver manager"""
+        """Modified init - removed all booking/buying driver related initialization"""
+        # Initialize pygame-related variables similar to FacebookScraper
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images
         global current_bounding_boxes, current_listing_url, current_suitability, suitable_listings
-        global current_listing_index, recent_listings, current_seller_reviews, current_bookmark_status
+        global current_listing_index, recent_listings
         
-        print("🔧 INIT: Starting VintedScraper initialization...")
-        
+        # **CRITICAL FIX: Initialize recent_listings for website navigation**
         recent_listings = {
             'listings': [],
             'current_index': 0
         }
-
-        self.program_start_time = time.time()
         
-        # NEW: Initialize centralized driver manager FIRST
-        self.driver_manager = DriverManager()
-        print("🔧 INIT: Driver manager created")
+        # Initialize all current listing variables
+        self.current_vm_driver = None
+        self.vm_driver_ready = False
+        self.vm_driver_lock = threading.Lock()
         
-        # Track bookmark results
-        self.last_bookmark_result = None
-        self.bookmark_results_by_url = {}
-        
-        # Initialize VM bookmark queue
-        self.vm_bookmark_queue = []
-        
-        # Load YOLO model
-        print(f"🧠 CUDA available: {torch.cuda.is_available()}")
-        if torch.cuda.is_available():
-            print(f"🎮 GPU name: {torch.cuda.get_device_name(0)}")
-        
-        print("🧠 Loading YOLO model ONCE at startup...")
-        if not os.path.exists(MODEL_WEIGHTS):
-            print(f"❌ Model weights not found at '{MODEL_WEIGHTS}'")
-            self.model = None
-        else:
-            try:
-                if torch.cuda.is_available():
-                    self.model = YOLO(MODEL_WEIGHTS)
-                    self.model.to('cuda')
-                    print("✅ YOLO model loaded on GPU (CUDA)")
-                else:
-                    self.model = YOLO(MODEL_WEIGHTS)
-                    print("⚠️ YOLO model loaded on CPU")
-                
-                print("🔥 Warming up model...")
-                import numpy as np
-                dummy_img = np.zeros((640, 640, 3), dtype=np.uint8)
-                _ = self.model(dummy_img, verbose=False)
-                print("✅ Model warmed up and ready")
-                print(f"✅ Model device: {next(self.model.model.parameters()).device}")
-                
-            except Exception as e:
-                print(f"❌ Could not load YOLO model: {e}")
-                import traceback
-                traceback.print_exc()
-                self.model = None
-        
-        # Prepare initial VM driver AFTER driver manager is created
-        print("🔄 INIT: Preparing initial VM driver...")
-        try:
-            # Clear browser data first
-            clear_browser_data_universal("192.168.56.101", {
-                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
-                "profile": "Profile 4", 
-                "port": 9224
-            })
-            
-            time.sleep(1)
-            
-            # Create initial driver
-            initial_driver = setup_driver_universal("192.168.56.101", {
-                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
-                "profile": "Profile 4", 
-                "port": 9224
-            })
-            
-            if not initial_driver:
-                print("❌ INIT: Failed to create initial VM driver")
-            else:
-                # Login the initial driver
-                success = self.login_vm_driver(initial_driver)
-                
-                if success:
-                    # Register with driver manager
-                    self.driver_manager.set_driver(initial_driver)
-                    print("✅ INIT: Initial VM driver ready and registered with manager")
-                else:
-                    print("❌ INIT: Failed to login initial VM driver")
-                    try:
-                        initial_driver.quit()
-                    except:
-                        pass
-        except Exception as init_driver_error:
-            print(f"❌ INIT: Error preparing initial driver: {init_driver_error}")
-            import traceback
-            traceback.print_exc()
-        
-        # Initialize listing variables
+        # Initialize the first VM driver during startup
+        print("🔄 STARTUP: Preparing initial VM driver...")
+        self.prepare_next_vm_driver()
         current_listing_title = "No title"
         current_listing_description = "No description"
         current_listing_join_date = "No join date"
@@ -373,127 +177,27 @@
         current_bounding_boxes = {}
         current_listing_url = ""
         current_suitability = "Suitability unknown"
-        current_seller_reviews = "No reviews yet"  # FIXED: Added this line
-        current_bookmark_status = "Not attempted"  # FIXED: Added this line
         suitable_listings = []
         current_listing_index = 0
+
+        # Initialize VM connection flag
+        self.vm_bookmark_queue = []  # Queue of URLs to send to VM system
         
-        print("✅ INIT: VintedScraper initialization complete")
+        # Check if CUDA is available
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
 
-    def format_runtime(self, elapsed_seconds):
-        """
-        Format elapsed time into HH:MM:SS format
-        """
-        hours = int(elapsed_seconds // 3600)
-        minutes = int((elapsed_seconds % 3600) // 60)
-        seconds = int(elapsed_seconds % 60)
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-
-    def render_suitability_with_bookmark(self, screen, font, text, rect, suitability_color, bookmark_color):
-        """
-        Render suitability text with bookmark status in different color
-        Splits text at double newline to separate suitability from bookmark status
-        """
-        try:
-            # Split text into suitability and bookmark parts
-            parts = text.split('\n\n')
-            
-            if len(parts) == 1:
-                # No bookmark status, just render suitability
-                self.render_text_in_rect(screen, font, text, rect, suitability_color)
-                return
-            
-            suitability_text = parts[0]
-            bookmark_text = parts[1] if len(parts) > 1 else ""
-            
-            # Calculate space for each part
-            # Wrap suitability text
-            suitability_lines = []
-            words = suitability_text.split()
-            current_line = []
-            for word in words:
-                test_line = ' '.join(current_line + [word])
-                test_width, _ = font.size(test_line)
-                if test_width <= rect.width - 10:
-                    current_line.append(word)
-                else:
-                    if current_line:
-                        suitability_lines.append(' '.join(current_line))
-                        current_line = [word]
-                    else:
-                        suitability_lines.append(word)
-            if current_line:
-                suitability_lines.append(' '.join(current_line))
-            
-            # Wrap bookmark text
-            bookmark_lines = []
-            words = bookmark_text.split()
-            current_line = []
-            for word in words:
-                test_line = ' '.join(current_line + [word])
-                test_width, _ = font.size(test_line)
-                if test_width <= rect.width - 10:
-                    current_line.append(word)
-                else:
-                    if current_line:
-                        bookmark_lines.append(' '.join(current_line))
-                        current_line = [word]
-                    else:
-                        bookmark_lines.append(word)
-            if current_line:
-                bookmark_lines.append(' '.join(current_line))
-            
-            # Calculate total height needed
-            total_lines = len(suitability_lines) + len(bookmark_lines)
-            line_height = font.get_linesize()
-            total_height = total_lines * line_height + 10  # 10px gap between sections
-            
-            # Scale font if needed
-            if total_height > rect.height:
-                scale_factor = rect.height / total_height
-                new_font_size = max(1, int(font.get_height() * scale_factor))
-                try:
-                    font = pygame.font.Font(None, new_font_size)
-                    line_height = font.get_linesize()
-                except pygame.error:
-                    pass  # Keep original font if scaling fails
-            
-            # Render suitability lines
-            y = rect.top + 5
-            for line in suitability_lines:
-                try:
-                    text_surface = font.render(line, True, suitability_color)
-                    text_rect = text_surface.get_rect(centerx=rect.centerx, top=y)
-                    screen.blit(text_surface, text_rect)
-                    y += line_height
-                except pygame.error as e:
-                    print(f"Error rendering suitability line: {e}")
-                    continue
-            
-            # Add gap
-            y += 5
-            
-            # Render bookmark lines
-            for line in bookmark_lines:
-                try:
-                    text_surface = font.render(line, True, bookmark_color)
-                    text_rect = text_surface.get_rect(centerx=rect.centerx, top=y)
-                    screen.blit(text_surface, text_rect)
-                    y += line_height
-                except pygame.error as e:
-                    print(f"Error rendering bookmark line: {e}")
-                    continue
-                    
-        except Exception as e:
-            print(f"Error in render_suitability_with_bookmark: {e}")
-            # Fallback to simple rendering
-            self.render_text_in_rect(screen, font, text, rect, suitability_color)
+        # Load model with explicit GPU usage
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()  # Force GPU
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()   # Fallback to CPU
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
 
 
     def run_pygame_window(self):
         global LOCK_POSITION, current_listing_index, suitable_listings
-        global current_seller_reviews, current_bookmark_status  # FIXED: Added this line
-        
         screen, clock = self.initialize_pygame_window()
         rectangles = [pygame.Rect(*rect) for rect in self.load_rectangle_config()] if self.load_rectangle_config() else [
             pygame.Rect(0, 0, 240, 180), pygame.Rect(240, 0, 240, 180), pygame.Rect(480, 0, 320, 180),
@@ -513,8 +217,7 @@
             'click': pygame.font.Font(None, 28),
             'suitability': pygame.font.Font(None, 28),
             'reviews': pygame.font.Font(None, 28),
-            'exact_time': pygame.font.Font(None, 22),
-            'bookmark_status': pygame.font.Font(None, 24)
+            'exact_time': pygame.font.Font(None, 22)  # NEW: Font for exact time display
         }
         dragging = False
         resizing = False
@@ -542,17 +245,16 @@
                             self.update_listing_details(
                                 title=current_listing['title'],
                                 description=current_listing['description'],
-                                join_date=current_listing['join_date'],
+                                join_date=current_listing['join_date'],  # FIXED: Use stored timestamp
                                 price=current_listing['price'],
                                 expected_revenue=current_listing['expected_revenue'],
                                 profit=current_listing['profit'],
                                 detected_items=current_listing['detected_items'],
-                                processed_images=stored_images,
+                                processed_images=stored_images,  # FIXED: Pass stored images
                                 bounding_boxes=current_listing['bounding_boxes'],
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
-                                seller_reviews=current_listing.get('seller_reviews'),
-                                bookmark_status=current_listing.get('bookmark_status', 'Not attempted')
+                                seller_reviews=current_listing.get('seller_reviews')
                             )
                     elif event.key == pygame.K_LEFT:
                         if suitable_listings:
@@ -566,17 +268,16 @@
                             self.update_listing_details(
                                 title=current_listing['title'],
                                 description=current_listing['description'],
-                                join_date=current_listing['join_date'],
+                                join_date=current_listing['join_date'],  # FIXED: Use stored timestamp
                                 price=current_listing['price'],
                                 expected_revenue=current_listing['expected_revenue'],
                                 profit=current_listing['profit'],
                                 detected_items=current_listing['detected_items'],
-                                processed_images=stored_images,
+                                processed_images=stored_images,  # FIXED: Pass stored images
                                 bounding_boxes=current_listing['bounding_boxes'],
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
-                                seller_reviews=current_listing.get('seller_reviews'),
-                                bookmark_status=current_listing.get('bookmark_status', 'Not attempted')
+                                seller_reviews=current_listing.get('seller_reviews')
                             )
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left mouse button
@@ -633,7 +334,7 @@
                     self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
                 elif i == 8:  # Rectangle 9 (index 8) - FIXED: Shows exact stored timestamp
                     time_label = "Appended:"
-                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))
+                    self.render_text_in_rect(screen, fonts['exact_time'], f"{time_label}\n{current_listing_join_date}", rect, (0, 128, 0))  # Green color for time
                 elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
                     self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
                 elif i == 9:  # Rectangle 10 (index 9) - Profit
@@ -645,30 +346,10 @@
                 elif i == 3:  # Rectangle 4 (index 3) - Click to open
                     click_text = "CLICK TO OPEN LISTING IN CHROME"
                     self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
-                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason AND Bookmark Status
-                    # NEW: Combine suitability and bookmark status
-                    combined_text = current_suitability
-                    if 'current_bookmark_status' in globals() and current_bookmark_status:
-                        combined_text = f"{current_suitability}\n\n{current_bookmark_status}"
-                    
-                    # Determine color based on bookmark status
-                    if 'current_bookmark_status' in globals() and current_bookmark_status:
-                        if "successful" in current_bookmark_status.lower():
-                            bookmark_color = (0, 255, 0)  # Green for success
-                        elif "failed" in current_bookmark_status.lower():
-                            bookmark_color = (255, 0, 0)  # Red for failure
-                        else:
-                            bookmark_color = (128, 128, 128)  # Gray for not attempted
-                    else:
-                        bookmark_color = (128, 128, 128)  # Gray default
-                    
-                    # Use red for unsuitable, green for suitable, but show bookmark status in appropriate color
-                    base_color = (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0)
-                    
-                    # Render with multi-color support
-                    self.render_suitability_with_bookmark(screen, fonts['suitability'], combined_text, rect, base_color, bookmark_color)
+                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
+                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
                 elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
-                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))
+                    self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))  # Dark blue color
 
             screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
 
@@ -865,12 +546,10 @@
             print(f"⏱️ STOPWATCH END: {func_name} failed after {elapsed:.3f} seconds - {e}")
    
             raise
-
-    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None, bookmark_status=None):
+    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None):
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
         global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
-        global current_bookmark_status
 
         # CRITICAL FIX 1: Don't clear existing images when switching between listings
         # Only clear if we're setting NEW images (not switching to existing listing)
@@ -930,8 +609,7 @@
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
-        current_bookmark_status = bookmark_status if bookmark_status else "Not attempted"  # NEW: Set bookmark status
-        
+
     # Supporting helper function for better timeout management
     def calculate_dynamic_timeout(base_timeout, elapsed_time, max_total_time):
         """
@@ -1262,86 +940,156 @@
 
     def scrape_item_details(self, driver):
         """
-        OPTIMIZED: Single-pass element extraction using JavaScript
-        Waits for page load, then extracts ALL fields in one round-trip
+        Enhanced scraper with better price extraction and seller reviews
+        UPDATED: Now includes username collection AND stores price for threshold filtering
         """
-        # Wait for page to be ready (same as original implicit behavior)
-        try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "h1.web_ui__Text__title"))
-            )
-        except TimeoutException:
-            print("Warning: Page load timeout in scrape_item_details")
+        debug_function_call("scrape_item_details")
+        import re  # FIXED: Import re at function level
         
-        # Single JavaScript execution that extracts ALL fields at once
-        extract_script = """
-        return {
-            title: document.querySelector('h1.web_ui__Text__title')?.textContent || null,
-            price: document.querySelector('p.web_ui__Text__subtitle')?.textContent || null,
-            second_price: document.querySelector('div.web_ui__Text__title.web_ui__Text__clickable.web_ui__Text__underline-none')?.textContent || null,
-            postage: document.querySelector('h3[data-testid="item-shipping-banner-price"]')?.textContent || null,
-            description: Array.from(document.querySelectorAll('span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span')).map(el => el.textContent).join(' ') || null,
-            uploaded: document.querySelector('span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold')?.textContent || null,
-            username: document.querySelector('span[data-testid="profile-username"]')?.textContent || null,
-            seller_reviews: (() => {
-                const selectors = [
-                    'span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left',
-                    'span[class*="caption"][class*="left"]'
-                ];
-                for (let sel of selectors) {
-                    const elements = document.querySelectorAll(sel);
-                    for (let el of elements) {
-                        const text = el.textContent.trim();
-                        if (text && (text.match(/\\d+/) || text.toLowerCase().includes('review') || text.toLowerCase().includes('no review'))) {
-                            return text;
-                        }
-                    }
-                }
-                return "No reviews yet";
-            })()
-        };
-        """
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
+        )
+
+        fields = {
+            "title": "h1.web_ui__Text__title",
+            "price": "p.web_ui__Text__subtitle",  # Main price field for extraction
+            "second_price": "div.web_ui__Text__title.web_ui__Text__clickable.web_ui__Text__underline-none",
+            "postage": "h3[data-testid='item-shipping-banner-price']",
+            "description": "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span",
+            "uploaded": "span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold",
+            "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Main selector for seller reviews
+            "username": "span[data-testid='profile-username']",  # NEW: Username field
+        }
+
+        data = {}
+        for key, sel in fields.items():
+            try:
+                if key == "seller_reviews":
+                    # FIXED: Better handling for seller reviews with multiple selectors
+                    review_selectors = [
+                        "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Primary selector
+                        "span[class*='caption'][class*='left']",  # Broader selector
+                        "div[class*='reviews'] span",  # Alternative selector
+                        "*[class*='review']",  # Very broad selector as fallback
+                    ]
+                    
+                    reviews_text = None
+                    for review_sel in review_selectors:
+                        try:
+                            elements = driver.find_elements(By.CSS_SELECTOR, review_sel)
+                            for element in elements:
+                                text = element.text.strip()
+                                # Look for text that contains digits (likely review count)
+                                if text and (text.isdigit() or "review" in text.lower() or re.search(r'\d+', text)):
+                                    reviews_text = text
+                                    if print_debug:
+                                        print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
+                                    break
+                            if reviews_text:
+                                break
+                        except Exception as e:
+                            if print_debug:
+                                print(f"DEBUG: Selector '{review_sel}' failed: {e}")
+                            continue
+                    
+                    # Process the found reviews text
+                    if reviews_text:
+                        if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
+                            data[key] = "No reviews yet"
+                        elif reviews_text.isdigit():
+                            # Just a number like "123"
+                            data[key] = reviews_text  # Keep as string for consistency
+                            if print_debug:
+                                print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
+                        else:
+                            # Try to extract number from text like "123 reviews" or "(123)"
+                            match = re.search(r'(\d+)', reviews_text)
+                            if match:
+                                data[key] = match.group(1)  # Just the number as string
+                                if print_debug:
+                                    print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
+                            else:
+                                data[key] = "No reviews yet"
+                    else:
+                        data[key] = "No reviews yet"
+                        if print_debug:
+                            print("DEBUG: No seller reviews found with any selector")
+                        
+                elif key == "username":
+                    # NEW: Handle username extraction with careful error handling
+                    try:
+                        username_element = driver.find_element(By.CSS_SELECTOR, sel)
+                        username_text = username_element.text.strip()
+                        if username_text:
+                            data[key] = username_text
+                            if print_debug:
+                                print(f"DEBUG: Found username: '{username_text}'")
+                        else:
+                            data[key] = "Username not found"
+                            if print_debug:
+                                print("DEBUG: Username element found but no text")
+                    except NoSuchElementException:
+                        # Try alternative selectors for username
+                        alternative_username_selectors = [
+                            "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__amplified.web_ui__Text__bold[data-testid='profile-username']",
+                            "span[data-testid='profile-username']",
+                            "*[data-testid='profile-username']",
+                            "span.web_ui__Text__amplified.web_ui__Text__bold",  # Broader fallback
+                        ]
+                        
+                        username_found = False
+                        for alt_sel in alternative_username_selectors:
+                            try:
+                                alt_username_element = driver.find_element(By.CSS_SELECTOR, alt_sel)
+                                alt_username_text = alt_username_element.text.strip()
+                                if alt_username_text:
+                                    data[key] = alt_username_text
+                                    print(f"DEBUG: Found username with alternative selector '{alt_sel}': '{alt_username_text}'")
+                                    username_found = True
+                                    break
+                            except NoSuchElementException:
+                                continue
+                        
+                        if not username_found:
+                            data[key] = "Username not found"
+                            if print_debug:
+                                print("DEBUG: Username not found with any selector")
+                            
+                else:
+                    # Handle all other fields normally
+                    data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
+                    
+            except NoSuchElementException:
+                if key == "seller_reviews":
+                    data[key] = "No reviews yet"
+                    if print_debug:
+                        print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
+                elif key == "username":
+                    data[key] = "Username not found"
+                    if print_debug:
+                        print("DEBUG: NoSuchElementException - set username to 'Username not found'")
+                else:
+                    data[key] = None
+
+        # Keep title formatting for pygame display
+        if data["title"]:
+            data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
+
+        # NEW: Calculate and store the total price for threshold filtering
+        second_price = self.extract_price(data.get("second_price", "0"))
+        postage = self.extract_price(data.get("postage", "0"))
+        total_price = second_price + postage
         
-        try:
-            # SINGLE round-trip to VM driver - extracts all data at once
-            data = driver.execute_script(extract_script)
+        # Store the calculated price for use in object detection
+        self.current_listing_price_float = total_price
+        
+        # DEBUG: Print final scraped data for seller_reviews and username
+        if print_debug:
+            print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
+            print(f"DEBUG: Final scraped username: '{data.get('username')}'")
+            print(f"DEBUG: Total price calculated: £{total_price:.2f} (stored for threshold filtering)")
             
-            # Process seller reviews (exact same logic as original)
-            reviews_text = data.get("seller_reviews", "No reviews yet")
-            if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
-                data["seller_reviews"] = "No reviews yet"
-            elif reviews_text.isdigit():
-                data["seller_reviews"] = reviews_text
-            else:
-                import re
-                match = re.search(r'(\d+)', reviews_text)
-                data["seller_reviews"] = match.group(1) if match else "No reviews yet"
-            
-            # Process title (exact same logic as original)
-            if data["title"]:
-                data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
-            
-            # Calculate and store total price (exact same logic as original)
-            second_price = self.extract_price(data.get("second_price", "0"))
-            postage = self.extract_price(data.get("postage", "0"))
-            total_price = second_price + postage
-            self.current_listing_price_float = total_price
-            
-            return data
-            
-        except Exception as e:
-            print(f"Error in optimized scrape_item_details: {e}")
-            # Return same structure as original with None values
-            return {
-                "title": "Error extracting title",
-                "price": None,
-                "second_price": None,
-                "postage": None,
-                "description": None,
-                "uploaded": None,
-                "seller_reviews": "No reviews yet",
-                "username": "Username not found"
-            }
+        return data
 
     def clear_download_folder(self):
         if os.path.exists(DOWNLOAD_ROOT):
@@ -1352,7 +1100,8 @@
     def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter):
         """
         IMMEDIATELY process a suitable listing with pre-loaded VM driver
-        FIXED: Uses driver manager instead of instance attributes
+        The VM driver should already be logged in and waiting
+        FIXED: Properly preserve timestamps and images for pygame display
         """
         global suitable_listings, current_listing_index, recent_listings
 
@@ -1451,40 +1200,21 @@
             is_suitable = True
             print(f"✅ SUITABLE: {suitability_reason}")
 
-        # Initialize bookmark status
-        bookmark_status = "Not attempted"
-        
         # ============= VM PROCESSING =============
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver from manager")
+            print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver")
             print(f"⏸️  SCRAPING IS PAUSED UNTIL VM PROCESS COMPLETES")
             
-            # Call the bookmark function that uses driver manager
+            # Call the new function that uses the pre-loaded driver
             try:
                 success = self.execute_bookmark_with_preloaded_driver(url)
                 if success:
                     print(f"✅ VM PROCESS COMPLETED: Listing has been bookmarked successfully")
-                    bookmark_status = "Bookmark successful"
                 else:
                     print(f"❌ VM PROCESS FAILED: Bookmark attempt was unsuccessful")
-                    bookmark_status = "Bookmark failed"
-                
-                # Store bookmark result for this URL
-                self.bookmark_results_by_url[url] = {
-                    'success': success,
-                    'status': bookmark_status,
-                    'timestamp': time.time()
-                }
-                
             except Exception as vm_error:
                 print(f"❌ VM PROCESS ERROR: {vm_error}")
                 print(f"⚠️  Continuing with scraping despite VM error...")
-                bookmark_status = "Bookmark failed"
-                self.bookmark_results_by_url[url] = {
-                    'success': False,
-                    'status': bookmark_status,
-                    'timestamp': time.time()
-                }
             
             # CRITICAL: After processing, prepare the NEXT driver
             try:
@@ -1497,12 +1227,6 @@
             print(f"▶️  SCRAPING RESUMED: VM process complete, continuing with search...")
         else:
             print(f"❌ UNSUITABLE LISTING: Skipping VM process, continuing with scraping")
-            bookmark_status = "Not suitable - not attempted"
-            self.bookmark_results_by_url[url] = {
-                'success': False,
-                'status': bookmark_status,
-                'timestamp': time.time()
-            }
 
         # CRITICAL FIX: Generate exact UK time when creating listing info and store it permanently
         from datetime import datetime
@@ -1516,26 +1240,25 @@
         preserved_images = []
         for img in processed_images:
             try:
-                img_copy = img.copy()
+                img_copy = img.copy()  # Create independent copy
                 preserved_images.append(img_copy)
             except Exception as e:
                 print(f"Error copying image for storage: {e}")
 
-        # Create final listing info with exact append time, preserved images, AND bookmark status
+        # Create final listing info with exact append time and preserved images
         final_listing_info = {
             'title': details.get("title", "No title"),
             'description': details.get("description", "No description"),
-            'join_date': exact_append_time,
+            'join_date': exact_append_time,  # CRITICAL: This timestamp must be preserved
             'price': str(total_price),
             'expected_revenue': total_revenue,
             'profit': expected_profit,
             'detected_items': detected_objects,
-            'processed_images': preserved_images,
+            'processed_images': preserved_images,  # CRITICAL: Store deep copies of images
             'bounding_boxes': {'image_paths': [], 'detected_objects': detected_objects},
             'url': url,
             'suitability': suitability_reason,
-            'seller_reviews': seller_reviews,
-            'bookmark_status': bookmark_status
+            'seller_reviews': seller_reviews
         }
 
         # Determine whether to display on website/pygame
@@ -1550,7 +1273,6 @@
                     f"Price: £{total_price:.2f}\n"
                     f"Expected Profit: £{expected_profit:.2f}\n"
                     f"Profit %: {profit_percentage:.2f}%\n"
-                    f"Bookmark: {bookmark_status}\n"
                 )
                 
                 self.send_pushover_notification(
@@ -1572,9 +1294,9 @@
             self.update_listing_details(**final_listing_info)
 
             if is_suitable:
-                print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%) - {bookmark_status}")
+                print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
             else:
-                print(f"➕ Added unsuitable listing (SHOW_ALL mode): £{total_price:.2f} - {bookmark_status}")
+                print(f"➕ Added unsuitable listing (SHOW_ALL mode): £{total_price:.2f}")
 
         if not should_add_to_display:
             print(f"❌ Listing not added to display: {suitability_reason}")
@@ -1646,10 +1368,9 @@
     def calculate_vinted_revenue(self, detected_objects, listing_price, title, description=""):
         """
         Enhanced revenue calculation with all Facebook logic
-        MODIFIED: Now adds miscellaneous games to detected_objects for visibility
         """
         debug_function_call("calculate_vinted_revenue")
-        import re
+        import re  # FIXED: Import re at function level
         
         # List of game-related classes
         game_classes = [
@@ -1665,23 +1386,15 @@
         # Get all prices
         all_prices = self.fetch_all_prices()
 
-        # Count detected games from YOLO detection
+        # Count detected games
         detected_games_count = sum(detected_objects.get(game, 0) for game in game_classes)
 
         # Detect anonymous games from title and description
         text_games_count = self.detect_anonymous_games_vinted(title, description)
 
-        # Calculate miscellaneous games (games mentioned in text but not detected by YOLO)
+        # Calculate miscellaneous games
         misc_games_count = max(0, text_games_count - detected_games_count)
-        misc_games_revenue = misc_games_count * 5  # Using £5 per miscellaneous game
-
-        # CRITICAL NEW CODE: Add miscellaneous games to detected_objects for visibility
-        if misc_games_count > 0:
-            detected_objects['miscellaneous_games'] = misc_games_count
-            print(f"💰 REVENUE: Added {misc_games_count} miscellaneous games (£{misc_games_revenue:.2f}) to detected objects")
-        else:
-            # Ensure key doesn't exist if count is 0
-            detected_objects.pop('miscellaneous_games', None)
+        misc_games_revenue = misc_games_count * 5 # Using same price as Facebook
 
         # Handle box adjustments (same as Facebook)
         adjustments = {
@@ -1698,14 +1411,11 @@
         # Remove switch_screen if present
         detected_objects.pop('switch_screen', None)
 
-        # Calculate revenue from detected objects
-        total_revenue = misc_games_revenue  # Start with miscellaneous games revenue
+        # Detect SD card and add revenue
+        total_revenue = misc_games_revenue
 
+        # Calculate revenue from detected objects
         for item, count in detected_objects.items():
-            # Skip miscellaneous_games since we already counted it
-            if item == 'miscellaneous_games':
-                continue
-                
             if isinstance(count, str):
                 count_match = re.match(r'(\d+)', count)
                 count = int(count_match.group(1)) if count_match else 0
@@ -1722,106 +1432,45 @@
         profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
 
         print(f"Listing Price: £{listing_price:.2f}")
-        if misc_games_count > 0:
-            print(f"Miscellaneous Games: {misc_games_count} games @ £5 = £{misc_games_revenue:.2f}")
         print(f"Total Expected Revenue: £{total_revenue:.2f}")
         print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
 
-        # CRITICAL: Filter out zero-count items for display (matching Facebook behavior)
+        # CRITICAL FIX: Filter out zero-count items for display (matching Facebook behavior)
         display_objects = {k: v for k, v in detected_objects.items() if v > 0}
 
-        # Note: miscellaneous_games is already in detected_objects if count > 0, so it will appear in display_objects
+        # Add miscellaneous games to display if present
+        if misc_games_count > 0:
+            display_objects['misc_games'] = misc_games_count
 
         return total_revenue, expected_profit, profit_percentage, display_objects
 
-    def download_and_detect_images_in_memory(self, driver, model):
+    def perform_detection_on_listing_images(self, model, listing_dir):
         """
-        SINGLE FUNCTION: Download images directly into memory and run YOLO detection
-        WITHOUT writing to disk. This eliminates the entire disk I/O bottleneck.
+        Enhanced object detection with all Facebook exceptions and logic
+        PLUS Vinted-specific post-scan game deduplication
+        NEW: Price threshold filtering for Nintendo Switch related items
         """
-        import requests
-        from PIL import Image
-        from io import BytesIO
-        import hashlib
-        import cv2
-        import numpy as np
-        
-        # Quick image element find
-        try:
-            WebDriverWait(driver, 3).until(
-                EC.presence_of_element_located((By.TAG_NAME, "img"))
-            )
-        except TimeoutException:
-            return {class_name: 0 for class_name in CLASS_NAMES}, []
-        
-        # Get image URLs (your existing logic)
-        img_selectors = [
-            "img[data-testid^='item-photo-']",
-            "div.web_ui__Image__cover img.web_ui__Image__content",
-        ]
-        
-        imgs = []
-        for selector in img_selectors:
-            imgs = driver.find_elements(By.CSS_SELECTOR, selector)
-            if imgs:
-                break
-        
-        if not imgs:
-            return {class_name: 0 for class_name in CLASS_NAMES}, []
-        
-        # Collect valid URLs
-        valid_urls = []
-        seen_urls = set()
-        
-        for img in imgs:
-            src = img.get_attribute("src")
-            if src and src.startswith('http'):
-                normalized_url = src.split('?')[0].split('#')[0]
-                if normalized_url in seen_urls:
-                    continue
-                seen_urls.add(normalized_url)
-                if ('/50x50/' in src or '/75x75/' in src or src.endswith('.svg')):
-                    continue
-                if ('/f800/' in src or '/f1200/' in src or '/f600/' in src):
-                    valid_urls.append(src)
-        
-        if not valid_urls:
-            return {class_name: 0 for class_name in CLASS_NAMES}, []
-        
-        # Initialize detection results
+        if not os.path.isdir(listing_dir):
+            return {}, []
+
         detected_objects = {class_name: [] for class_name in CLASS_NAMES}
         processed_images = []
         confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
-        
-        # Process each image IN MEMORY
-        for url in valid_urls:
+
+        image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
+        if not image_files:
+            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
+
+        for image_file in image_files:
+            image_path = os.path.join(listing_dir, image_file)
             try:
-                # Download directly to memory
-                resp = requests.get(url, timeout=5, headers={'User-Agent': 'Mozilla/5.0'})
-                resp.raise_for_status()
-                
-                # Open as PIL Image (in memory)
-                pil_img = Image.open(BytesIO(resp.content))
-                
-                # Skip tiny images
-                if pil_img.width < 200 or pil_img.height < 200:
+                img = cv2.imread(image_path)
+                if img is None:
                     continue
-                
-                # Convert to RGB if needed
-                if pil_img.mode != 'RGB':
-                    pil_img = pil_img.convert('RGB')
-                
-                # Resize for YOLO (in memory)
-                MAX_SIZE = (1000, 1000)
-                if pil_img.width > MAX_SIZE[0] or pil_img.height > MAX_SIZE[1]:
-                    pil_img.thumbnail(MAX_SIZE, Image.LANCZOS)
-                
-                # Convert PIL to OpenCV format (in memory)
-                cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-                
-                # Run YOLO detection directly on memory image
+
+                # Track detections for this image
                 image_detections = {class_name: 0 for class_name in CLASS_NAMES}
-                results = model(cv_img, verbose=False)
+                results = model(img, verbose=False)
                 
                 for result in results:
                     for box in result.boxes.cpu().numpy():
@@ -1838,32 +1487,33 @@
                                 else:
                                     image_detections[class_name] += 1
                                 
-                                # Draw bounding box on the image
+                                # Draw bounding box
                                 x1, y1, x2, y2 = map(int, box.xyxy[0])
-                                cv2.rectangle(cv_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                cv2.putText(cv_img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
+                                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
-                
-                # Update overall detected objects
+
+                # Update overall detected objects with max from this image
                 for class_name, count in image_detections.items():
                     detected_objects[class_name].append(count)
-                
-                # Convert back to PIL for pygame (in memory, with border)
-                bordered_cv = cv2.copyMakeBorder(cv_img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0])
-                final_pil = Image.fromarray(cv2.cvtColor(bordered_cv, cv2.COLOR_BGR2RGB))
-                processed_images.append(final_pil)
-                
+
+                # Convert to PIL Image for pygame compatibility
+                processed_images.append(Image.fromarray(cv2.cvtColor(
+                    cv2.copyMakeBorder(img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0]),
+                    cv2.COLOR_BGR2RGB)))
+
             except Exception as e:
-                print(f"    ❌ Image processing error: {str(e)}")
+                print(f"Error processing image {image_path}: {str(e)}")
                 continue
-        
-        # Finalize detection counts
+
+        # Convert lists to max values
         final_detected_objects = {class_name: max(counts) if counts else 0 for class_name, counts in detected_objects.items()}
         
         # Handle mutually exclusive items
         final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
         
-        # Game deduplication (Vinted specific)
+        # VINTED-SPECIFIC POST-SCAN GAME DEDUPLICATION
+        # Define game classes that should be capped at 1 per listing
         vinted_game_classes = [
             '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
             'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
@@ -1874,21 +1524,260 @@
             'sword_p', 'tears_z', 'violet_p'
         ]
         
+        # Cap each game type to maximum 1 per listing for Vinted
+        games_before_cap = {}
         for game_class in vinted_game_classes:
             if final_detected_objects.get(game_class, 0) > 1:
+                games_before_cap[game_class] = final_detected_objects[game_class]
                 final_detected_objects[game_class] = 1
         
-        # Price threshold filtering
+        # Log the capping if any games were capped
+        if games_before_cap:
+            print("🎮 VINTED GAME DEDUPLICATION APPLIED:")
+            for game, original_count in games_before_cap.items():
+                print(f"  • {game}: {original_count} → 1")
+        
+        # NEW: PRICE THRESHOLD FILTERING FOR NINTENDO SWITCH ITEMS
         try:
+            # Get the current listing price stored during scraping
             listing_price = getattr(self, 'current_listing_price_float', 0.0)
+            
+            # If the listing price is below the threshold, remove Nintendo Switch detections
             if listing_price > 0 and listing_price < PRICE_THRESHOLD:
+                filtered_classes = []
                 for switch_class in NINTENDO_SWITCH_CLASSES:
                     if final_detected_objects.get(switch_class, 0) > 0:
+                        filtered_classes.append(switch_class)
                         final_detected_objects[switch_class] = 0
-        except:
-            pass
+                
+                if filtered_classes:
+                    print(f"🚫 PRICE FILTER: Removed Nintendo Switch detections due to low price (£{listing_price:.2f} < £{PRICE_THRESHOLD:.2f})")
+                    print(f"    Filtered classes: {', '.join(filtered_classes)}")
+            elif listing_price >= PRICE_THRESHOLD:
+                # Optional: Log when price threshold allows detection
+                detected_switch_classes = [cls for cls in NINTENDO_SWITCH_CLASSES if final_detected_objects.get(cls, 0) > 0]
+                if detected_switch_classes:
+                    print(f"✅ PRICE FILTER: Nintendo Switch detections allowed (£{listing_price:.2f} >= £{PRICE_THRESHOLD:.2f})")
+        
+        except Exception as price_filter_error:
+            print(f"⚠️ Warning: Price filtering failed: {price_filter_error}")
+            # Continue without price filtering if there's an error
         
         return final_detected_objects, processed_images
+
+
+    def download_images_for_listing(self, driver, listing_dir):
+        """FIXED: Download ALL listing images without limits and prevent duplicates"""
+        import concurrent.futures
+        import requests
+        from PIL import Image
+        from io import BytesIO
+        import os
+        import hashlib
+        
+        # Wait for the page to fully load
+        try:
+            WebDriverWait(driver, 10).until(  # Increased timeout for better reliability
+                EC.presence_of_element_located((By.TAG_NAME, "img"))
+            )
+        except TimeoutException:
+            print("  ▶ Timeout waiting for images to load")
+            return []
+        
+        # Try multiple selectors in order of preference - focusing on product images only
+        img_selectors = [
+            # Target product images specifically (avoid profile pictures)
+            "img.web_ui__Image__content[data-testid^='item-photo-']",
+            "img[data-testid^='item-photo-']",
+            # Target images within containers that suggest product photos
+            "div.web_ui__Image__cover img.web_ui__Image__content",
+            "div.web_ui__Image__scaled img.web_ui__Image__content", 
+            "div.web_ui__Image__rounded img.web_ui__Image__content",
+            # Broader selectors but still avoiding profile images
+            "div.feed-grid img",
+            "div[class*='photo'] img",
+        ]
+        
+        imgs = []
+        for selector in img_selectors:
+            imgs = driver.find_elements(By.CSS_SELECTOR, selector)
+            if imgs:
+                if print_images_backend_info:
+                    print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
+                break
+        
+        if not imgs:
+            print("  ▶ No images found with any selector")
+            return []
+        
+        # FIXED: Remove the [:8] limit - process ALL images found
+        valid_urls = []
+        seen_urls = set()  # Track URLs to prevent duplicates
+        
+        if print_images_backend_info:
+            print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
+        
+        for img in imgs:  # REMOVED [:8] limit here
+            src = img.get_attribute("src")
+            parent_classes = ""
+            
+            # Get parent element classes to check for profile picture indicators
+            try:
+                parent = img.find_element(By.XPATH, "..")
+                parent_classes = parent.get_attribute("class") or ""
+            except:
+                pass
+            
+            # Check if this is a valid product image
+            if src and src.startswith('http'):
+                # FIXED: Better duplicate detection using URL normalization
+                # Remove query parameters and fragments for duplicate detection
+                normalized_url = src.split('?')[0].split('#')[0]
+                
+                if normalized_url in seen_urls:
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
+                    continue
+                
+                seen_urls.add(normalized_url)
+                
+                # Exclude profile pictures and small icons based on URL patterns
+                if (
+                    # Skip small profile pictures (50x50, 75x75, etc.)
+                    '/50x50/' in src or 
+                    '/75x75/' in src or 
+                    '/100x100/' in src or
+                    # Skip if parent has circle class (usually profile pics)
+                    'circle' in parent_classes.lower() or
+                    # Skip SVG icons
+                    src.endswith('.svg') or
+                    # Skip very obviously small images by checking dimensions in URL
+                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
+                ):
+                    print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
+                    continue
+                
+                # Only include images that look like product photos
+                if (
+                    # Vinted product images typically have f800, f1200, etc.
+                    '/f800/' in src or 
+                    '/f1200/' in src or 
+                    '/f600/' in src or
+                    # Or contain vinted/cloudinary and are likely product images
+                    (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
+                    # And don't have small size indicators
+                    not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
+                ):
+                    valid_urls.append(src)
+                    if print_images_backend_info:
+                        print(f"    ✅ Added valid image URL: {src[:50]}...")
+
+        if not valid_urls:
+            print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
+            return []
+
+        if print_images_backend_info:
+            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
+        
+        os.makedirs(listing_dir, exist_ok=True)
+        
+        # FIXED: Enhanced duplicate detection using content hashes
+        def download_single_image(args):
+            """Download a single image with enhanced duplicate detection"""
+            url, index = args
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
+                'Referer': driver.current_url
+            }
+            
+            try:
+                resp = requests.get(url, timeout=10, headers=headers)
+                resp.raise_for_status()
+                
+                # FIXED: Use content hash to detect identical images with different URLs
+                content_hash = hashlib.md5(resp.content).hexdigest()
+                
+                # Check if we've already downloaded this exact image content
+                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
+                if os.path.exists(hash_file):
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
+                    return None
+                
+                img = Image.open(BytesIO(resp.content))
+                
+                # Skip very small images (likely icons or profile pics that got through)
+                if img.width < 200 or img.height < 200:
+                    print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
+                    return None
+                
+                # Resize image for YOLO detection optimization
+                MAX_SIZE = (1000, 1000)  # Slightly larger for better detection
+                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
+                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
+                    print(f"    📏 Resized image to: {img.width}x{img.height}")
+                
+                # Convert to RGB if needed
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Save the image
+                save_path = os.path.join(listing_dir, f"{index}.png")
+                img.save(save_path, format="PNG", optimize=True)
+                
+                # Create hash marker file to prevent future duplicates
+                with open(hash_file, 'w') as f:
+                    f.write(f"Downloaded from: {url}")
+                if print_images_backend_info:
+                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
+                return save_path
+                
+            except Exception as e:
+                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
+                return None
+        if print_images_backend_info:
+            print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
+        
+        # FIXED: Dynamic batch size based on actual image count
+        batch_size = len(valid_urls)  # Each "batch" equals the number of listing images
+        max_workers = min(6, batch_size)  # Use appropriate number of workers
+        
+        if print_images_backend_info:
+            print(f"  ▶ Batch size set to: {batch_size} (= number of listing images)")
+            print(f"  ▶ Using {max_workers} concurrent workers")
+        
+        downloaded_paths = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Prepare arguments for concurrent download
+            download_args = [(url, i+1) for i, url in enumerate(valid_urls)]
+            
+            # Submit all download jobs
+            future_to_url = {executor.submit(download_single_image, args): args[0] for args in download_args}
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_url):
+                result = future.result()
+                if result:  # Only add successful downloads
+                    downloaded_paths.append(result)
+
+        print(f"  ▶ Successfully downloaded {len(downloaded_paths)} unique images (from {len(valid_urls)} URLs)")
+        
+        # Clean up hash files (optional - you might want to keep them for faster future runs)
+        # Uncomment the next 6 lines if you want to clean up hash files after each listing
+        # try:
+        #     for file in os.listdir(listing_dir):
+        #         if file.startswith('.hash_'):
+        #             os.remove(os.path.join(listing_dir, file))
+        # except:
+        #     pass
+        
+        return downloaded_paths
 
 
     def download_and_process_images_vinted(self, image_urls):
@@ -2023,22 +1912,17 @@
         
         return True
 
-
     def search_vinted_with_refresh(self, driver, search_query):
         """
-        MODIFIED: Always get current driver from manager
-        driver parameter is IGNORED - we use manager
+        Enhanced search_vinted method with refresh and rescan functionality
+        UPDATED: Now restarts the main driver every 250 cycles to prevent freezing
         """
-        print(f"🔄 SCRAPING: Using driver manager for all scraping operations")
         global suitable_listings, current_listing_index
         
-        # CRITICAL: Ignore passed driver parameter - always use manager
-        print(f"⚠️ SCRAPING: Ignoring passed driver parameter - using driver manager")
-        
-        # Clear scanned IDs file
+        # CLEAR THE VINTED SCANNED IDS FILE AT THE BEGINNING OF EACH RUN
         try:
             with open(VINTED_SCANNED_IDS_FILE, 'w') as f:
-                pass
+                pass  # This creates an empty file, clearing any existing content
             print(f"✅ Cleared {VINTED_SCANNED_IDS_FILE} at the start of the run")
         except Exception as e:
             print(f"⚠️ Warning: Could not clear {VINTED_SCANNED_IDS_FILE}: {e}")
@@ -2050,14 +1934,30 @@
         # Ensure root download folder exists
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
-        # Load YOLO Model
-        print("🧠 Model already loaded in __init__")
-        model = self.model
+        # Load YOLO Model Once
+        print("🧠 Loading object detection model...")
+        if not os.path.exists(MODEL_WEIGHTS):
+            print(f"❌ Critical Error: Model weights not found at '{MODEL_WEIGHTS}'. Detection will be skipped.")
+        else:
+            try:
+                print("✅ Model loaded successfully.")
+            except Exception as e:
+                print(f"❌ Critical Error: Could not load YOLO model. Detection will be skipped. Reason: {e}")
         
-        if not model:
-            print("❌ No model available for detection")
-            return
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No GPU'}")
 
+        # Load model with explicit GPU usage
+        if torch.cuda.is_available():
+            model = YOLO(MODEL_WEIGHTS).cuda()
+            print("✅ YOLO model loaded on GPU")
+        else:
+            model = YOLO(MODEL_WEIGHTS).cpu()
+            print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
+        # Store original driver reference
+        current_driver = driver
+        
         # Load previously scanned listing IDs
         scanned_ids = self.load_scanned_vinted_ids()
         print(f"📚 Loaded {len(scanned_ids)} previously scanned listing IDs")
@@ -2066,71 +1966,82 @@
         overall_listing_counter = 0
         refresh_cycle = 1
         is_first_refresh = True
+        
+        # NEW: Driver restart tracking
+        DRIVER_RESTART_INTERVAL = 100
         cycles_since_restart = 0
 
-        # Main scanning loop
+        # Main scanning loop with refresh functionality AND driver restart
         while True:
-            # CRITICAL: Get current driver from manager at start of each cycle
-            current_driver = self.driver_manager.get_driver()
-            
-            if not current_driver or not self.driver_manager.is_ready():
-                print("❌ SCRAPING: No valid driver in manager, attempting to prepare new driver...")
-                self.prepare_next_vm_driver()
-                current_driver = self.driver_manager.get_driver()
-                
-                if not current_driver:
-                    print("❌ SCRAPING: Failed to get valid driver from manager, exiting...")
-                    break
-            
-            driver_session = self.driver_manager.get_session_id()
-            current_time = time.time()
-            runtime_seconds = current_time - self.program_start_time
-            runtime_formatted = self.format_runtime(runtime_seconds)
-            
             print(f"\n{'='*60}")
             print(f"🔍 STARTING REFRESH CYCLE {refresh_cycle}")
             print(f"🔄 Cycles since last driver restart: {cycles_since_restart}")
-            print(f"⏰ Time since start: {runtime_formatted}")
-            print(f"🚗 Current driver session: {driver_session}")
             print(f"{'='*60}")
             
-            cycle_listing_counter = 0
+            # NEW: Check if we need to restart the driver
+            if cycles_since_restart >= DRIVER_RESTART_INTERVAL:
+                print(f"\n🔄 DRIVER RESTART: Reached {DRIVER_RESTART_INTERVAL} cycles")
+                print("🔄 RESTARTING: Main scraping driver to prevent freezing...")
+                
+                try:
+                    # Close current driver safely
+                    print("🔄 CLOSING: Current driver...")
+                    current_driver.quit()
+                    time.sleep(2)  # Give time for cleanup
+                    
+                    # Create new driver
+                    print("🔄 CREATING: New driver...")
+                    current_driver = self.setup_driver()
+                    
+                    if current_driver is None:
+                        print("❌ CRITICAL: Failed to create new driver after restart")
+                        break
+                    
+                    print("✅ DRIVER RESTART: Successfully restarted main driver")
+                    cycles_since_restart = 0  # Reset counter
+                    
+                    # Re-navigate to search page after restart
+                    params = {
+                        "search_text": search_query,
+                        "price_from": PRICE_FROM,
+                        "price_to": PRICE_TO,
+                        "currency": CURRENCY,
+                        "order": ORDER,
+                    }
+                    current_driver.get(f"{BASE_URL}?{urlencode(params)}")
+                    
+                    # Wait for page to load after restart
+                    try:
+                        WebDriverWait(current_driver, 20).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+                        )
+                        print("✅ RESTART: Page loaded successfully after driver restart")
+                    except TimeoutException:
+                        print("⚠️ RESTART: Timeout waiting for page after driver restart")
+                    
+                except Exception as restart_error:
+                    print(f"❌ RESTART ERROR: Failed to restart driver: {restart_error}")
+                    print("💥 CRITICAL: Cannot continue without working driver")
+                    break
+            
+            cycle_listing_counter = 0  # Listings processed in this cycle
             found_already_scanned = False
+            
+            # Reset to first page for each cycle
             page = 1
             
             while True:  # Page loop
-                # CRITICAL: Refresh driver reference from manager for each page
-                current_driver = self.driver_manager.get_driver()
-                
-                if not current_driver or not self.driver_manager.is_ready():
-                    print("⚠️ SCRAPING: Driver became invalid during page processing")
-                    print("🔄 SCRAPING: Attempting to get fresh driver from manager...")
-                    self.prepare_next_vm_driver()
-                    current_driver = self.driver_manager.get_driver()
-                    
-                    if not current_driver:
-                        print("❌ SCRAPING: Cannot get valid driver, breaking page loop")
-                        break
-                    else:
-                        print(f"✅ SCRAPING: Got fresh driver (Session: {self.driver_manager.get_session_id()})")
-                
-                current_driver.set_window_size(800, 600)
-                
                 try:
-                    WebDriverWait(current_driver, 5).until(
+                    WebDriverWait(current_driver, 20).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                     )
                 except TimeoutException:
                     print("⚠️ Timeout waiting for page to load - moving to next cycle")
                     break
 
-                # Get listing URLs
-                try:
-                    els = current_driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
-                    urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
-                except Exception as url_error:
-                    print(f"❌ Error getting listing URLs: {url_error}")
-                    break
+                # Get listing URLs from current page
+                els = current_driver.find_elements(By.CSS_SELECTOR, "a.new-item-box__overlay")
+                urls = [e.get_attribute("href") for e in els if e.get_attribute("href")]
                 
                 if not urls:
                     print(f"📄 No listings found on page {page} - moving to next cycle")
@@ -2143,7 +2054,7 @@
                     
                     print(f"[Cycle {refresh_cycle} · Page {page} · Item {idx}/{len(urls)}] #{overall_listing_counter}")
                     
-                    # Check for duplicate
+                    # Extract listing ID and check if already scanned
                     listing_id = self.extract_vinted_listing_id(url)
                     
                     if REFRESH_AND_RESCAN and listing_id:
@@ -2153,7 +2064,7 @@
                             found_already_scanned = True
                             break
                     
-                    # Check max listings per cycle
+                    # Check if we've hit the maximum listings for this cycle
                     if REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
                         print(f"📊 Reached MAX_LISTINGS_VINTED_TO_SCAN ({MAX_LISTINGS_VINTED_TO_SCAN})")
                         print(f"🔄 Initiating refresh cycle...")
@@ -2161,28 +2072,11 @@
 
                     overall_listing_counter += 1
 
-                    # CRITICAL: Get fresh driver from manager before opening tab
-                    current_driver = self.driver_manager.get_driver()
-                    
-                    if not current_driver or not self.driver_manager.is_ready():
-                        print("⚠️ SCRAPING: Driver invalid before opening tab, getting fresh driver...")
-                        self.prepare_next_vm_driver()
-                        current_driver = self.driver_manager.get_driver()
-                        
-                        if not current_driver:
-                            print("❌ SCRAPING: Cannot get valid driver, skipping listing")
-                            continue
-                        else:
-                            print(f"✅ SCRAPING: Got fresh driver (Session: {self.driver_manager.get_session_id()})")
 
-                    # Process the listing
-                    try:
-                        current_driver.execute_script("window.open();")
-                        current_driver.switch_to.window(current_driver.window_handles[-1])
-                        current_driver.get(url)
-                    except Exception as tab_error:
-                        print(f"❌ Error opening listing tab: {tab_error}")
-                        continue
+                    # Process the listing (using current_driver instead of driver)
+                    current_driver.execute_script("window.open();")
+                    current_driver.switch_to.window(current_driver.window_handles[-1])
+                    current_driver.get(url)
 
                     try:
                         listing_start_time = time.time()
@@ -2199,3 +2093,109 @@
                         print(f"  Postage:      {details['postage']} ({postage:.2f})")
                         print(f"  Total price:  £{total_price:.2f}")
                         print(f"  Uploaded:     {details['uploaded']}")
+
+                        # Download images for the current listing
+                        listing_dir = os.path.join(DOWNLOAD_ROOT, f"listing {overall_listing_counter}")
+                        image_paths = self.download_images_for_listing(current_driver, listing_dir)
+
+                        # Perform object detection and get processed images
+                        detected_objects = {}
+                        processed_images = []
+                        if model and image_paths:
+                            detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
+                            
+                            # Print detected objects
+                            detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
+                            if detected_classes:
+                                for cls in sorted(detected_classes):
+                                    print(f"  • {cls}: {detected_objects[cls]}")
+
+                        # Process listing for pygame display
+                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
+
+                        # Mark this listing as scanned
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+                            print(f"✅ Saved listing ID: {listing_id}")
+
+                        print("-" * 40)
+                        self.cleanup_processed_images(processed_images)
+                        listing_end_time = time.time()
+                        elapsed_time = listing_end_time - listing_start_time
+                        print(f"⏱️ Listing {overall_listing_counter} processing completed in {elapsed_time:.2f} seconds")
+
+                        
+                    except Exception as e:
+                        print(f"  ❌ ERROR scraping listing: {e}")
+                        # Still mark as scanned even if there was an error
+                        if listing_id:
+                            scanned_ids.add(listing_id)
+                            self.save_vinted_listing_id(listing_id)
+
+                    finally:
+                        current_driver.close()
+                        current_driver.switch_to.window(current_driver.window_handles[0])  # Use index 0 instead of main
+
+                # Check if we need to break out of page loop
+                if found_already_scanned or (REFRESH_AND_RESCAN and cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN):
+                    break
+
+                # Try to go to next page
+                try:
+                    nxt = current_driver.find_element(By.CSS_SELECTOR, "a[data-testid='pagination-arrow-right']")
+                    current_driver.execute_script("arguments[0].click();", nxt)
+                    page += 1
+                    time.sleep(2)
+                except NoSuchElementException:
+                    print("📄 No more pages available - moving to next cycle")
+                    break
+
+            # End of page loop - decide whether to continue or refresh
+            if not REFRESH_AND_RESCAN:
+                print("🏁 REFRESH_AND_RESCAN disabled - ending scan")
+                break
+            
+            if found_already_scanned:
+                print(f"🔁 Found already scanned listing - refreshing immediately")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+            elif cycle_listing_counter > MAX_LISTINGS_VINTED_TO_SCAN:
+                print(f"📊 Reached maximum listings ({MAX_LISTINGS_VINTED_TO_SCAN}) - refreshing")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+            else:
+                print("📄 No more pages and no max reached - refreshing for new listings")
+                self.refresh_vinted_page_and_wait(current_driver, is_first_refresh)
+
+            refresh_cycle += 1
+            cycles_since_restart += 1  # NEW: Increment counter after each cycle
+            is_first_refresh = False
+
+    def start_cloudflare_tunnel(self, port=5000):
+        """
+        Starts a Cloudflare Tunnel using the cloudflared binary.
+        Adjust the cloudflared_path if your executable is in a different location.
+        """
+        # Path to the cloudflared executable
+        #pc
+        cloudflared_path = r"C:\Users\ZacKnowsHow\Downloads\cloudflared.exe"
+        #laptop
+        #cloudflared_path = r"C:\Users\zacha\Downloads\cloudflared.exe"
+        
+        # Start the tunnel with the desired command-line arguments
+        process = subprocess.Popen(
+            [cloudflared_path, "tunnel", "--url", f"http://localhost:{port}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Function to read and print cloudflared output asynchronously
+        def read_output(proc):
+            for line in proc.stdout:
+                print("[cloudflared]", line.strip())
+        
+        # Start a thread to print cloudflared output so you can see the public URL and any errors
+        threading.Thread(target=read_output, args=(process,), daemon=True).start()
+        
+        # Wait a few seconds for the tunnel to establish (adjust if needed).
+        time.sleep(5)
