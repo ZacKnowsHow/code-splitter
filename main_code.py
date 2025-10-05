@@ -41,6 +41,10 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from pyngrok import ngrok
 import cv2
+import threading
+from threading import Lock
+import time
+from collections import defaultdict
 import numpy as np
 from PIL import Image
 from io import BytesIO
@@ -104,6 +108,8 @@ bookmark_stopwatch_length = 540
 buying_driver_click_pay_wait_time = 7.5
 actually_purchase_listing = True
 wait_for_bookmark_stopwatch_to_buy = False
+listing_timers = {}
+listing_timers_lock = Lock()
 bookmark_stopwatch_start = None
 test_purchase_not_true = False #uses the url below rather than the one from the web page
 test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1?referrer=catalog"
@@ -715,6 +721,85 @@ def replace_pyautogui_with_hid():
     send_keypress_with_pyautogui = send_keypress_with_hid_keyboard
     print("✅ Replaced PyAutoGUI with HID Keyboard implementation")
 
+
+def start_listing_timer(url):
+    """
+    Thread-safe function to start timing a listing
+    Args:
+        url (str): The listing URL to track
+    Returns:
+        float: The start timestamp
+    """
+    with listing_timers_lock:
+        start_time = time.time()
+        listing_timers[url] = {
+            'start_time': start_time,
+            'end_time': None,
+            'duration': None,
+            'stage': 'started'
+        }
+        print(f"⏱️ TIMER START: {url[:50]}... at {time.strftime('%H:%M:%S', time.localtime(start_time))}")
+        return start_time
+
+def stop_listing_timer(url, stage='completed'):
+    """
+    Thread-safe function to stop timing a listing
+    Args:
+        url (str): The listing URL to track
+        stage (str): The stage at which timing stopped (e.g., 'pay_clicked', 'failed')
+    Returns:
+        float: The duration in seconds, or None if timer wasn't started
+    """
+    with listing_timers_lock:
+        if url not in listing_timers:
+            print(f"⚠️ TIMER WARNING: No timer found for {url[:50]}...")
+            return None
+        
+        end_time = time.time()
+        start_time = listing_timers[url]['start_time']
+        duration = end_time - start_time
+        
+        listing_timers[url]['end_time'] = end_time
+        listing_timers[url]['duration'] = duration
+        listing_timers[url]['stage'] = stage
+        
+        print(f"⏱️ TIMER STOP: {url[:50]}...")
+        print(f"⏱️ TIMER DURATION: {duration:.3f} seconds ({duration:.2f}s)")
+        print(f"⏱️ TIMER STAGE: {stage}")
+        
+        return duration
+
+def get_listing_timer(url):
+    """
+    Thread-safe function to get timer info for a listing
+    Args:
+        url (str): The listing URL
+    Returns:
+        dict: Timer information or None if not found
+    """
+    with listing_timers_lock:
+        return listing_timers.get(url, None)
+
+def get_elapsed_time(url):
+    """
+    Thread-safe function to get elapsed time for a listing (even if not stopped)
+    Args:
+        url (str): The listing URL
+    Returns:
+        float: Elapsed time in seconds, or None if timer not started
+    """
+    with listing_timers_lock:
+        if url not in listing_timers:
+            return None
+        
+        start_time = listing_timers[url]['start_time']
+        
+        if listing_timers[url]['end_time']:
+            # Timer already stopped
+            return listing_timers[url]['duration']
+        else:
+            # Timer still running
+            return time.time() - start_time
 
 def clear_browser_data(vm_ip_address="192.168.56.101"):
     """
@@ -1880,10 +1965,14 @@ def handle_vm_shipping_options(driver, step_log):
 # 7. VM-specific critical pay sequence (EXACT same timing as main scraper)
 def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
     """
+    MODIFIED: Now stops the timer when pay button is clicked
     Execute critical pay sequence with EXACT same timing as main scraper
     """
     try:
         print(f"💳 DRIVER {step_log['driver_number']}: Executing critical pay sequence...")
+        
+        # Get the URL from step_log to track timer
+        listing_url = step_log.get('actual_url', None)
         
         # Click pay button using multiple methods (same as main scraper)
         pay_clicked = False
@@ -1911,7 +2000,6 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                     if not VINTED_SHOW_ALL_LISTINGS:
                         if CLICK_PAY_BUTTON:
                             print('1')
-
                             driver.execute_script("""
                                 arguments[0].disabled = false;
                                 arguments[0].click();
@@ -1920,31 +2008,54 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                     print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (force)")
                 except Exception as final_error:
                     print(f"❌ DRIVER {step_log['driver_number']}: All pay click methods failed")
+                    # Stop timer on failure
+                    if listing_url:
+                        stop_listing_timer(listing_url, stage='pay_click_failed')
                     return False
         
-        bookmark_stopwatch_end = time.time()
-        elapsed_time = bookmark_stopwatch_end - bookmark_stopwatch_start
-        print(f"Bookmark Stopwatch stopped. Total time: {elapsed_time:.2f} seconds")
-
-
-        if pay_clicked:
-            # CRITICAL: Exact 0.25 second wait (same as main scraper)
-            print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Waiting exactly seconds...")
-            time.sleep(2.5)
-            
-            # NEW: Wait for "Purchase successful" detection before closing tab
-            print(f"🔍 DRIVER {step_log['driver_number']}: Searching for 'Purchase successful' message...")
-            
-            purchase_successful = False
-            start_time = time.time()
-            timeout = 15
-            
-            while (time.time() - start_time) < timeout:
+        # ============================================================================
+        # NEW: STOP TIMER IMMEDIATELY AFTER PAY BUTTON IS CLICKED
+        # ============================================================================
+        if pay_clicked and listing_url:
+            duration = stop_listing_timer(listing_url, stage='pay_button_clicked')
+            if duration:
+                print(f"🎯 TIMER RESULT: Total time from suitable detection to pay click: {duration:.3f} seconds")
+                print(f"🎯 TIMER BREAKDOWN:")
+                print(f"   • Listing marked suitable → Pay button clicked")
+                print(f"   • Duration: {duration:.2f}s")
+        
+        # CRITICAL: Exact 0.25 second wait (same as main scraper)
+        print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Waiting exactly seconds...")
+        time.sleep(2.5)
+        
+        # [Rest of existing code continues unchanged...]
+        
+        # NEW: Wait for "Purchase successful" detection before closing tab
+        print(f"🔍 DRIVER {step_log['driver_number']}: Searching for 'Purchase successful' message...")
+        
+        purchase_successful = False
+        start_time = time.time()
+        timeout = 15
+        
+        while (time.time() - start_time) < timeout:
+            try:
+                # Method 1: Use the data-testid selector (most reliable)
+                success_element = driver.find_element(
+                    By.CSS_SELECTOR, 
+                    'div[data-testid="conversation-message--status-message--title"] h2'
+                )
+                
+                if success_element and success_element.text == "Purchase successful":
+                    purchase_successful = True
+                    print(f"✅ DRIVER {step_log['driver_number']}: Purchase successful message found!")
+                    break
+                    
+            except:
                 try:
-                    # Method 1: Use the data-testid selector (most reliable)
+                    # Method 2: Use the corrected h2 selector (without the muted class)
                     success_element = driver.find_element(
                         By.CSS_SELECTOR, 
-                        'div[data-testid="conversation-message--status-message--title"] h2'
+                        'h2.web_ui__Text__text.web_ui__Text__title.web_ui__Text__left'
                     )
                     
                     if success_element and success_element.text == "Purchase successful":
@@ -1954,62 +2065,50 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                         
                 except:
                     try:
-                        # Method 2: Use the corrected h2 selector (without the muted class)
+                        # Method 3: Use XPath for more flexibility
                         success_element = driver.find_element(
-                            By.CSS_SELECTOR, 
-                            'h2.web_ui__Text__text.web_ui__Text__title.web_ui__Text__left'
+                            By.XPATH, 
+                            "//h2[text()='Purchase successful']"
                         )
                         
-                        if success_element and success_element.text == "Purchase successful":
+                        if success_element:
                             purchase_successful = True
                             print(f"✅ DRIVER {step_log['driver_number']}: Purchase successful message found!")
                             break
                             
                     except:
-                        try:
-                            # Method 3: Use XPath for more flexibility
-                            success_element = driver.find_element(
-                                By.XPATH, 
-                                "//h2[text()='Purchase successful']"
-                            )
-                            
-                            if success_element:
-                                purchase_successful = True
-                                print(f"✅ DRIVER {step_log['driver_number']}: Purchase successful message found!")
-                                break
-                                
-                        except:
-                            # No element found yet, continue waiting
-                            pass
-                
-                # Wait 0.1 seconds before checking again
-                time.sleep(0.1)
+                        # No element found yet, continue waiting
+                        pass
             
-            # Print result based on what was found
-            if purchase_successful:
-                print(f"🎉 DRIVER {step_log['driver_number']}: SUCCESSFUL - Purchase successful message detected!")
-            else:
-                print(f"⚠️ DRIVER {step_log['driver_number']}: UNSUCCESSFUL - Purchase successful message not found within 15 seconds")
-            
-            # CRITICAL: Immediate tab close (same as main scraper)
-            print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Closing tab immediately...")
-            driver.close()
-            
-            step_log['critical_sequence_completed'] = True
-            
-            # Switch back to main tab
-            if len(driver.window_handles) > 0:
-                driver.switch_to.window(driver.window_handles[0])
-            
-            elapsed = time.time() - step_log['start_time']
-            print(f"⏱️ DRIVER {step_log['driver_number']}: Critical sequence completed in {elapsed:.3f} seconds")
-            
-            return True
+            # Wait 0.1 seconds before checking again
+            time.sleep(0.1)
         
-        return False
+        # Print result based on what was found
+        if purchase_successful:
+            print(f"🎉 DRIVER {step_log['driver_number']}: SUCCESSFUL - Purchase successful message detected!")
+        else:
+            print(f"⚠️ DRIVER {step_log['driver_number']}: UNSUCCESSFUL - Purchase successful message not found within 15 seconds")
+        
+        # CRITICAL: Immediate tab close (same as main scraper)
+        print(f"🔖 DRIVER {step_log['driver_number']}: CRITICAL - Closing tab immediately...")
+        driver.close()
+        
+        step_log['critical_sequence_completed'] = True
+        
+        # Switch back to main tab
+        if len(driver.window_handles) > 0:
+            driver.switch_to.window(driver.window_handles[0])
+        
+        elapsed = time.time() - step_log['start_time']
+        print(f"⏱️ DRIVER {step_log['driver_number']}: Critical sequence completed in {elapsed:.3f} seconds")
+        
+        return True
         
     except Exception as e:
         print(f"❌ DRIVER {step_log['driver_number']}: Critical pay sequence error: {e}")
+        # Stop timer on exception
+        if listing_url:
+            stop_listing_timer(listing_url, stage='exception')
         return False
 
 
@@ -5601,19 +5700,27 @@ class VintedScraper:
 
         # ============= VM PROCESSING =============
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
+            print(f"⏱️ TIMER: Starting timer for listing: {url[:50]}...")
+            start_listing_timer(url)
+            
             print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver")
             print(f"⏸️  SCRAPING IS PAUSED UNTIL VM PROCESS COMPLETES")
             
             # Call the new function that uses the pre-loaded driver
             try:
+                # Pass the URL to the bookmark function so it can stop the timer
                 success = self.execute_bookmark_with_preloaded_driver(url)
                 if success:
                     print(f"✅ VM PROCESS COMPLETED: Listing has been bookmarked successfully")
                 else:
                     print(f"❌ VM PROCESS FAILED: Bookmark attempt was unsuccessful")
+                    # Stop timer on failure
+                    stop_listing_timer(url, stage='failed')
             except Exception as vm_error:
                 print(f"❌ VM PROCESS ERROR: {vm_error}")
                 print(f"⚠️  Continuing with scraping despite VM error...")
+                # Stop timer on error
+                stop_listing_timer(url, stage='error')
             
             # CRITICAL: After processing, prepare the NEXT driver
             try:
