@@ -154,8 +154,8 @@ CLASS_NAMES = [
    'tv_black', 'tv_white', 'violet_p'
 ]
 
-GENERAL_CONFIDENCE_MIN = 0.5
-HIGHER_CONFIDENCE_MIN = 0.55
+GENERAL_CONFIDENCE_MIN = 0.6
+HIGHER_CONFIDENCE_MIN = 0.65
 HIGHER_CONFIDENCE_ITEMS = { 'controller': HIGHER_CONFIDENCE_MIN, 'tv_white': HIGHER_CONFIDENCE_MIN, 'tv_black': HIGHER_CONFIDENCE_MIN }
 
 ####VINTED ^^^^
@@ -3504,15 +3504,15 @@ def base64_encode_image(img):
 # Vinted profit suitability ranges (same structure as Facebook but independent variables)
 def check_vinted_profit_suitability(listing_price, profit_percentage):
     if 10 <= listing_price < 16:
-        return 100 <= profit_percentage <= 600
+        return 150 <= profit_percentage <= 600
     elif 16 <= listing_price < 25:
-        return 50 <= profit_percentage <= 400
+        return 80 <= profit_percentage <= 500
     elif 25 <= listing_price < 50:
-        return 37.5 <= profit_percentage <= 550
+        return 50 <= profit_percentage <= 550
     elif 50 <= listing_price < 100:
-        return 35 <= profit_percentage <= 500
+        return 40 <= profit_percentage <= 500
     elif listing_price >= 100:
-        return 30 <= profit_percentage <= 450
+        return 32.5 <= profit_percentage <= 450
     else:
         return False
 
@@ -5438,142 +5438,286 @@ class VintedScraper:
 
     def scrape_item_details(self, driver):
         """
-        Enhanced scraper with better price extraction and seller reviews
+        OPTIMIZED: Enhanced scraper that collects ALL elements in a SINGLE operation
+        Uses JavaScript to gather all data at once for maximum speed
         UPDATED: Now includes username collection AND stores price for threshold filtering
         """
         debug_function_call("scrape_item_details")
         import re  # FIXED: Import re at function level
         
+        # Wait for page to be ready
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
         )
 
-        fields = {
-            "title": "h1.web_ui__Text__title",
-            "price": "p.web_ui__Text__subtitle",  # Main price field for extraction
-            "second_price": "div.web_ui__Text__title.web_ui__Text__clickable.web_ui__Text__underline-none",
-            "postage": "h3[data-testid='item-shipping-banner-price']",
-            "description": "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span",
-            "uploaded": "span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold",
-            "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Main selector for seller reviews
-            "username": "span[data-testid='profile-username']",  # NEW: Username field
+        # OPTIMIZATION: Single JavaScript command to collect ALL elements at once
+        scraping_script = """
+        function scrapeAllElements() {
+            const data = {
+                title: null,
+                price: null,
+                second_price: null,
+                postage: null,
+                description: null,
+                uploaded: null,
+                seller_reviews: null,
+                username: null
+            };
+            
+            // Helper function to get text from element
+            function getElementText(selector) {
+                try {
+                    const element = document.querySelector(selector);
+                    return element ? element.textContent.trim() : null;
+                } catch (e) {
+                    return null;
+                }
+            }
+            
+            // Helper function to get text from multiple selectors (returns first match)
+            function getElementTextMultiSelector(selectors) {
+                for (let selector of selectors) {
+                    try {
+                        const element = document.querySelector(selector);
+                        if (element && element.textContent.trim()) {
+                            return element.textContent.trim();
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+                return null;
+            }
+            
+            // Title
+            data.title = getElementText("h1.web_ui__Text__title");
+            
+            // Price (main price field)
+            data.price = getElementText("p.web_ui__Text__subtitle");
+            
+            // Second price
+            data.second_price = getElementText("div.web_ui__Text__title.web_ui__Text__clickable.web_ui__Text__underline-none");
+            
+            // Postage
+            data.postage = getElementText("h3[data-testid='item-shipping-banner-price']");
+            
+            // Description - collect all spans within the description container
+            try {
+                const descSpans = document.querySelectorAll("span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span");
+                if (descSpans.length > 0) {
+                    data.description = Array.from(descSpans).map(span => span.textContent.trim()).join(' ');
+                }
+            } catch (e) {
+                data.description = null;
+            }
+            
+            // Uploaded
+            data.uploaded = getElementText("span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold");
+            
+            // Seller reviews - try multiple selectors and find one with digits
+            const reviewSelectors = [
+                "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",
+                "span[class*='caption'][class*='left']",
+                "div[class*='reviews'] span",
+                "*[class*='review']"
+            ];
+            
+            for (let selector of reviewSelectors) {
+                try {
+                    const elements = document.querySelectorAll(selector);
+                    for (let element of elements) {
+                        const text = element.textContent.trim();
+                        // Look for text that contains digits (likely review count)
+                        if (text && (text.match(/\\d+/) || text.toLowerCase().includes('review'))) {
+                            data.seller_reviews = text;
+                            break;
+                        }
+                    }
+                    if (data.seller_reviews) break;
+                } catch (e) {
+                    continue;
+                }
+            }
+            
+            // Username - try multiple selectors
+            const usernameSelectors = [
+                "span[data-testid='profile-username']",
+                "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__amplified.web_ui__Text__bold[data-testid='profile-username']",
+                "*[data-testid='profile-username']",
+                "span.web_ui__Text__amplified.web_ui__Text__bold"
+            ];
+            
+            data.username = getElementTextMultiSelector(usernameSelectors);
+            
+            return data;
         }
+        
+        return scrapeAllElements();
+        """
+        
+        try:
+            # Execute the JavaScript to collect all data in ONE operation
+            data_raw = driver.execute_script(scraping_script)
+            
+            # Convert the raw data to the expected format
+            data = {
+                "title": data_raw.get("title"),
+                "price": data_raw.get("price"),
+                "second_price": data_raw.get("second_price"),
+                "postage": data_raw.get("postage"),
+                "description": data_raw.get("description"),
+                "uploaded": data_raw.get("uploaded"),
+                "seller_reviews": data_raw.get("seller_reviews") if data_raw.get("seller_reviews") else "No reviews yet",
+                "username": data_raw.get("username") if data_raw.get("username") else "Username not found"
+            }
+            
+        except Exception as js_error:
+            print(f"JavaScript scraping failed: {js_error}")
+            print("Falling back to traditional Selenium scraping...")
+            
+            # FALLBACK: Traditional Selenium scraping (original method)
+            fields = {
+                "title": "h1.web_ui__Text__title",
+                "price": "p.web_ui__Text__subtitle",
+                "second_price": "div.web_ui__Text__title.web_ui__Text__clickable.web_ui__Text__underline-none",
+                "postage": "h3[data-testid='item-shipping-banner-price']",
+                "description": "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__format span",
+                "uploaded": "span.web_ui__Text__text.web_ui__Text__subtitle.web_ui__Text__left.web_ui__Text__bold",
+                "seller_reviews": "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",
+                "username": "span[data-testid='profile-username']",
+            }
 
-        data = {}
-        for key, sel in fields.items():
-            try:
-                if key == "seller_reviews":
-                    # FIXED: Better handling for seller reviews with multiple selectors
-                    review_selectors = [
-                        "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",  # Primary selector
-                        "span[class*='caption'][class*='left']",  # Broader selector
-                        "div[class*='reviews'] span",  # Alternative selector
-                        "*[class*='review']",  # Very broad selector as fallback
-                    ]
-                    
-                    reviews_text = None
-                    for review_sel in review_selectors:
-                        try:
-                            elements = driver.find_elements(By.CSS_SELECTOR, review_sel)
-                            for element in elements:
-                                text = element.text.strip()
-                                # Look for text that contains digits (likely review count)
-                                if text and (text.isdigit() or "review" in text.lower() or re.search(r'\d+', text)):
-                                    reviews_text = text
-                                    if print_debug:
-                                        print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
-                                    break
-                            if reviews_text:
-                                break
-                        except Exception as e:
-                            if print_debug:
-                                print(f"DEBUG: Selector '{review_sel}' failed: {e}")
-                            continue
-                    
-                    # Process the found reviews text
-                    if reviews_text:
-                        if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
-                            data[key] = "No reviews yet"
-                        elif reviews_text.isdigit():
-                            # Just a number like "123"
-                            data[key] = reviews_text  # Keep as string for consistency
-                            if print_debug:
-                                print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
-                        else:
-                            # Try to extract number from text like "123 reviews" or "(123)"
-                            match = re.search(r'(\d+)', reviews_text)
-                            if match:
-                                data[key] = match.group(1)  # Just the number as string
-                                if print_debug:
-                                    print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
-                            else:
-                                data[key] = "No reviews yet"
-                    else:
-                        data[key] = "No reviews yet"
-                        if print_debug:
-                            print("DEBUG: No seller reviews found with any selector")
-                        
-                elif key == "username":
-                    # NEW: Handle username extraction with careful error handling
-                    try:
-                        username_element = driver.find_element(By.CSS_SELECTOR, sel)
-                        username_text = username_element.text.strip()
-                        if username_text:
-                            data[key] = username_text
-                            if print_debug:
-                                print(f"DEBUG: Found username: '{username_text}'")
-                        else:
-                            data[key] = "Username not found"
-                            if print_debug:
-                                print("DEBUG: Username element found but no text")
-                    except NoSuchElementException:
-                        # Try alternative selectors for username
-                        alternative_username_selectors = [
-                            "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__amplified.web_ui__Text__bold[data-testid='profile-username']",
-                            "span[data-testid='profile-username']",
-                            "*[data-testid='profile-username']",
-                            "span.web_ui__Text__amplified.web_ui__Text__bold",  # Broader fallback
+            data = {}
+            for key, sel in fields.items():
+                try:
+                    if key == "seller_reviews":
+                        # Original seller reviews logic
+                        review_selectors = [
+                            "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",
+                            "span[class*='caption'][class*='left']",
+                            "div[class*='reviews'] span",
+                            "*[class*='review']",
                         ]
                         
-                        username_found = False
-                        for alt_sel in alternative_username_selectors:
+                        reviews_text = None
+                        for review_sel in review_selectors:
                             try:
-                                alt_username_element = driver.find_element(By.CSS_SELECTOR, alt_sel)
-                                alt_username_text = alt_username_element.text.strip()
-                                if alt_username_text:
-                                    data[key] = alt_username_text
-                                    print(f"DEBUG: Found username with alternative selector '{alt_sel}': '{alt_username_text}'")
-                                    username_found = True
+                                elements = driver.find_elements(By.CSS_SELECTOR, review_sel)
+                                for element in elements:
+                                    text = element.text.strip()
+                                    if text and (text.isdigit() or "review" in text.lower() or re.search(r'\d+', text)):
+                                        reviews_text = text
+                                        if print_debug:
+                                            print(f"DEBUG: Found reviews using selector '{review_sel}': '{text}'")
+                                        break
+                                if reviews_text:
                                     break
-                            except NoSuchElementException:
+                            except Exception as e:
+                                if print_debug:
+                                    print(f"DEBUG: Selector '{review_sel}' failed: {e}")
                                 continue
                         
-                        if not username_found:
-                            data[key] = "Username not found"
+                        if reviews_text:
+                            if reviews_text == "No reviews yet" or "no review" in reviews_text.lower():
+                                data[key] = "No reviews yet"
+                            elif reviews_text.isdigit():
+                                data[key] = reviews_text
+                                if print_debug:
+                                    print(f"DEBUG: Set seller_reviews to: '{reviews_text}'")
+                            else:
+                                match = re.search(r'(\d+)', reviews_text)
+                                if match:
+                                    data[key] = match.group(1)
+                                    if print_debug:
+                                        print(f"DEBUG: Extracted number from '{reviews_text}': '{match.group(1)}'")
+                                else:
+                                    data[key] = "No reviews yet"
+                        else:
+                            data[key] = "No reviews yet"
                             if print_debug:
-                                print("DEBUG: Username not found with any selector")
+                                print("DEBUG: No seller reviews found with any selector")
                             
+                    elif key == "username":
+                        # Original username logic
+                        try:
+                            username_element = driver.find_element(By.CSS_SELECTOR, sel)
+                            username_text = username_element.text.strip()
+                            if username_text:
+                                data[key] = username_text
+                                if print_debug:
+                                    print(f"DEBUG: Found username: '{username_text}'")
+                            else:
+                                data[key] = "Username not found"
+                                if print_debug:
+                                    print("DEBUG: Username element found but no text")
+                        except NoSuchElementException:
+                            alternative_username_selectors = [
+                                "span.web_ui__Text__text.web_ui__Text__body.web_ui__Text__left.web_ui__Text__amplified.web_ui__Text__bold[data-testid='profile-username']",
+                                "span[data-testid='profile-username']",
+                                "*[data-testid='profile-username']",
+                                "span.web_ui__Text__amplified.web_ui__Text__bold",
+                            ]
+                            
+                            username_found = False
+                            for alt_sel in alternative_username_selectors:
+                                try:
+                                    alt_username_element = driver.find_element(By.CSS_SELECTOR, alt_sel)
+                                    alt_username_text = alt_username_element.text.strip()
+                                    if alt_username_text:
+                                        data[key] = alt_username_text
+                                        print(f"DEBUG: Found username with alternative selector '{alt_sel}': '{alt_username_text}'")
+                                        username_found = True
+                                        break
+                                except NoSuchElementException:
+                                    continue
+                            
+                            if not username_found:
+                                data[key] = "Username not found"
+                                if print_debug:
+                                    print("DEBUG: Username not found with any selector")
+                                
+                    else:
+                        # Handle all other fields normally
+                        data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
+                        
+                except NoSuchElementException:
+                    if key == "seller_reviews":
+                        data[key] = "No reviews yet"
+                        if print_debug:
+                            print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
+                    elif key == "username":
+                        data[key] = "Username not found"
+                        if print_debug:
+                            print("DEBUG: NoSuchElementException - set username to 'Username not found'")
+                    else:
+                        data[key] = None
+
+        # Process seller_reviews value (same logic for both JS and fallback methods)
+        if data.get("seller_reviews") and data["seller_reviews"] != "No reviews yet":
+            reviews_text = str(data["seller_reviews"]).strip()
+            
+            if print_debug:
+                print(f"DEBUG: Raw seller_reviews value: '{reviews_text}'")
+            
+            if reviews_text.startswith("Reviews: "):
+                try:
+                    data["seller_reviews"] = reviews_text.replace("Reviews: ", "")
+                except ValueError:
+                    data["seller_reviews"] = "No reviews yet"
+            elif reviews_text.isdigit():
+                data["seller_reviews"] = reviews_text
+            else:
+                match = re.search(r'\d+', reviews_text)
+                if match:
+                    data["seller_reviews"] = match.group()
                 else:
-                    # Handle all other fields normally
-                    data[key] = driver.find_element(By.CSS_SELECTOR, sel).text
-                    
-            except NoSuchElementException:
-                if key == "seller_reviews":
-                    data[key] = "No reviews yet"
-                    if print_debug:
-                        print("DEBUG: NoSuchElementException - set seller_reviews to 'No reviews yet'")
-                elif key == "username":
-                    data[key] = "Username not found"
-                    if print_debug:
-                        print("DEBUG: NoSuchElementException - set username to 'Username not found'")
-                else:
-                    data[key] = None
+                    data["seller_reviews"] = "No reviews yet"
 
         # Keep title formatting for pygame display
         if data["title"]:
             data["title"] = data["title"][:50] + '...' if len(data["title"]) > 50 else data["title"]
 
-        # NEW: Calculate and store the total price for threshold filtering
+        # Calculate and store the total price for threshold filtering
         second_price = self.extract_price(data.get("second_price", "0"))
         postage = self.extract_price(data.get("postage", "0"))
         total_price = second_price + postage
@@ -5581,7 +5725,7 @@ class VintedScraper:
         # Store the calculated price for use in object detection
         self.current_listing_price_float = total_price
         
-        # DEBUG: Print final scraped data for seller_reviews and username
+        # DEBUG: Print final scraped data
         if print_debug:
             print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
             print(f"DEBUG: Final scraped username: '{data.get('username')}'")
