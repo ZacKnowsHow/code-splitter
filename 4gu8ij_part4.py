@@ -1,4 +1,42 @@
 # Continuation from line 6601
+                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
+                if os.path.exists(hash_file):
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
+                    return None
+                
+                img = Image.open(BytesIO(resp.content))
+                
+                # Skip very small images (likely icons or profile pics that got through)
+                if img.width < 200 or img.height < 200:
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
+                    return None
+                
+                # Resize image for YOLO detection optimization
+                MAX_SIZE = (1000, 1000)
+                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
+                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
+                    if print_images_backend_info:
+                        print(f"    📏 Resized image to: {img.width}x{img.height}")
+                
+                # Convert to RGB if needed
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Save the image
+                save_path = os.path.join(listing_dir, f"{index}.png")
+                img.save(save_path, format="PNG", optimize=True)
+                
+                # Create hash marker file to prevent future duplicates
+                with open(hash_file, 'w') as f:
+                    f.write(f"Downloaded from: {url}")
+                if print_images_backend_info:
+                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
+                return save_path
+                
+            except Exception as e:
+                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
                 return None
         
         if print_images_backend_info:
@@ -353,7 +391,7 @@
                         detected_objects = {}
                         processed_images = []
                         if model and image_paths:
-                            detected_objects, processed_images = self.perform_detection_on_listing_images(model, listing_dir)
+                            detected_objects, processed_images, all_confidences, item_revenues = self.perform_detection_on_listing_images(model, listing_dir)
                             
                             # Print detected objects
                             detected_classes = [cls for cls, count in detected_objects.items() if count > 0]

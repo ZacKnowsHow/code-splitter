@@ -1,4 +1,7 @@
 # Continuation from line 4401
+    # Add this method to the VintedScraper class
+    def send_pushover_notification(self, title, message, api_token, user_key):
+        """
         Send a notification via Pushover
         :param title: Notification title
         :param message: Notification message
@@ -328,12 +331,12 @@
             'join_date': pygame.font.Font(None, 28),
             'revenue': pygame.font.Font(None, 36),
             'profit': pygame.font.Font(None, 36),
-            'items': pygame.font.Font(None, 30),
+            'items': pygame.font.Font(None, 24),  # CHANGED: Reduced from 30 to 24 for more data
             'click': pygame.font.Font(None, 28),
             'suitability': pygame.font.Font(None, 28),
             'reviews': pygame.font.Font(None, 28),
             'exact_time': pygame.font.Font(None, 22),
-            'bookmark_status': pygame.font.Font(None, 24)  # NEW: Font for bookmark status
+            'bookmark_status': pygame.font.Font(None, 24)
         }
         
         dragging = False
@@ -446,25 +449,43 @@
                     self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
                 elif i == 8:  # Rectangle 9 (index 8) - Join Date + Bookmark Status
                     time_label = "Appended:"
-                    # NEW: Combine join date and bookmark status
                     combined_text = f"{time_label}\n{current_listing_join_date}\n\n{current_bookmark_status}"
                     
-                    # Determine color based on bookmark status
                     if "SUCCEEDED" in current_bookmark_status:
-                        status_color = (0, 200, 0)  # Green for success
+                        status_color = (0, 200, 0)
                     elif "FAILED" in current_bookmark_status:
-                        status_color = (255, 0, 0)  # Red for failure
+                        status_color = (255, 0, 0)
                     else:
-                        status_color = (100, 100, 100)  # Gray for no attempt
+                        status_color = (100, 100, 100)
                     
-                    # Render with appropriate color
                     self.render_text_in_rect(screen, fonts['bookmark_status'], combined_text, rect, status_color)
                 elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
                     self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
                 elif i == 9:  # Rectangle 10 (index 9) - Profit
                     self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
-                elif i == 0:  # Rectangle 1 (index 0) - Detected Items
-                    self.render_multiline_text(screen, fonts['items'], current_detected_items, rect, (0, 0, 0))
+                elif i == 0:  # Rectangle 1 (index 0) - Detected Items WITH confidence, count, and revenue
+                    # NEW: Format detected items with confidence, count, and revenue
+                    if isinstance(current_detected_items, dict):
+                        formatted_lines = []
+                        for item_name, count in current_detected_items.items():
+                            if count > 0:
+                                # Get confidence if available
+                                confidence_val = current_item_confidences.get(item_name, 0.0)
+                                confidence_pct = confidence_val * 100
+                                
+                                # Get revenue if available
+                                revenue_val = current_item_revenues.get(item_name, 0.0)
+                                
+                                # Format: "item_name: conf=85.2% cnt=2 rev=£45.50"
+                                formatted_lines.append(
+                                    f"{item_name}: conf={confidence_pct:.1f}% cnt={count} rev=£{revenue_val:.2f}"
+                                )
+                        
+                        display_text = "\n".join(formatted_lines) if formatted_lines else "No items detected"
+                    else:
+                        display_text = "No items detected"
+                    
+                    self.render_multiline_text(screen, fonts['items'], display_text, rect, (0, 0, 0))
                 elif i == 10:  # Rectangle 11 (index 10) - Images
                     self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
                 elif i == 3:  # Rectangle 4 (index 3) - Click to open
@@ -671,68 +692,69 @@
    
             raise
 
-    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None, bookmark_status=None):
+    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None, bookmark_status=None, item_confidences=None, item_revenues=None):
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
         global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
-        global current_bookmark_status
+        global current_bookmark_status, current_item_confidences, current_item_revenues
 
         # Handle bookmark status
         if bookmark_status:
             current_bookmark_status = bookmark_status
 
+        # NEW: Handle confidence and revenue data
+        if item_confidences:
+            current_item_confidences = item_confidences
+        if item_revenues:
+            current_item_revenues = item_revenues
+
         # CRITICAL FIX 1: Don't clear existing images when switching between listings
-        # Only clear if we're setting NEW images (not switching to existing listing)
-        if processed_images:  # Only clear and replace if new images are provided
-            # Close and clear existing images
+        if processed_images:
             if 'current_listing_images' in globals():
                 for img in current_listing_images:
                     try:
-                        img.close()  # Explicitly close the image
+                        img.close()
                     except Exception as e:
                         print(f"Error closing image: {str(e)}")
                 current_listing_images.clear()
 
-            # Add new images
             for img in processed_images:
                 try:
-                    img_copy = img.copy()  # Create a fresh copy
+                    img_copy = img.copy()
                     current_listing_images.append(img_copy)
                 except Exception as e:
                     print(f"Error copying image: {str(e)}")
-        # If no processed_images provided, keep existing current_listing_images intact
 
-        # Store bounding boxes with more robust handling
+        # Store bounding boxes
         current_bounding_boxes = {
             'image_paths': bounding_boxes.get('image_paths', []) if bounding_boxes else [],
             'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
         }
 
-        # Handle detected_items for Box 1 - show raw detected objects with counts
+        # Handle detected_items for Box 1
         if isinstance(detected_items, dict):
-            # Format as "item_name: count" for items with count > 0
             formatted_detected_items = {}
             for item, count in detected_items.items():
                 try:
                     count_int = int(count) if isinstance(count, str) else count
                     if count_int > 0:
-                        formatted_detected_items[item] = str(count_int)
+                        formatted_detected_items[item] = count_int
                 except (ValueError, TypeError):
                     continue
             
             if not formatted_detected_items:
-                formatted_detected_items = {"no_items": "No items detected"}
+                formatted_detected_items = {"no_items": 0}
         else:
-            formatted_detected_items = {"no_items": "No items detected"}
+            formatted_detected_items = {"no_items": 0}
 
-        # CRITICAL FIX 2: Use the exact join_date parameter that was stored, never generate new timestamp
+        # CRITICAL FIX 2: Use exact join_date parameter
         stored_append_time = join_date if join_date else "No timestamp"
 
-        # Explicitly set the global variables
+        # Set all global variables
         current_detected_items = formatted_detected_items
         current_listing_title = title[:50] + '...' if len(title) > 50 else title
         current_listing_description = description[:200] + '...' if len(description) > 200 else description if description else "No description"
-        current_listing_join_date = stored_append_time  # FIXED: Use stored timestamp, never current time
+        current_listing_join_date = stored_append_time
         current_listing_price = f"Price:\n£{float(price):.2f}" if price else "Price:\n£0.00"
         current_expected_revenue = f"Rev:\n£{expected_revenue:.2f}" if expected_revenue else "Rev:\n£0.00"
         current_profit = f"Profit:\n£{profit:.2f}" if profit else "Profit:\n£0.00"
@@ -1371,7 +1393,7 @@
             shutil.rmtree(DOWNLOAD_ROOT)
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
-            
+                
     def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter):
         """
         IMMEDIATELY process a suitable listing with pre-loaded VM driver
@@ -1431,7 +1453,7 @@
         )
 
         # Calculate revenue with enhanced logic
-        total_revenue, expected_profit, profit_percentage, display_objects = self.calculate_vinted_revenue(
+        total_revenue, expected_profit, profit_percentage, display_objects, item_revenues = self.calculate_vinted_revenue(
             detected_objects, total_price, details.get("title", ""), details.get("description", "")
         )
 
@@ -1492,7 +1514,7 @@
                 success = self.execute_bookmark_with_preloaded_driver(url)
                 if success:
                     print(f"✅ VM PROCESS COMPLETED: Listing has been bookmarked successfully")
-                    bookmark_status = current_bookmark_status  # Get the status set by execute_bookmark
+                    bookmark_status = current_bookmark_status
                 else:
                     print(f"❌ VM PROCESS FAILED: Bookmark attempt was unsuccessful")
                     bookmark_status = current_bookmark_status
@@ -1533,6 +1555,10 @@
             except Exception as e:
                 print(f"Error copying image for storage: {e}")
 
+        # NEW: Get confidences - we need to extract them from somewhere
+        # Since we don't have all_confidences passed in, we'll create empty dict
+        all_confidences = {}
+
         # Create final listing info with exact append time, preserved images, AND bookmark status
         final_listing_info = {
             'title': details.get("title", "No title"),
@@ -1547,7 +1573,9 @@
             'url': url,
             'suitability': suitability_reason,
             'seller_reviews': seller_reviews,
-            'bookmark_status': bookmark_status  # NEW: Store bookmark status
+            'bookmark_status': bookmark_status,
+            'item_confidences': all_confidences,
+            'item_revenues': item_revenues
         }
 
         # Determine whether to display on website/pygame
@@ -1749,10 +1777,10 @@
         Enhanced object detection with all Facebook exceptions and logic
         PLUS Vinted-specific post-scan game deduplication
         NEW: Price threshold filtering for Nintendo Switch related items
-        MODIFIED: Now returns confidences alongside detected_objects
+        MODIFIED: Now returns confidences AND revenues alongside detected_objects
         """
         if not os.path.isdir(listing_dir):
-            return {}, [], {}  # Added empty dict for confidences
+            return {}, [], {}, {}  # Added empty dict for revenues
 
         detected_objects = {class_name: [] for class_name in CLASS_NAMES}
         processed_images = []
@@ -1763,7 +1791,7 @@
 
         image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
         if not image_files:
-            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images, all_confidences
+            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images, all_confidences, {}
 
         for image_file in image_files:
             image_path = os.path.join(listing_dir, image_file)
@@ -1861,8 +1889,18 @@
         except Exception as price_filter_error:
             print(f"⚠️ Warning: Price filtering failed: {price_filter_error}")
         
-        # Return confidences as third return value
-        return final_detected_objects, processed_images, all_confidences
+        # NEW: Calculate item revenues here to return them
+        all_prices = self.fetch_all_prices()
+        item_revenues = {}
+        
+        for item, count in final_detected_objects.items():
+            if count > 0 and item in all_prices:
+                item_price = all_prices[item]
+                item_revenue = item_price * count
+                item_revenues[item] = item_revenue
+        
+        # Return confidences AND revenues
+        return final_detected_objects, processed_images, all_confidences, item_revenues
 
 
     def download_images_for_listing(self, driver, listing_dir):
@@ -2161,41 +2199,3 @@
                 content_hash = hashlib.md5(resp.content).hexdigest()
                 
                 # Check if we've already downloaded this exact image content
-                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
-                if os.path.exists(hash_file):
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
-                    return None
-                
-                img = Image.open(BytesIO(resp.content))
-                
-                # Skip very small images (likely icons or profile pics that got through)
-                if img.width < 200 or img.height < 200:
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
-                    return None
-                
-                # Resize image for YOLO detection optimization
-                MAX_SIZE = (1000, 1000)
-                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
-                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
-                    if print_images_backend_info:
-                        print(f"    📏 Resized image to: {img.width}x{img.height}")
-                
-                # Convert to RGB if needed
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                
-                # Save the image
-                save_path = os.path.join(listing_dir, f"{index}.png")
-                img.save(save_path, format="PNG", optimize=True)
-                
-                # Create hash marker file to prevent future duplicates
-                with open(hash_file, 'w') as f:
-                    f.write(f"Downloaded from: {url}")
-                if print_images_backend_info:
-                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
-                return save_path
-                
-            except Exception as e:
-                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
