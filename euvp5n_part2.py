@@ -1,4 +1,5 @@
 # Continuation from line 2201
+            function searchShadowRoots(element) {
                 if (element.shadowRoot) {
                     let clearButton = element.shadowRoot.querySelector('#clearButton');
                     if (clearButton) {
@@ -2198,4 +2199,3 @@ class VintedScraper:
     # Add this method to the VintedScraper class
     def send_pushover_notification(self, title, message, api_token, user_key):
         """
-        Send a notification via Pushover
