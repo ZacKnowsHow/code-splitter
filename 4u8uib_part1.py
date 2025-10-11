@@ -82,7 +82,7 @@ VM_BOOKMARK_URLS = [
 # tests whether the listing is suitable for buying based on URL rather than scanning
 TEST_WHETHER_SUITABLE = False
 TEST_SUITABLE_URLS = [
-    'https://www.vinted.co.uk/items/6963376052-nintendo-switch?referrer=catalog',
+    'https://www.vinted.co.uk/items/7279764017-nintendo-switch-bundle?homepage_session_id=b016ee1d-ee4d-4e6e-b8f3-28476113364e',
     'https://www.vinted.co.uk/items/6963025596-nintendo-switch-oled-model-the-legend-of-zelda-tears-of-the-kingdom-edition?referrer=catalog',
     'https://www.vinted.co.uk/items/6970192196-nintendo-switch-lite-in-grey?referrer=catalog'
 ]
