@@ -6257,7 +6257,11 @@ class VintedScraper:
 
 
     def download_images_for_listing(self, driver, listing_dir):
-        """FIXED: Download ALL listing images without limits and prevent duplicates"""
+        """
+        ENHANCED: Download listing images with carousel detection for 5+ images
+        - If 4 or fewer listing images: Use normal scraping (current behavior)
+        - If 5+ listing images: Click an image to open carousel, then scrape from carousel
+        """
         import concurrent.futures
         import requests
         from PIL import Image
@@ -6267,103 +6271,258 @@ class VintedScraper:
         
         # Wait for the page to fully load
         try:
-            WebDriverWait(driver, 10).until(  # Increased timeout for better reliability
+            WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "img"))
             )
         except TimeoutException:
             print("  ▶ Timeout waiting for images to load")
             return []
         
-        # Try multiple selectors in order of preference - focusing on product images only
-        img_selectors = [
-            # Target product images specifically (avoid profile pictures)
+        # STEP 1: Count listing images to determine which mode to use
+        print("  ▶ STEP 1: Detecting listing image count...")
+        
+        listing_img_selectors = [
             "img.web_ui__Image__content[data-testid^='item-photo-']",
             "img[data-testid^='item-photo-']",
-            # Target images within containers that suggest product photos
-            "div.web_ui__Image__cover img.web_ui__Image__content",
-            "div.web_ui__Image__scaled img.web_ui__Image__content", 
-            "div.web_ui__Image__rounded img.web_ui__Image__content",
-            # Broader selectors but still avoiding profile images
-            "div.feed-grid img",
-            "div[class*='photo'] img",
         ]
         
-        imgs = []
-        for selector in img_selectors:
-            imgs = driver.find_elements(By.CSS_SELECTOR, selector)
-            if imgs:
-                if print_images_backend_info:
-                    print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
+        listing_images = []
+        for selector in listing_img_selectors:
+            listing_images = driver.find_elements(By.CSS_SELECTOR, selector)
+            if listing_images:
+                print(f"  ▶ Found {len(listing_images)} listing images using selector: {selector}")
                 break
         
-        if not imgs:
-            print("  ▶ No images found with any selector")
+        if not listing_images:
+            print("  ▶ No listing images found")
             return []
         
-        # FIXED: Remove the [:8] limit - process ALL images found
-        valid_urls = []
-        seen_urls = set()  # Track URLs to prevent duplicates
+        listing_image_count = len(listing_images)
+        print(f"  ▶ Listing image count: {listing_image_count}")
         
-        if print_images_backend_info:
-            print(f"  ▶ Processing {len(imgs)} images (NO LIMIT)")
-        
-        for img in imgs:  # REMOVED [:8] limit here
-            src = img.get_attribute("src")
-            parent_classes = ""
+        # STEP 2: Decide which mode to use based on count
+        if listing_image_count <= 4:
+            # NORMAL MODE: 4 or fewer images - use existing logic
+            print(f"  ▶ MODE: NORMAL (≤4 images) - Using standard scraping")
             
-            # Get parent element classes to check for profile picture indicators
+            # Try multiple selectors in order of preference - focusing on product images only
+            img_selectors = [
+                # Target product images specifically (avoid profile pictures)
+                "img.web_ui__Image__content[data-testid^='item-photo-']",
+                "img[data-testid^='item-photo-']",
+                # Target images within containers that suggest product photos
+                "div.web_ui__Image__cover img.web_ui__Image__content",
+                "div.web_ui__Image__scaled img.web_ui__Image__content", 
+                "div.web_ui__Image__rounded img.web_ui__Image__content",
+                # Broader selectors but still avoiding profile images
+                "div.feed-grid img",
+                "div[class*='photo'] img",
+            ]
+            
+            imgs = []
+            for selector in img_selectors:
+                imgs = driver.find_elements(By.CSS_SELECTOR, selector)
+                if imgs:
+                    if print_images_backend_info:
+                        print(f"  ▶ Found {len(imgs)} images using selector: {selector}")
+                    break
+            
+            if not imgs:
+                print("  ▶ No images found with any selector")
+                return []
+            
+            valid_urls = []
+            seen_urls = set()
+            
+            if print_images_backend_info:
+                print(f"  ▶ Processing {len(imgs)} images")
+            
+            for img in imgs:
+                src = img.get_attribute("src")
+                parent_classes = ""
+                
+                # Get parent element classes to check for profile picture indicators
+                try:
+                    parent = img.find_element(By.XPATH, "..")
+                    parent_classes = parent.get_attribute("class") or ""
+                except:
+                    pass
+                
+                # Check if this is a valid product image
+                if src and src.startswith('http'):
+                    # Remove query parameters and fragments for duplicate detection
+                    normalized_url = src.split('?')[0].split('#')[0]
+                    
+                    if normalized_url in seen_urls:
+                        if print_images_backend_info:
+                            print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
+                        continue
+                    
+                    seen_urls.add(normalized_url)
+                    
+                    # Exclude profile pictures and small icons based on URL patterns
+                    if (
+                        '/50x50/' in src or 
+                        '/75x75/' in src or 
+                        '/100x100/' in src or
+                        'circle' in parent_classes.lower() or
+                        src.endswith('.svg') or
+                        any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
+                    ):
+                        if print_images_backend_info:
+                            print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
+                        continue
+                    
+                    # Only include images that look like product photos
+                    if (
+                        '/f800/' in src or 
+                        '/f1200/' in src or 
+                        '/f600/' in src or
+                        (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
+                        not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
+                    ):
+                        valid_urls.append(src)
+                        if print_images_backend_info:
+                            print(f"    ✅ Added valid image URL: {src[:50]}...")
+        
+        else:
+            # CAROUSEL MODE: 5+ images - click image to open carousel
+            print(f"  ▶ MODE: CAROUSEL (>4 images) - Clicking image to open carousel")
+            
             try:
-                parent = img.find_element(By.XPATH, "..")
-                parent_classes = parent.get_attribute("class") or ""
-            except:
-                pass
+                # STEP 3: Click on the first listing image to open carousel
+                first_listing_image = listing_images[0]
+                print(f"  ▶ STEP 2: Clicking first listing image to open carousel...")
+                
+                # Scroll into view
+                driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", first_listing_image)
+                time.sleep(0.5)
+                
+                # Try multiple click methods
+                clicked = False
+                
+                # Method 1: Direct click
+                try:
+                    first_listing_image.click()
+                    clicked = True
+                    print(f"  ▶ ✅ Clicked image (direct click)")
+                except Exception as e1:
+                    print(f"  ▶ ⚠️ Direct click failed: {e1}")
+                    
+                    # Method 2: JavaScript click
+                    try:
+                        driver.execute_script("arguments[0].click();", first_listing_image)
+                        clicked = True
+                        print(f"  ▶ ✅ Clicked image (JavaScript click)")
+                    except Exception as e2:
+                        print(f"  ▶ ⚠️ JavaScript click failed: {e2}")
+                        
+                        # Method 3: ActionChains click
+                        try:
+                            from selenium.webdriver.common.action_chains import ActionChains
+                            ActionChains(driver).move_to_element(first_listing_image).click().perform()
+                            clicked = True
+                            print(f"  ▶ ✅ Clicked image (ActionChains click)")
+                        except Exception as e3:
+                            print(f"  ▶ ❌ All click methods failed: {e3}")
+                
+                if not clicked:
+                    print(f"  ▶ ❌ Failed to click image - falling back to normal mode")
+                    # Fallback to normal mode logic - but avoid infinite recursion
+                    # Just use the listing images we already found
+                    valid_urls = []
+                    seen_urls = set()
+                    
+                    for img in listing_images:
+                        src = img.get_attribute("src")
+                        if src and src.startswith('http'):
+                            normalized_url = src.split('?')[0].split('#')[0]
+                            if normalized_url not in seen_urls:
+                                seen_urls.add(normalized_url)
+                                valid_urls.append(src)
+                else:
+                    # STEP 4: Wait for carousel to appear
+                    print(f"  ▶ STEP 3: Waiting for carousel to appear...")
+                    time.sleep(1.5)  # Give carousel time to animate
+                    
+                    # STEP 5: Find all carousel images
+                    print(f"  ▶ STEP 4: Scanning for carousel images...")
+                    
+                    carousel_selectors = [
+                        'img[data-testid="image-carousel-image"]',
+                        'img.image-carousel__image',
+                        'img[alt="post"]',
+                    ]
+                    
+                    carousel_images = []
+                    for selector in carousel_selectors:
+                        carousel_images = driver.find_elements(By.CSS_SELECTOR, selector)
+                        if carousel_images:
+                            print(f"  ▶ Found {len(carousel_images)} carousel images using selector: {selector}")
+                            break
+                    
+                    if not carousel_images:
+                        print(f"  ▶ ⚠️ No carousel images found - using listing images as fallback")
+                        # Use the listing images we already found
+                        valid_urls = []
+                        seen_urls = set()
+                        
+                        for img in listing_images:
+                            src = img.get_attribute("src")
+                            if src and src.startswith('http'):
+                                normalized_url = src.split('?')[0].split('#')[0]
+                                if normalized_url not in seen_urls:
+                                    seen_urls.add(normalized_url)
+                                    valid_urls.append(src)
+                    else:
+                        # STEP 6: Extract URLs from carousel images
+                        valid_urls = []
+                        seen_urls = set()
+                        
+                        print(f"  ▶ STEP 5: Extracting URLs from {len(carousel_images)} carousel images...")
+                        
+                        for idx, img in enumerate(carousel_images):
+                            src = img.get_attribute("src")
+                            
+                            if src and src.startswith('http'):
+                                # Remove query parameters and fragments for duplicate detection
+                                normalized_url = src.split('?')[0].split('#')[0]
+                                
+                                if normalized_url in seen_urls:
+                                    if print_images_backend_info:
+                                        print(f"    ⏭️  Skipping duplicate carousel URL: {normalized_url[:50]}...")
+                                    continue
+                                
+                                seen_urls.add(normalized_url)
+                                
+                                # Carousel images are always valid listing images, no filtering needed
+                                valid_urls.append(src)
+                                if print_images_backend_info:
+                                    print(f"    ✅ Added carousel image URL {idx+1}: {src[:50]}...")
+                        
+                        # OPTIMIZATION: No need to close carousel - tab will be closed immediately after this
+                        print(f"  ▶ STEP 6: Carousel will be closed when tab closes (optimization)")
             
-            # Check if this is a valid product image
-            if src and src.startswith('http'):
-                # FIXED: Better duplicate detection using URL normalization
-                # Remove query parameters and fragments for duplicate detection
-                normalized_url = src.split('?')[0].split('#')[0]
+            except Exception as carousel_error:
+                print(f"  ▶ ❌ Carousel mode error: {carousel_error}")
+                print(f"  ▶ Falling back to listing images...")
+                import traceback
+                traceback.print_exc()
+                # Fallback: use the listing images we already found
+                valid_urls = []
+                seen_urls = set()
                 
-                if normalized_url in seen_urls:
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate URL: {normalized_url[:50]}...")
-                    continue
-                
-                seen_urls.add(normalized_url)
-                
-                # Exclude profile pictures and small icons based on URL patterns
-                if (
-                    # Skip small profile pictures (50x50, 75x75, etc.)
-                    '/50x50/' in src or 
-                    '/75x75/' in src or 
-                    '/100x100/' in src or
-                    # Skip if parent has circle class (usually profile pics)
-                    'circle' in parent_classes.lower() or
-                    # Skip SVG icons
-                    src.endswith('.svg') or
-                    # Skip very obviously small images by checking dimensions in URL
-                    any(size in src for size in ['/32x32/', '/64x64/', '/128x128/'])
-                ):
-                    print(f"    ⏭️  Skipping filtered image: {src[:50]}...")
-                    continue
-                
-                # Only include images that look like product photos
-                if (
-                    # Vinted product images typically have f800, f1200, etc.
-                    '/f800/' in src or 
-                    '/f1200/' in src or 
-                    '/f600/' in src or
-                    # Or contain vinted/cloudinary and are likely product images
-                    (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
-                    # And don't have small size indicators
-                    not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
-                ):
-                    valid_urls.append(src)
-                    if print_images_backend_info:
-                        print(f"    ✅ Added valid image URL: {src[:50]}...")
-
+                for img in listing_images:
+                    src = img.get_attribute("src")
+                    if src and src.startswith('http'):
+                        normalized_url = src.split('?')[0].split('#')[0]
+                        if normalized_url not in seen_urls:
+                            seen_urls.add(normalized_url)
+                            valid_urls.append(src)
+        
+        # STEP 7/8: Download images (same for both modes)
         if not valid_urls:
-            print(f"  ▶ No valid product images found after filtering from {len(imgs)} total images")
+            print(f"  ▶ No valid product images found after filtering")
             return []
 
         if print_images_backend_info:
@@ -6371,7 +6530,6 @@ class VintedScraper:
         
         os.makedirs(listing_dir, exist_ok=True)
         
-        # FIXED: Enhanced duplicate detection using content hashes
         def download_single_image(args):
             """Download a single image with enhanced duplicate detection"""
             url, index = args
@@ -6390,7 +6548,7 @@ class VintedScraper:
                 resp = requests.get(url, timeout=10, headers=headers)
                 resp.raise_for_status()
                 
-                # FIXED: Use content hash to detect identical images with different URLs
+                # Use content hash to detect identical images with different URLs
                 content_hash = hashlib.md5(resp.content).hexdigest()
                 
                 # Check if we've already downloaded this exact image content
@@ -6404,14 +6562,16 @@ class VintedScraper:
                 
                 # Skip very small images (likely icons or profile pics that got through)
                 if img.width < 200 or img.height < 200:
-                    print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
                     return None
                 
                 # Resize image for YOLO detection optimization
-                MAX_SIZE = (1000, 1000)  # Slightly larger for better detection
+                MAX_SIZE = (1000, 1000)
                 if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
                     img.thumbnail(MAX_SIZE, Image.LANCZOS)
-                    print(f"    📏 Resized image to: {img.width}x{img.height}")
+                    if print_images_backend_info:
+                        print(f"    📏 Resized image to: {img.width}x{img.height}")
                 
                 # Convert to RGB if needed
                 if img.mode != 'RGB':
@@ -6431,15 +6591,16 @@ class VintedScraper:
             except Exception as e:
                 print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
                 return None
+        
         if print_images_backend_info:
             print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
         
-        # FIXED: Dynamic batch size based on actual image count
-        batch_size = len(valid_urls)  # Each "batch" equals the number of listing images
-        max_workers = min(6, batch_size)  # Use appropriate number of workers
+        # Dynamic batch size based on actual image count
+        batch_size = len(valid_urls)
+        max_workers = min(6, batch_size)
         
         if print_images_backend_info:
-            print(f"  ▶ Batch size set to: {batch_size} (= number of listing images)")
+            print(f"  ▶ Batch size set to: {batch_size}")
             print(f"  ▶ Using {max_workers} concurrent workers")
         
         downloaded_paths = []
@@ -6453,19 +6614,10 @@ class VintedScraper:
             # Collect results as they complete
             for future in concurrent.futures.as_completed(future_to_url):
                 result = future.result()
-                if result:  # Only add successful downloads
+                if result:
                     downloaded_paths.append(result)
 
         print(f"  ▶ Successfully downloaded {len(downloaded_paths)} unique images (from {len(valid_urls)} URLs)")
-        
-        # Clean up hash files (optional - you might want to keep them for faster future runs)
-        # Uncomment the next 6 lines if you want to clean up hash files after each listing
-        # try:
-        #     for file in os.listdir(listing_dir):
-        #         if file.startswith('.hash_'):
-        #             os.remove(os.path.join(listing_dir, file))
-        # except:
-        #     pass
         
         return downloaded_paths
 
