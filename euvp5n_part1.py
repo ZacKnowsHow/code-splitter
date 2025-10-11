@@ -98,6 +98,7 @@ NINTENDO_SWITCH_CLASSES = [
 ]
 
 VINTED_SHOW_ALL_LISTINGS = False
+misc_games_cap = 5
 print_debug = False
 print_images_backend_info = False
 test_bookmark_function = False
@@ -2197,4 +2198,3 @@ def clear_browser_data_universal(vm_ip_address, config):
             }
             
             // Strategy 2: Search all shadow roots recursively
-            function searchShadowRoots(element) {

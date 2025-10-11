@@ -1,4 +1,5 @@
 # Continuation from line 4401
+        Send a notification via Pushover
         :param title: Notification title
         :param message: Notification message
         :param api_token: Pushover API token
@@ -1656,12 +1657,11 @@
     def calculate_vinted_revenue(self, detected_objects, listing_price, title, description=""):
         """
         Enhanced revenue calculation with all Facebook logic
-        FIXED: Properly displays miscellaneous games in detected_objects
+        MODIFIED: Now returns per-item revenue breakdown
         """
         debug_function_call("calculate_vinted_revenue")
-        import re  # FIXED: Import re at function level
+        import re
         
-        # List of game-related classes
         game_classes = [
             '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
             'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta','just_dance', 'kart_m', 'kirby',
@@ -1672,25 +1672,22 @@
             'sword_p', 'tears_z', 'violet_p'
         ]
 
-        # Get all prices
         all_prices = self.fetch_all_prices()
 
-        # Count detected games
         detected_games_count = sum(detected_objects.get(game, 0) for game in game_classes)
-
-        # Detect anonymous games from title and description
         text_games_count = self.detect_anonymous_games_vinted(title, description)
 
-        # Calculate miscellaneous games
-        misc_games_count = max(0, text_games_count - detected_games_count)
-        misc_games_revenue = misc_games_count * 5 # Using same price as Facebook
+        misc_games_count_uncapped = max(0, text_games_count - detected_games_count)
+        misc_games_count = min(misc_games_count_uncapped, misc_games_cap)
+        
+        if misc_games_count_uncapped > misc_games_cap:
+            print(f"🎮 MISC GAMES CAP APPLIED: {misc_games_count_uncapped} → {misc_games_count} (cap: {misc_games_cap})")
+        
+        misc_games_revenue = misc_games_count * 5
+        
+        # NEW: Track per-item revenue
+        item_revenues = {}
 
-        # FIXED: Log when miscellaneous games are detected
-        if misc_games_count > 0:
-            print(f"🎮 MISCELLANEOUS GAMES DETECTED: {misc_games_count} games found in title/description")
-            print(f"   (Text mentioned {text_games_count} games, but only {detected_games_count} were detected by YOLO)")
-
-        # Handle box adjustments (same as Facebook)
         adjustments = {
             'oled_box': ['switch', 'comfort_h', 'tv_white'],
             'switch_box': ['switch', 'comfort_h', 'tv_black'],
@@ -1702,11 +1699,13 @@
             for item in items:
                 detected_objects[item] = max(0, detected_objects.get(item, 0) - box_count)
 
-        # Remove switch_screen if present
         detected_objects.pop('switch_screen', None)
 
-        # Start with miscellaneous games revenue
         total_revenue = misc_games_revenue
+        
+        # Add misc games to revenue breakdown
+        if misc_games_count > 0:
+            item_revenues['misc_games'] = misc_games_count * 5
 
         # Calculate revenue from detected objects
         for item, count in detected_objects.items():
@@ -1721,6 +1720,9 @@
                 
                 item_revenue = item_price * count
                 total_revenue += item_revenue
+                
+                # NEW: Store per-item revenue
+                item_revenues[item] = item_revenue
         
         for item, count in detected_objects.items():
             if count > 0:
@@ -1730,37 +1732,38 @@
         profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
 
         print(f"Listing Price: £{listing_price:.2f}")
-        if misc_games_revenue > 0:
-            print(f"Miscellaneous Games Revenue: £{misc_games_revenue:.2f} ({misc_games_count} games)")
         print(f"Total Expected Revenue: £{total_revenue:.2f}")
         print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
 
-        # CRITICAL FIX: Filter out zero-count items for display (matching Facebook behavior)
         display_objects = {k: v for k, v in detected_objects.items() if v > 0}
 
-        # FIXED: Add miscellaneous games to display_objects so it shows up in detected_items
         if misc_games_count > 0:
-            display_objects['miscellaneous_games'] = misc_games_count
-            print(f"✅ ADDED TO DISPLAY: miscellaneous_games: {misc_games_count}")
+            display_objects['misc_games'] = misc_games_count
 
-        return total_revenue, expected_profit, profit_percentage, display_objects
+        # NEW: Return item_revenues as fifth return value
+        return total_revenue, expected_profit, profit_percentage, display_objects, item_revenues
+
 
     def perform_detection_on_listing_images(self, model, listing_dir):
         """
         Enhanced object detection with all Facebook exceptions and logic
         PLUS Vinted-specific post-scan game deduplication
         NEW: Price threshold filtering for Nintendo Switch related items
+        MODIFIED: Now returns confidences alongside detected_objects
         """
         if not os.path.isdir(listing_dir):
-            return {}, []
+            return {}, [], {}  # Added empty dict for confidences
 
         detected_objects = {class_name: [] for class_name in CLASS_NAMES}
         processed_images = []
         confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
+        
+        # NEW: Track the highest confidence for ALL classes, not just mutually exclusive ones
+        all_confidences = {class_name: 0.0 for class_name in CLASS_NAMES}
 
         image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
         if not image_files:
-            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images
+            return {class_name: 0 for class_name in CLASS_NAMES}, processed_images, all_confidences
 
         for image_file in image_files:
             image_path = os.path.join(listing_dir, image_file)
@@ -1783,6 +1786,9 @@
                             min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
                             
                             if confidence >= min_confidence:
+                                # Update the highest confidence for this class
+                                all_confidences[class_name] = max(all_confidences[class_name], float(confidence))
+                                
                                 if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
                                     confidences[class_name] = max(confidences[class_name], confidence)
                                 else:
@@ -1814,7 +1820,6 @@
         final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
         
         # VINTED-SPECIFIC POST-SCAN GAME DEDUPLICATION
-        # Define game classes that should be capped at 1 per listing
         vinted_game_classes = [
             '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
             'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
@@ -1832,39 +1837,32 @@
                 games_before_cap[game_class] = final_detected_objects[game_class]
                 final_detected_objects[game_class] = 1
         
-        # Log the capping if any games were capped
         if games_before_cap:
             print("🎮 VINTED GAME DEDUPLICATION APPLIED:")
             for game, original_count in games_before_cap.items():
                 print(f"  • {game}: {original_count} → 1")
         
-        # NEW: PRICE THRESHOLD FILTERING FOR NINTENDO SWITCH ITEMS
+        # PRICE THRESHOLD FILTERING FOR NINTENDO SWITCH ITEMS
         try:
-            # Get the current listing price stored during scraping
             listing_price = getattr(self, 'current_listing_price_float', 0.0)
             
-            # If the listing price is below the threshold, remove Nintendo Switch detections
             if listing_price > 0 and listing_price < PRICE_THRESHOLD:
                 filtered_classes = []
                 for switch_class in NINTENDO_SWITCH_CLASSES:
                     if final_detected_objects.get(switch_class, 0) > 0:
                         filtered_classes.append(switch_class)
                         final_detected_objects[switch_class] = 0
+                        all_confidences[switch_class] = 0.0  # Also zero out confidence
                 
                 if filtered_classes:
                     print(f"🚫 PRICE FILTER: Removed Nintendo Switch detections due to low price (£{listing_price:.2f} < £{PRICE_THRESHOLD:.2f})")
                     print(f"    Filtered classes: {', '.join(filtered_classes)}")
-            elif listing_price >= PRICE_THRESHOLD:
-                # Optional: Log when price threshold allows detection
-                detected_switch_classes = [cls for cls in NINTENDO_SWITCH_CLASSES if final_detected_objects.get(cls, 0) > 0]
-                if detected_switch_classes:
-                    print(f"✅ PRICE FILTER: Nintendo Switch detections allowed (£{listing_price:.2f} >= £{PRICE_THRESHOLD:.2f})")
         
         except Exception as price_filter_error:
             print(f"⚠️ Warning: Price filtering failed: {price_filter_error}")
-            # Continue without price filtering if there's an error
         
-        return final_detected_objects, processed_images
+        # Return confidences as third return value
+        return final_detected_objects, processed_images, all_confidences
 
 
     def download_images_for_listing(self, driver, listing_dir):
@@ -2199,3 +2197,5 @@
                     print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
                 return save_path
                 
+            except Exception as e:
+                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")

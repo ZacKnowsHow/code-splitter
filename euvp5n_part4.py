@@ -1,6 +1,4 @@
 # Continuation from line 6601
-            except Exception as e:
-                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
                 return None
         
         if print_images_backend_info:
