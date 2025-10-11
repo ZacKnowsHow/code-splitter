@@ -97,7 +97,7 @@ NINTENDO_SWITCH_CLASSES = [
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = True
 misc_games_cap = 5
 print_debug = False
 print_images_backend_info = False
@@ -118,6 +118,9 @@ test_purchase_url = "https://www.vinted.co.uk/items/6963326227-nintendo-switch-1
 #sold listing: https://www.vinted.co.uk/items/6900159208-laptop-case
 should_send_fail_bookmark_notification = True
 
+
+current_item_confidences = {}  # NEW: Track confidence for each detected item
+current_item_revenues = {}     # NEW: Track revenue for each detected item
 
 purchase_unsuccessful_detected_urls = {}  # Track URLs waiting for "Purchase unsuccessful" detection
 # Config
@@ -2195,6 +2198,3 @@ def clear_browser_data_universal(vm_ip_address, config):
                         return true;
                     }
                 }
-            }
-            
-            // Strategy 2: Search all shadow roots recursively

@@ -1,4 +1,7 @@
 # Continuation from line 2201
+            }
+            
+            // Strategy 2: Search all shadow roots recursively
             function searchShadowRoots(element) {
                 if (element.shadowRoot) {
                     let clearButton = element.shadowRoot.querySelector('#clearButton');
@@ -2196,6 +2199,3 @@ class VintedScraper:
             except:
                 pass
             return self.setup_driver()
-    # Add this method to the VintedScraper class
-    def send_pushover_notification(self, title, message, api_token, user_key):
-        """
