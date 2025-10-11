@@ -1,4 +1,14 @@
 # Continuation from line 6601
+            except Exception as e:
+                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
+                return None
+        
+        if print_images_backend_info:
+            print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
+        
+        # Dynamic batch size based on actual image count
+        batch_size = len(valid_urls)
+        max_workers = min(6, batch_size)
         
         if print_images_backend_info:
             print(f"  ▶ Batch size set to: {batch_size}")

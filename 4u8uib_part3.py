@@ -1656,6 +1656,7 @@
     def calculate_vinted_revenue(self, detected_objects, listing_price, title, description=""):
         """
         Enhanced revenue calculation with all Facebook logic
+        FIXED: Properly displays miscellaneous games in detected_objects
         """
         debug_function_call("calculate_vinted_revenue")
         import re  # FIXED: Import re at function level
@@ -1684,6 +1685,11 @@
         misc_games_count = max(0, text_games_count - detected_games_count)
         misc_games_revenue = misc_games_count * 5 # Using same price as Facebook
 
+        # FIXED: Log when miscellaneous games are detected
+        if misc_games_count > 0:
+            print(f"🎮 MISCELLANEOUS GAMES DETECTED: {misc_games_count} games found in title/description")
+            print(f"   (Text mentioned {text_games_count} games, but only {detected_games_count} were detected by YOLO)")
+
         # Handle box adjustments (same as Facebook)
         adjustments = {
             'oled_box': ['switch', 'comfort_h', 'tv_white'],
@@ -1699,7 +1705,7 @@
         # Remove switch_screen if present
         detected_objects.pop('switch_screen', None)
 
-        # Detect SD card and add revenue
+        # Start with miscellaneous games revenue
         total_revenue = misc_games_revenue
 
         # Calculate revenue from detected objects
@@ -1715,6 +1721,7 @@
                 
                 item_revenue = item_price * count
                 total_revenue += item_revenue
+        
         for item, count in detected_objects.items():
             if count > 0:
                 print(f"DEBUG ITEM: {item} = {count}, price = {all_prices.get(item, 'NOT IN PRICES')}")
@@ -1723,15 +1730,18 @@
         profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
 
         print(f"Listing Price: £{listing_price:.2f}")
+        if misc_games_revenue > 0:
+            print(f"Miscellaneous Games Revenue: £{misc_games_revenue:.2f} ({misc_games_count} games)")
         print(f"Total Expected Revenue: £{total_revenue:.2f}")
         print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
 
         # CRITICAL FIX: Filter out zero-count items for display (matching Facebook behavior)
         display_objects = {k: v for k, v in detected_objects.items() if v > 0}
 
-        # Add miscellaneous games to display if present
+        # FIXED: Add miscellaneous games to display_objects so it shows up in detected_items
         if misc_games_count > 0:
-            display_objects['misc_games'] = misc_games_count
+            display_objects['miscellaneous_games'] = misc_games_count
+            print(f"✅ ADDED TO DISPLAY: miscellaneous_games: {misc_games_count}")
 
         return total_revenue, expected_profit, profit_percentage, display_objects
 
@@ -2189,13 +2199,3 @@
                     print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
                 return save_path
                 
-            except Exception as e:
-                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
-                return None
-        
-        if print_images_backend_info:
-            print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
-        
-        # Dynamic batch size based on actual image count
-        batch_size = len(valid_urls)
-        max_workers = min(6, batch_size)
