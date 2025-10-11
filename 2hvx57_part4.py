@@ -1,4 +1,156 @@
 # Continuation from line 6601
+        
+        if print_images_backend_info:
+            print(f"  ▶ Batch size set to: {batch_size}")
+            print(f"  ▶ Using {max_workers} concurrent workers")
+        
+        downloaded_paths = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Prepare arguments for concurrent download
+            download_args = [(url, i+1) for i, url in enumerate(valid_urls)]
+            
+            # Submit all download jobs
+            future_to_url = {executor.submit(download_single_image, args): args[0] for args in download_args}
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_url):
+                result = future.result()
+                if result:
+                    downloaded_paths.append(result)
+
+        print(f"  ▶ Successfully downloaded {len(downloaded_paths)} unique images (from {len(valid_urls)} URLs)")
+        
+        return downloaded_paths
+
+
+    def download_and_process_images_vinted(self, image_urls):
+        """FIXED: Process images without arbitrary limits and with better deduplication"""
+        processed_images = []
+        seen_hashes = set()  # Track content hashes to prevent duplicates
+        
+        print(f"🖼️  Processing {len(image_urls)} image URLs (NO LIMIT)")
+        
+        for i, url in enumerate(image_urls):  # REMOVED [:8] limit here
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    # FIXED: Use content hash for duplicate detection
+                    content_hash = hashlib.md5(response.content).hexdigest()
+                    
+                    if content_hash in seen_hashes:
+                        if print_images_backend_info:
+                            print(f"🖼️  Skipping duplicate image {i+1} (hash: {content_hash[:8]}...)")
+                        continue
+                    
+                    seen_hashes.add(content_hash)
+                    
+                    img = Image.open(io.BytesIO(response.content))
+                    
+                    # Skip very small images
+                    if img.width < 200 or img.height < 200:
+                        print(f"🖼️  Skipping small image {i+1}: {img.width}x{img.height}")
+                        continue
+                    
+                    img = img.convert("RGB")
+                    
+                    # FIXED: Create proper copy to prevent memory issues
+                    img_copy = img.copy()
+                    processed_images.append(img_copy)
+                    img.close()  # Close original to free memory
+                    
+                    print(f"🖼️  Processed unique image {i+1}: {img_copy.width}x{img_copy.height}")
+                    
+                else:
+                    print(f"🖼️  Failed to download image {i+1}. Status code: {response.status_code}")
+            except Exception as e:
+                print(f"🖼️  Error processing image {i+1}: {str(e)}")
+        
+        print(f"🖼️  Final result: {len(processed_images)} unique processed images")
+        return processed_images
+
+
+    
+    def extract_vinted_listing_id(self, url):
+        """
+        Extract listing ID from Vinted URL
+        Example: https://www.vinted.co.uk/items/6862154542-sonic-forces?referrer=catalog
+        Returns: "6862154542"
+        """
+        debug_function_call("extract_vinted_listing_id")
+        import re  # FIXED: Import re at function level
+        
+        if not url:
+            return None
+        
+        # Match pattern: /items/[numbers]-
+        match = re.search(r'/items/(\d+)-', url)
+        if match:
+            return match.group(1)
+        
+        # Fallback: match any sequence of digits after /items/
+        match = re.search(r'/items/(\d+)', url)
+        if match:
+            return match.group(1)
+        
+        return None
+
+    def load_scanned_vinted_ids(self):
+        """Load previously scanned Vinted listing IDs from file"""
+        try:
+            if os.path.exists(VINTED_SCANNED_IDS_FILE):
+                with open(VINTED_SCANNED_IDS_FILE, 'r') as f:
+                    return set(line.strip() for line in f if line.strip())
+            return set()
+        except Exception as e:
+            print(f"Error loading scanned IDs: {e}")
+            return set()
+
+    def save_vinted_listing_id(self, listing_id):
+        """Save a Vinted listing ID to the scanned file"""
+        if not listing_id:
+            return
+        
+        try:
+            with open(VINTED_SCANNED_IDS_FILE, 'a') as f:
+                f.write(f"{listing_id}\n")
+        except Exception as e:
+            print(f"Error saving listing ID {listing_id}: {e}")
+
+    def is_vinted_listing_already_scanned(self, url, scanned_ids):
+        """Check if a Vinted listing has already been scanned"""
+        listing_id = self.extract_vinted_listing_id(url)
+        if not listing_id:
+            return False
+        return listing_id in scanned_ids
+
+    def refresh_vinted_page_and_wait(self, driver, is_first_refresh=True):
+        """
+        Refresh the Vinted page and wait appropriate time
+        """
+        print("🔄 Refreshing Vinted page...")
+        
+        # Navigate back to first page
+        params = {
+            "search_text": SEARCH_QUERY,
+            "price_from": PRICE_FROM,
+            "price_to": PRICE_TO,
+            "currency": CURRENCY,
+            "order": ORDER,
+        }
+        driver.get(f"{BASE_URL}?{urlencode(params)}")
+        
+        # Wait for page to load
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
+            )
+            print("✅ Page refreshed and loaded successfully")
+        except TimeoutException:
+            print("⚠️ Timeout waiting for page to reload")
+        
+        # Wait for new listings (except first refresh)
+        if not is_first_refresh:
+            print(f"⏳ Waiting {wait_after_max_reached_vinted} seconds for new listings...")
             time.sleep(wait_after_max_reached_vinted)
         
         return True
