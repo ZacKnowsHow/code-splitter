@@ -1,4 +1,42 @@
 # Continuation from line 6601
+                            seen_urls.add(normalized_url)
+                            valid_urls.append(src)
+        
+        # STEP 7/8: Download images (same for both modes)
+        if not valid_urls:
+            print(f"  ▶ No valid product images found after filtering")
+            return []
+
+        if print_images_backend_info:
+            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
+        
+        os.makedirs(listing_dir, exist_ok=True)
+        
+        def download_single_image(args):
+            """Download a single image with enhanced duplicate detection"""
+            url, index = args
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
+                'Referer': driver.current_url
+            }
+            
+            try:
+                resp = requests.get(url, timeout=10, headers=headers)
+                resp.raise_for_status()
+                
+                # Use content hash to detect identical images with different URLs
+                content_hash = hashlib.md5(resp.content).hexdigest()
+                
+                # Check if we've already downloaded this exact image content
+                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
+                if os.path.exists(hash_file):
+                    if print_images_backend_info:
                         print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
                     return None
                 
@@ -397,7 +435,7 @@
                                     print(f"  • {cls}: {detected_objects[cls]}")
 
                         # Process listing for pygame display
-                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url)
+                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url, all_confidences, item_revenues)
 
                         # Mark this listing as scanned
                         if listing_id:
