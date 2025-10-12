@@ -1,7 +1,4 @@
 # Continuation from line 6601
-                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
-                if os.path.exists(hash_file):
-                    if print_images_backend_info:
                         print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
                     return None
                 
