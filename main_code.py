@@ -5183,7 +5183,6 @@ class VintedScraper:
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
 
 
-
     # Supporting helper function for better timeout management
     def calculate_dynamic_timeout(base_timeout, elapsed_time, max_total_time):
         """
@@ -5817,7 +5816,8 @@ class VintedScraper:
                 
     def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter):
         """
-        MODIFIED SECTION: Now properly passes confidences to final_listing_info
+        FIXED: Now uses second_price (the actual item price) instead of price field
+        Total price = second_price + postage (no buyer protection - that's added at checkout)
         """
         global suitable_listings, current_listing_index, recent_listings, current_bookmark_status
 
@@ -5830,10 +5830,18 @@ class VintedScraper:
             username = None
             print("🔖 USERNAME: Not available for this listing")
 
-        price_text = details.get("price", "0")
-        listing_price = self.extract_vinted_price(price_text)
+        # ============================================================================
+        # FIX: Use second_price (the ACTUAL item price), not the "price" field
+        # ============================================================================
+        second_price = self.extract_price(details.get("second_price", "0"))
         postage = self.extract_price(details.get("postage", "0"))
-        total_price = listing_price + postage
+        total_price = second_price + postage
+        
+        print(f"💰 PRICE BREAKDOWN:")
+        print(f"   Price field: {details.get('price', 'N/A')}")
+        print(f"   Second price (USED): £{second_price:.2f}")
+        print(f"   Postage: £{postage:.2f}")
+        print(f"   TOTAL: £{total_price:.2f}")
 
         seller_reviews = details.get("seller_reviews", "No reviews yet")
 
@@ -5953,21 +5961,12 @@ class VintedScraper:
             except Exception as e:
                 print(f"Error copying image for storage: {e}")
 
-        # FIXED: Get confidences from detected_objects - this section now works because
-        # perform_detection_on_listing_images returns proper confidences
         all_confidences = {}
         
-        # FIXED: Build confidence mapping from detected_objects
         confidence_mapping = {}
         for item_name, count in detected_objects.items():
             if count > 0:
-                # Note: We need to get these from the model results
-                # For now, initialize with 0.0 as placeholder (should be from model in real code)
                 confidence_mapping[item_name] = 0.0
-        
-        # NOTE: The actual confidences come from perform_detection_on_listing_images
-        # They should be passed through the calling chain, but if not available,
-        # the confidence_mapping will be populated below when we have access to them
 
         final_listing_info = {
             'title': details.get("title", "No title"),
@@ -6024,6 +6023,7 @@ class VintedScraper:
             print(f"❌ Listing not added to display: {suitability_reason}")
 
         print(f"🔄 REAL-TIME PROCESSING COMPLETE: Ready to resume scraping")
+
         
     # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
     def send_to_vm_bookmark_system(self, url):
