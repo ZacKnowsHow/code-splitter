@@ -526,33 +526,70 @@
         return base64.b64encode(buffered.getvalue()).decode()
 
     def render_images(self, screen, images, rect, bounding_boxes):
+        """
+        Enhanced render_images that supports up to 25 images with dynamic grid sizing:
+        - 1 image: 1x1 grid (full rectangle)
+        - 2-4 images: 2x2 grid
+        - 5-9 images: 3x3 grid
+        - 10-16 images: 4x4 grid
+        - 17-25 images: 5x5 grid
+        """
         if not images:
             return
 
         num_images = len(images)
+        
+        # Determine grid size based on number of images
         if num_images == 1:
             grid_size = 1
         elif 2 <= num_images <= 4:
             grid_size = 2
-        else:
+        elif 5 <= num_images <= 9:
             grid_size = 3
+        elif 10 <= num_images <= 16:
+            grid_size = 4
+        elif 17 <= num_images <= 25:
+            grid_size = 5
+        else:
+            # Cap at 25 images maximum
+            grid_size = 5
+            num_images = min(num_images, 25)
 
+        # Calculate cell dimensions
         cell_width = rect.width // grid_size
         cell_height = rect.height // grid_size
 
+        # Render each image in the grid
         for i, img in enumerate(images):
             if i >= grid_size * grid_size:
+                # Maximum capacity reached for current grid size
                 break
+            
+            # Calculate row and column position
             row = i // grid_size
             col = i % grid_size
+            
+            # Resize image to fit cell
             img = img.resize((cell_width, cell_height))
+            
+            # Convert PIL image to pygame surface
             img_surface = pygame.image.fromstring(img.tobytes(), img.size, img.mode)
-            screen.blit(img_surface, (rect.left + col * cell_width, rect.top + row * cell_height))
+            
+            # Calculate position on screen
+            x_pos = rect.left + col * cell_width
+            y_pos = rect.top + row * cell_height
+            
+            # Blit (draw) the image on screen
+            screen.blit(img_surface, (x_pos, y_pos))
 
-        # Display suitability reason
+        # Display suitability reason (existing code preserved)
         if FAILURE_REASON_LISTED:
             font = pygame.font.Font(None, 24)
-            suitability_text = font.render(current_suitability, True, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+            suitability_text = font.render(
+                current_suitability, 
+                True, 
+                (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0)
+            )
             screen.blit(suitability_text, (rect.left + 10, rect.bottom - 30))
 
     def initialize_pygame_window(self):
@@ -1569,6 +1606,7 @@
             if count > 0:
                 confidence_mapping[item_name] = 0.0
 
+        # Find this section and modify it:
         final_listing_info = {
             'title': details.get("title", "No title"),
             'description': details.get("description", "No description"),
@@ -1583,8 +1621,8 @@
             'suitability': suitability_reason,
             'seller_reviews': seller_reviews,
             'bookmark_status': bookmark_status,
-            'item_confidences': confidence_mapping,
-            'item_revenues': item_revenues
+            'item_confidences': all_confidences if all_confidences else {},  # ADD THIS LINE
+            'item_revenues': item_revenues if item_revenues else {}           # ADD THIS LINE
         }
 
         should_add_to_display = is_suitable or VINTED_SHOW_ALL_LISTINGS
@@ -1636,7 +1674,7 @@
         print(f"🔄 REAL-TIME: Processing should happen immediately, not queued")
         pass  # Do nothing - real-time processing handles this
 
-    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url):
+    def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url, all_confidences=None, item_revenues=None):
         """
         MODIFIED: Now calls immediate processing instead of queueing
         """
@@ -2161,41 +2199,3 @@
                     if src and src.startswith('http'):
                         normalized_url = src.split('?')[0].split('#')[0]
                         if normalized_url not in seen_urls:
-                            seen_urls.add(normalized_url)
-                            valid_urls.append(src)
-        
-        # STEP 7/8: Download images (same for both modes)
-        if not valid_urls:
-            print(f"  ▶ No valid product images found after filtering")
-            return []
-
-        if print_images_backend_info:
-            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
-        
-        os.makedirs(listing_dir, exist_ok=True)
-        
-        def download_single_image(args):
-            """Download a single image with enhanced duplicate detection"""
-            url, index = args
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Cache-Control': 'no-cache',
-                'Referer': driver.current_url
-            }
-            
-            try:
-                resp = requests.get(url, timeout=10, headers=headers)
-                resp.raise_for_status()
-                
-                # Use content hash to detect identical images with different URLs
-                content_hash = hashlib.md5(resp.content).hexdigest()
-                
-                # Check if we've already downloaded this exact image content
-                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
-                if os.path.exists(hash_file):
-                    if print_images_backend_info:
