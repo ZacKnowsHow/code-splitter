@@ -97,7 +97,7 @@ NINTENDO_SWITCH_CLASSES = [
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = True
 misc_games_cap = 5
 print_debug = False
 print_images_backend_info = False
@@ -121,6 +121,7 @@ should_send_fail_bookmark_notification = True
 
 current_item_confidences = {}  # NEW: Track confidence for each detected item
 current_item_revenues = {}     # NEW: Track revenue for each detected item
+current_listing_timestamps = {}  # NEW: Track timestamps for listing events
 
 purchase_unsuccessful_detected_urls = {}  # Track URLs waiting for "Purchase unsuccessful" detection
 # Config
@@ -1692,8 +1693,9 @@ def execute_vm_bookmark_process(driver, url, driver_number):
         }
         
         # Execute the main bookmark sequences using existing logic
-        success = execute_vm_bookmark_sequences(driver, url, username, step_log)
-        
+        # Pass vinted_scraper_instance for timestamp tracking
+        scraper_instance = globals().get('vinted_scraper_instance', None)
+        success = execute_vm_bookmark_sequences(driver, url, username, step_log, scraper_instance)        
         if success:
             step_log['success'] = True
             print(f"✅ DRIVER {driver_number}: Bookmark process completed successfully")
@@ -1716,7 +1718,7 @@ def execute_vm_bookmark_process(driver, url, driver_number):
         return False
 
 # 4. VM-specific bookmark sequences (adapted from existing VintedScraper methods)
-def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
+def execute_vm_bookmark_sequences(driver, listing_url, username, step_log, scraper_instance=None):
     """
     Execute bookmark sequences for VM drivers using existing bookmark logic
     """
@@ -1733,7 +1735,7 @@ def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
         driver.get(listing_url)
         
         # Execute first buy sequence (critical for bookmarking)
-        success = execute_vm_first_buy_sequence(driver, step_log)
+        success = execute_vm_first_buy_sequence(driver, step_log, scraper_instance)
         
         if success:
             print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence completed - moving to next driver")
@@ -1763,7 +1765,7 @@ def execute_vm_first_buy_sequence(driver, step_log):
 
 
 # 5. VM-specific first buy sequence (using EXACT main program logic)
-def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log):
+def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log, scraper_instance=None):    
     """
     Modified first buy sequence - JavaScript-first clicking
     """
@@ -1779,6 +1781,9 @@ def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log):
         
         print(f"✅ JAVASCRIPT-FIRST: Buy button found and clicked using: {buy_selector}")
         step_log['steps_completed'].append(f"javascript_first_buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
+        # TIMESTAMP: Record when buy button was clicked
+        if scraper_instance and 'actual_url' in step_log:
+            scraper_instance.record_listing_timestamp(step_log['actual_url'], 'buy_clicked')
         
         # Wait for pay button to appear using existing logic
         print(f"💳 JAVASCRIPT-FIRST: Waiting for pay button...")
@@ -1799,11 +1804,9 @@ def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log):
         step_log['steps_completed'].append(f"javascript_first_pay_button_found - {time.time() - step_log['start_time']:.2f}s")
         
         # Handle shipping options (same as main scraper)
-        handle_vm_shipping_options(driver, step_log)
-        
+        handle_vm_shipping_options(driver, step_log, scraper_instance)    
         # Execute critical pay sequence (same timing as main scraper)
-        return execute_vm_critical_pay_sequence(driver, pay_button, step_log)
-        
+        return execute_vm_critical_pay_sequence(driver, pay_button, step_log, scraper_instance)        
     except Exception as e:
         print(f"❌ JAVASCRIPT-FIRST: First buy sequence error: {e}")
         return False
@@ -1929,7 +1932,7 @@ def vm_log_step(step_log, step_name, success=True, error_msg=None):
         print(f"❌ DRIVER {step_log['driver_number']}: {step_name} - {error_msg}")
 
 # 6. VM-specific shipping options handler
-def handle_vm_shipping_options(driver, step_log):
+def handle_vm_shipping_options(driver, step_log, scraper_instance=None):
     """
     Handle shipping options for VM driver (adapted from main scraper)
     """
@@ -1950,13 +1953,21 @@ def handle_vm_shipping_options(driver, step_log):
                 print(f"🏠 DRIVER {step_log['driver_number']}: Switching to Ship to home...")
                 
                 # Click "Ship to home"
+                # Click "Ship to home"
                 ship_home = driver.find_element(
                     By.XPATH,
                     '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
                 )
                 ship_home.click()
-                
+
                 print(f"✅ DRIVER {step_log['driver_number']}: Switched to Ship to home, waiting 3 seconds...")
+                # TIMESTAMP: Record when ship to home was clicked
+                if scraper_instance and 'actual_url' in step_log:
+                    scraper_instance.record_listing_timestamp(step_log['actual_url'], 'ship_to_home_clicked')
+
+                # TIMESTAMP: Record ship to home click (need scraper instance passed through)
+                # This will be handled in Step 7B
+
                 time.sleep(3)
             except:
                 print(f"✅ DRIVER {step_log['driver_number']}: Pickup point ready")
@@ -1968,7 +1979,7 @@ def handle_vm_shipping_options(driver, step_log):
         print(f"⚠️ DRIVER {step_log['driver_number']}: Shipping options error: {e}")
 
 # 7. VM-specific critical pay sequence (EXACT same timing as main scraper)
-def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
+def execute_vm_critical_pay_sequence(driver, pay_button, step_log, scraper_instance=None):
     """
     MODIFIED: Now stops the timer when pay button is clicked
     Execute critical pay sequence with EXACT same timing as main scraper
@@ -1977,6 +1988,8 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
         print(f"💳 DRIVER {step_log['driver_number']}: Executing critical pay sequence...")
         
         # Get the URL from step_log to track timer
+        listing_url = step_log.get('actual_url', None)
+        # Get URL from step_log for timestamp tracking
         listing_url = step_log.get('actual_url', None)
         
         # Click pay button using multiple methods (same as main scraper)
@@ -1989,6 +2002,10 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                     print('1')
                     pay_button.click()
             pay_clicked = True
+            # TIMESTAMP: Record when pay button was clicked (direct method)
+            if scraper_instance and 'actual_url' in step_log:
+                scraper_instance.record_listing_timestamp(step_log['actual_url'], 'pay_clicked')
+
             print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (direct)")
         except:
             # Method 2: JavaScript click
@@ -1998,6 +2015,9 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                         print('1')
                         driver.execute_script("arguments[0].click();", pay_button)
                 pay_clicked = True
+                # TIMESTAMP: Record when pay button was clicked (JavaScript method)
+                if scraper_instance and 'actual_url' in step_log:
+                    scraper_instance.record_listing_timestamp(step_log['actual_url'], 'pay_clicked')
                 print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (JavaScript)")
             except:
                 # Method 3: Force enable and click
@@ -2010,6 +2030,9 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                                 arguments[0].click();
                             """, pay_button)
                     pay_clicked = True
+                    # TIMESTAMP: Record when pay button was clicked (force method)
+                    if scraper_instance and 'actual_url' in step_log:
+                        scraper_instance.record_listing_timestamp(step_log['actual_url'], 'pay_clicked')
                     print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (force)")
                 except Exception as final_error:
                     print(f"❌ DRIVER {step_log['driver_number']}: All pay click methods failed")
@@ -4703,6 +4726,9 @@ class VintedScraper:
 
         # Initialize VM connection flag
         self.vm_bookmark_queue = []
+
+        self.listing_timestamps = {}  # Format: {url: {'navigated': timestamp, 'marked_suitable': timestamp, etc.}}
+        self.listing_timestamps_lock = threading.Lock()
         
         # Check if CUDA is available
         print(f"CUDA available: {torch.cuda.is_available()}")
@@ -4715,6 +4741,29 @@ class VintedScraper:
         else:
             model = YOLO(MODEL_WEIGHTS).cpu()
             print("⚠️ YOLO model loaded on CPU (no CUDA available)")
+
+    def record_listing_timestamp(self, url, event_name):
+        """
+        Thread-safe function to record a timestamp for a listing event
+        Args:
+            url (str): The listing URL
+            event_name (str): Name of the event (e.g., 'navigated', 'marked_suitable', 'buy_clicked', etc.)
+        """
+        from datetime import datetime
+        import pytz
+        
+        with self.listing_timestamps_lock:
+            # Initialize dict for this URL if it doesn't exist
+            if url not in self.listing_timestamps:
+                self.listing_timestamps[url] = {}
+            
+            # Record timestamp in UK timezone with milliseconds
+            uk_tz = pytz.timezone('Europe/London')
+            timestamp = datetime.now(uk_tz)
+            formatted_timestamp = timestamp.strftime("%H:%M:%S.%f")[:-3]  # Format: HH:MM:SS.mmm
+            
+            self.listing_timestamps[url][event_name] = formatted_timestamp
+            print(f"⏱️ TIMESTAMP RECORDED: {event_name} at {formatted_timestamp} for {url[:50]}...")
 
 
     def run_pygame_window(self):
@@ -4777,7 +4826,8 @@ class VintedScraper:
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
                                 seller_reviews=current_listing.get('seller_reviews'),
-                                bookmark_status=current_listing.get('bookmark_status')
+                                bookmark_status=current_listing.get('bookmark_status'),
+                                listing_timestamps=current_listing.get('listing_timestamps')  # NEW: Pass timestamps
                             )
                     elif event.key == pygame.K_LEFT:
                         if suitable_listings:
@@ -4798,7 +4848,8 @@ class VintedScraper:
                                 url=current_listing.get('url'),
                                 suitability=current_listing.get('suitability'),
                                 seller_reviews=current_listing.get('seller_reviews'),
-                                bookmark_status=current_listing.get('bookmark_status')
+                                bookmark_status=current_listing.get('bookmark_status'),
+                                listing_timestamps=current_listing.get('listing_timestamps')  # NEW: Pass timestamps
                             )
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
@@ -4896,8 +4947,48 @@ class VintedScraper:
                 elif i == 3:  # Rectangle 4 (index 3) - Click to open
                     click_text = "CLICK TO OPEN LISTING IN CHROME"
                     self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
-                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason
-                    self.render_text_in_rect(screen, fonts['suitability'], current_suitability, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
+                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason + Timestamps
+                    # Format suitability with timestamps below
+                    timestamp_lines = []
+                    
+                    if current_listing_timestamps:
+                        timestamp_lines.append("\n--- TIMINGS ---")
+                        
+                        # Navigated timestamp
+                        if 'navigated' in current_listing_timestamps:
+                            timestamp_lines.append(f"Navigated: {current_listing_timestamps['navigated']}")
+                        
+                        # Marked suitable timestamp
+                        if 'marked_suitable' in current_listing_timestamps:
+                            timestamp_lines.append(f"Marked suitable: {current_listing_timestamps['marked_suitable']}")
+                        else:
+                            timestamp_lines.append("Marked suitable: N/A (unsuitable)")
+                        
+                        # Buy button clicked timestamp
+                        if 'buy_clicked' in current_listing_timestamps:
+                            timestamp_lines.append(f"Buy clicked: {current_listing_timestamps['buy_clicked']}")
+                        else:
+                            timestamp_lines.append("Buy clicked: Never clicked")
+                        
+                        # Ship to home timestamp
+                        if 'ship_to_home_clicked' in current_listing_timestamps:
+                            timestamp_lines.append(f"Ship to home: {current_listing_timestamps['ship_to_home_clicked']}")
+                        else:
+                            timestamp_lines.append("Ship to home: Not clicked")
+                        
+                        # Pay button clicked timestamp
+                        if 'pay_clicked' in current_listing_timestamps:
+                            timestamp_lines.append(f"Pay clicked: {current_listing_timestamps['pay_clicked']}")
+                        else:
+                            timestamp_lines.append("Pay clicked: Not clicked")
+                    else:
+                        timestamp_lines.append("\n--- TIMINGS ---")
+                        timestamp_lines.append("No timing data available")
+                    
+                    # Combine suitability with timestamps
+                    combined_text = current_suitability + "\n" + "\n".join(timestamp_lines)
+                    
+                    self.render_text_in_rect(screen, fonts['suitability'], combined_text, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
                 elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
                     self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))
 
@@ -5134,7 +5225,7 @@ class VintedScraper:
    
             raise
 
-    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None, bookmark_status=None, item_confidences=None, item_revenues=None):
+    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None, bookmark_status=None, item_confidences=None, item_revenues=None, listing_timestamps=None):
         """
         FIXED: Properly initialize and update all confidence and revenue tracking
         """
@@ -5218,6 +5309,9 @@ class VintedScraper:
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
+                # Store timestamps globally for pygame display
+        global current_listing_timestamps
+        current_listing_timestamps = listing_timestamps if listing_timestamps else {}
 
 
     # Supporting helper function for better timeout management
@@ -5851,34 +5945,29 @@ class VintedScraper:
         os.makedirs(DOWNLOAD_ROOT, exist_ok=True)
 
                 
-    def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter):
+    def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter, all_confidences=None, item_revenues_from_detection=None):
         """
-        FIXED: Now uses second_price (the actual item price) instead of price field
-        Total price = second_price + postage (no buyer protection - that's added at checkout)
+        FIXED: Now accepts and uses the confidences/revenues from detection
         """
         global suitable_listings, current_listing_index, recent_listings, current_bookmark_status
 
-        print(f"🚀 REAL-TIME: Immediately processing listing with PRE-LOADED VM driver")
-        print(f"🔗 URL: {url}")
-        print(f"⏸️  SCRAPING PAUSED: Processing will begin now...")
+        print(f"🚀 REAL-TIME: Processing listing #{listing_counter}")
+        
+        # Initialize if None
+        if all_confidences is None:
+            all_confidences = {}
+        if item_revenues_from_detection is None:
+            item_revenues_from_detection = {}
 
         username = details.get("username", None)
         if not username or username == "Username not found":
             username = None
-            print("🔖 USERNAME: Not available for this listing")
 
-        # ============================================================================
-        # FIX: Use second_price (the ACTUAL item price), not the "price" field
-        # ============================================================================
         second_price = self.extract_price(details.get("second_price", "0"))
         postage = self.extract_price(details.get("postage", "0"))
         total_price = second_price + postage
         
-        print(f"💰 PRICE BREAKDOWN:")
-        print(f"   Price field: {details.get('price', 'N/A')}")
-        print(f"   Second price (USED): £{second_price:.2f}")
-        print(f"   Postage: £{postage:.2f}")
-        print(f"   TOTAL: £{total_price:.2f}")
+        print(f"💰 PRICE: £{total_price:.2f}")
 
         seller_reviews = details.get("seller_reviews", "No reviews yet")
 
@@ -5891,14 +5980,14 @@ class VintedScraper:
         }
 
         suitability_result = self.check_vinted_listing_suitability(listing_info)
-        print(f"📋 SUITABILITY: {suitability_result}")
 
         detected_console = self.detect_console_keywords_vinted(
             details.get("title", ""),
             details.get("description", "")
         )
         if detected_console:
-            mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']
+            mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 
+                                        'lite_box', 'switch_in_tv', 'oled_in_tv']
             for item in mutually_exclusive_items:
                 detected_objects[item] = 1 if item == detected_console else 0
 
@@ -5908,24 +5997,37 @@ class VintedScraper:
             details.get("description", "")
         )
 
-        total_revenue, expected_profit, profit_percentage, display_objects, item_revenues = self.calculate_vinted_revenue(
-            detected_objects, total_price, details.get("title", ""), details.get("description", "")
-        )
+        # Calculate revenue (this creates a NEW item_revenues dict)
+        total_revenue, expected_profit, profit_percentage, display_objects, item_revenues_from_calc = \
+            self.calculate_vinted_revenue(
+                detected_objects,  # This dict gets MODIFIED by the function
+                total_price, 
+                details.get("title", ""), 
+                details.get("description", "")
+            )
 
+        final_item_revenues = {}
+        final_item_revenues.update(item_revenues_from_calc)  # Start with calculated (includes misc_games)
+        final_item_revenues.update(item_revenues_from_detection)  # Overwrite with detection values
+
+        # DEBUG: Print what we're passing (AFTER revenue calculation)
+        print(f"🐛 DEBUG: detected_objects after revenue calc has {len(detected_objects)} items")
+        if 'misc_games' in detected_objects:
+            print(f"🐛 DEBUG: misc_games = {detected_objects['misc_games']}")
         profit_suitability = self.check_vinted_profit_suitability(total_price, profit_percentage)
 
         game_classes = [
-            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'comfort_h',
-            'crash_sand', 'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24',
-            'gta', 'just_dance', 'kart_m', 'kirby', 'lets_go_p', 'links_z',
-            'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft', 'minecraft_dungeons',
-            'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
+            '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
+            'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
+            'lets_go_p', 'links_z', 'luigis', 'mario_maker_2', 'mario_sonic', 'mario_tennis', 'minecraft',
+            'minecraft_dungeons', 'minecraft_story', 'miscellanious_sonic', 'odyssey_m', 'other_mario',
             'party_m', 'rocket_league', 'scarlet_p', 'shield_p', 'shining_p', 'skywards_z', 'smash_bros',
             'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
             'sword_p', 'tears_z', 'violet_p'
         ]
         game_count = sum(detected_objects.get(game, 0) for game in game_classes)
-        non_game_classes = [cls for cls in detected_objects.keys() if cls not in game_classes and detected_objects.get(cls, 0) > 0]
+        non_game_classes = [cls for cls in detected_objects.keys() 
+                            if cls not in game_classes and detected_objects.get(cls, 0) > 0]
 
         unsuitability_reasons = []
 
@@ -5936,56 +6038,43 @@ class VintedScraper:
             unsuitability_reasons.append("1-2 games with no additional non-game items")
 
         if not profit_suitability:
-            unsuitability_reasons.append(f"Profit £{expected_profit:.2f} ({profit_percentage:.2f}%) not suitable for price range")
+            unsuitability_reasons.append(
+                f"Profit £{expected_profit:.2f} ({profit_percentage:.2f}%) not suitable"
+            )
 
         if unsuitability_reasons:
             suitability_reason = "Unsuitable:\n---- " + "\n---- ".join(unsuitability_reasons)
             is_suitable = False
-            print(f"❌ UNSUITABLE: {suitability_reason}")
         else:
             suitability_reason = f"Suitable: Profit £{expected_profit:.2f} ({profit_percentage:.2f}%)"
             is_suitable = True
-            print(f"✅ SUITABLE: {suitability_reason}")
+            
+            # TIMESTAMP: Record when listing was marked as suitable
+            self.record_listing_timestamp(url, 'marked_suitable')
 
         bookmark_status = "No bookmark attempted"
         
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            print(f"⏱️ TIMER: Starting timer for listing: {url[:50]}...")
             start_listing_timer(url)
-            
-            print(f"🚀 REAL-TIME PROCESSING: Using PRE-LOADED VM driver")
-            print(f"⏸️  SCRAPING IS PAUSED UNTIL VM PROCESS COMPLETES")
             
             try:
                 success = self.execute_bookmark_with_preloaded_driver(url)
-                if success:
-                    print(f"✅ VM PROCESS COMPLETED: Listing has been bookmarked successfully")
-                    bookmark_status = current_bookmark_status
-                else:
-                    print(f"❌ VM PROCESS FAILED: Bookmark attempt was unsuccessful")
-                    bookmark_status = current_bookmark_status
+                bookmark_status = current_bookmark_status
+                if not success:
                     stop_listing_timer(url, stage='failed')
             except Exception as vm_error:
-                print(f"❌ VM PROCESS ERROR: {vm_error}")
-                print(f"⚠️  Continuing with scraping despite VM error...")
                 bookmark_status = f"❌ BOOKMARK FAILED: {str(vm_error)[:30]}"
                 stop_listing_timer(url, stage='error')
             
             try:
-                print(f"🔄 PREPARING NEXT DRIVER: Setting up new VM driver for next listing...")
                 self.prepare_next_vm_driver()
-                print(f"✅ NEXT DRIVER READY: VM driver prepared and logged in")
             except Exception as prep_error:
                 print(f"❌ NEXT DRIVER ERROR: {prep_error}")
-            
-            print(f"▶️  SCRAPING RESUMED: VM process complete, continuing with search...")
         else:
-            print(f"❌ UNSUITABLE LISTING: Skipping VM process, continuing with scraping")
             bookmark_status = "Unsuitable - no bookmark"
 
         from datetime import datetime
         import pytz
-        
         uk_tz = pytz.timezone('Europe/London')
         append_time = datetime.now(uk_tz)
         exact_append_time = append_time.strftime("%H:%M:%S.%f")[:-3]
@@ -5996,16 +6085,23 @@ class VintedScraper:
                 img_copy = img.copy()
                 preserved_images.append(img_copy)
             except Exception as e:
-                print(f"Error copying image for storage: {e}")
+                print(f"Error copying image: {e}")
 
-        all_confidences = {}
-        
-        confidence_mapping = {}
-        for item_name, count in detected_objects.items():
-            if count > 0:
-                confidence_mapping[item_name] = 0.0
+        # DEBUG: Print what we're passing
+        print(f"🐛 DEBUG: Confidences dict has {len(all_confidences)} items")
+        print(f"🐛 DEBUG: Revenues dict has {len(final_item_revenues)} items")
+        for item in detected_objects:
+            if detected_objects[item] > 0:
+                conf = all_confidences.get(item, 0.0)
+                rev = final_item_revenues.get(item, 0.0)
+                print(f"🐛 DEBUG: {item} -> conf={conf:.2%}, rev=£{rev:.2f}")
 
-        # Find this section and modify it:
+        # Get timestamps for this listing
+        listing_timestamps_data = {}
+        with self.listing_timestamps_lock:
+            if url in self.listing_timestamps:
+                listing_timestamps_data = self.listing_timestamps[url].copy()
+
         final_listing_info = {
             'title': details.get("title", "No title"),
             'description': details.get("description", "No description"),
@@ -6020,47 +6116,25 @@ class VintedScraper:
             'suitability': suitability_reason,
             'seller_reviews': seller_reviews,
             'bookmark_status': bookmark_status,
-            'item_confidences': all_confidences if all_confidences else {},  # ADD THIS LINE
-            'item_revenues': item_revenues if item_revenues else {}           # ADD THIS LINE
+            'item_confidences': all_confidences,
+            'item_revenues': final_item_revenues,
+            'listing_timestamps': listing_timestamps_data  # NEW: Add timestamps
         }
 
         should_add_to_display = is_suitable or VINTED_SHOW_ALL_LISTINGS
 
         if should_add_to_display:
-            if is_suitable and send_notification:
-                notification_title = f"New Vinted Listing: £{total_price:.2f}"
-                notification_message = (
-                    f"Title: {details.get('title', 'No title')}\n"
-                    f"Price: £{total_price:.2f}\n"
-                    f"Expected Profit: £{expected_profit:.2f}\n"
-                    f"Profit %: {profit_percentage:.2f}%\n"
-                )
-                
-                self.send_pushover_notification(
-                    notification_title,
-                    notification_message,
-                    'aks3to8guqjye193w7ajnydk9jaxh5',
-                    'ucwc6fi1mzd3gq2ym7jiwg3ggzv1pc'
-                )
-
             recent_listings['listings'].append(final_listing_info)
             recent_listings['current_index'] = len(recent_listings['listings']) - 1
 
             suitable_listings.append(final_listing_info)
             current_listing_index = len(suitable_listings) - 1
             
-            print(f"⏰ APPENDED TO DISPLAY: {exact_append_time} UK time (PRESERVED FOR PYGAME)")
             self.update_listing_details(**final_listing_info)
 
-            if is_suitable:
-                print(f"✅ Added suitable listing: £{total_price:.2f} -> £{expected_profit:.2f} profit ({profit_percentage:.2f}%)")
-            else:
-                print(f"➕ Added unsuitable listing (SHOW_ALL mode): £{total_price:.2f}")
+            print(f"✅ Added to display")
 
-        if not should_add_to_display:
-            print(f"❌ Listing not added to display: {suitability_reason}")
-
-        print(f"🔄 REAL-TIME PROCESSING COMPLETE: Ready to resume scraping")
+        self.cleanup_processed_images(processed_images)
 
         
     # FIXED: Updated process_vinted_listing function - key section that handles suitability checking
@@ -6075,12 +6149,20 @@ class VintedScraper:
 
     def process_vinted_listing(self, details, detected_objects, processed_images, listing_counter, url, all_confidences=None, item_revenues=None):
         """
-        MODIFIED: Now calls immediate processing instead of queueing
+        FIXED: Actually uses the confidences and revenues passed in
         """
         print(f"📋 PROCESSING: Listing #{listing_counter}")
         
-        # Call the new real-time processing method
-        self.process_listing_immediately_with_vm(url, details, detected_objects, processed_images, listing_counter)
+        # CRITICAL: Pass through the confidences and revenues
+        self.process_listing_immediately_with_vm(
+            url, 
+            details, 
+            detected_objects, 
+            processed_images, 
+            listing_counter,
+            all_confidences,  # ADD THIS PARAMETER
+            item_revenues     # ADD THIS PARAMETER
+        )
         
         print(f"✅ PROCESSING COMPLETE: Listing #{listing_counter} finished")
 
@@ -6128,7 +6210,8 @@ class VintedScraper:
     def calculate_vinted_revenue(self, detected_objects, listing_price, title, description=""):
         """
         Enhanced revenue calculation with all Facebook logic
-        MODIFIED: Now returns per-item revenue breakdown
+        MODIFIED: Now MODIFIES detected_objects dict to include misc_games for display
+        Returns: (total_revenue, expected_profit, profit_percentage, display_objects, item_revenues)
         """
         debug_function_call("calculate_vinted_revenue")
         import re
@@ -6145,20 +6228,35 @@ class VintedScraper:
 
         all_prices = self.fetch_all_prices()
 
+        # Count detected games from YOLO
         detected_games_count = sum(detected_objects.get(game, 0) for game in game_classes)
+        
+        # Extract games mentioned in text
         text_games_count = self.detect_anonymous_games_vinted(title, description)
 
+        # Calculate misc games (text mentions minus detected, capped at misc_games_cap)
         misc_games_count_uncapped = max(0, text_games_count - detected_games_count)
         misc_games_count = min(misc_games_count_uncapped, misc_games_cap)
         
         if misc_games_count_uncapped > misc_games_cap:
             print(f"🎮 MISC GAMES CAP APPLIED: {misc_games_count_uncapped} → {misc_games_count} (cap: {misc_games_cap})")
         
-        misc_games_revenue = misc_games_count * 5
+        # Calculate misc games revenue
+        misc_games_revenue = misc_games_count * miscellaneous_games_price
         
-        # NEW: Track per-item revenue
+        # CRITICAL FIX: Add misc_games to detected_objects so it displays in pygame
+        if misc_games_count > 0:
+            detected_objects['misc_games'] = misc_games_count
+            print(f"🎮 MISC GAMES ADDED TO DETECTED_OBJECTS: {misc_games_count} games = £{misc_games_revenue:.2f}")
+        
+        # Track per-item revenue
         item_revenues = {}
 
+        # Add misc games revenue to tracking
+        if misc_games_count > 0:
+            item_revenues['misc_games'] = misc_games_revenue
+
+        # Handle box adjustments (remove items that are part of boxes)
         adjustments = {
             'oled_box': ['switch', 'comfort_h', 'tv_white'],
             'switch_box': ['switch', 'comfort_h', 'tv_black'],
@@ -6170,35 +6268,44 @@ class VintedScraper:
             for item in items:
                 detected_objects[item] = max(0, detected_objects.get(item, 0) - box_count)
 
+        # Remove switch_screen (not a revenue item)
         detected_objects.pop('switch_screen', None)
 
+        # Start with misc games revenue
         total_revenue = misc_games_revenue
-        
-        # Add misc games to revenue breakdown
-        if misc_games_count > 0:
-            item_revenues['misc_games'] = misc_games_count * 5
 
         # Calculate revenue from detected objects
         for item, count in detected_objects.items():
+            # Skip misc_games since we already added it
+            if item == 'misc_games':
+                continue
+                
             if isinstance(count, str):
                 count_match = re.match(r'(\d+)', count)
                 count = int(count_match.group(1)) if count_match else 0
 
             if count > 0 and item in all_prices:
                 item_price = all_prices[item]
+                
+                # Special handling for pro controllers
                 if item == 'controller' and 'pro' in title.lower():
                     item_price += 7.50
                 
                 item_revenue = item_price * count
                 total_revenue += item_revenue
                 
-                # NEW: Store per-item revenue
+                # Store per-item revenue
                 item_revenues[item] = item_revenue
         
+        # Debug output
         for item, count in detected_objects.items():
             if count > 0:
-                print(f"DEBUG ITEM: {item} = {count}, price = {all_prices.get(item, 'NOT IN PRICES')}")
+                price_info = all_prices.get(item, 'NOT IN PRICES')
+                if item == 'misc_games':
+                    price_info = f"£{miscellaneous_games_price:.2f} each"
+                print(f"DEBUG ITEM: {item} = {count}, price = {price_info}")
 
+        # Calculate profit
         expected_profit = total_revenue - listing_price
         profit_percentage = (expected_profit / listing_price) * 100 if listing_price > 0 else 0
 
@@ -6206,31 +6313,25 @@ class VintedScraper:
         print(f"Total Expected Revenue: £{total_revenue:.2f}")
         print(f"Expected Profit/Loss: £{expected_profit:.2f} ({profit_percentage:.2f}%)")
 
+        # Create display_objects (items with count > 0)
         display_objects = {k: v for k, v in detected_objects.items() if v > 0}
 
-        if misc_games_count > 0:
-            display_objects['misc_games'] = misc_games_count
-
-        # NEW: Return item_revenues as fifth return value
+        # Return all values including the MODIFIED detected_objects
         return total_revenue, expected_profit, profit_percentage, display_objects, item_revenues
+
 
 
     def perform_detection_on_listing_images(self, model, listing_dir):
         """
-        Enhanced object detection with all Facebook exceptions and logic
-        PLUS Vinted-specific post-scan game deduplication
-        NEW: Price threshold filtering for Nintendo Switch related items
-        MODIFIED: Now returns confidences AND revenues alongside detected_objects
-        COMPLETELY FIXED: Confidence tracking now works across all images
+        COMPLETELY FIXED: Now properly tracks confidence AND calculates revenue for EVERY detected item
         """
         if not os.path.isdir(listing_dir):
             return {}, [], {}, {}
 
         detected_objects = {class_name: [] for class_name in CLASS_NAMES}
         processed_images = []
-        confidences = {item: 0 for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']}
         
-        # FIXED: Track max confidence per class across ALL images
+        # FIXED: Track confidence for ALL classes, not just mutually exclusive ones
         max_confidence_per_class = {class_name: 0.0 for class_name in CLASS_NAMES}
 
         image_files = [f for f in os.listdir(listing_dir) if f.endswith('.png')]
@@ -6247,7 +6348,7 @@ class VintedScraper:
                 image_detections = {class_name: 0 for class_name in CLASS_NAMES}
                 results = model(img, verbose=False)
                 
-                # FIXED: Process each detection and track confidence properly
+                # Process each detection
                 for result in results:
                     for box in result.boxes.cpu().numpy():
                         class_id = int(box.cls[0])
@@ -6258,22 +6359,28 @@ class VintedScraper:
                             min_confidence = HIGHER_CONFIDENCE_ITEMS.get(class_name, GENERAL_CONFIDENCE_MIN)
                             
                             if confidence >= min_confidence:
-                                # CRITICAL FIX: Update max confidence seen for this class across all images
-                                max_confidence_per_class[class_name] = max(max_confidence_per_class[class_name], confidence)
+                                # CRITICAL FIX: Update max confidence for ALL classes
+                                max_confidence_per_class[class_name] = max(
+                                    max_confidence_per_class[class_name], 
+                                    confidence
+                                )
                                 
-                                if class_name in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
-                                    confidences[class_name] = max(confidences[class_name], confidence)
-                                else:
+                                # Count detections (except mutually exclusive items)
+                                if class_name not in ['switch', 'oled', 'lite', 'switch_box', 
+                                                    'oled_box', 'lite_box', 'switch_in_tv', 'oled_in_tv']:
                                     image_detections[class_name] += 1
                                 
+                                # Draw bounding boxes
                                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                                 cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
                                 cv2.putText(img, f"{class_name} ({confidence:.2f})", (x1, y1 - 10),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.625, (0, 255, 0), 2)
 
+                # Accumulate counts per class
                 for class_name, count in image_detections.items():
                     detected_objects[class_name].append(count)
 
+                # Store processed image
                 processed_images.append(Image.fromarray(cv2.cvtColor(
                     cv2.copyMakeBorder(img, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=[0, 0, 0]),
                     cv2.COLOR_BGR2RGB)))
@@ -6282,10 +6389,24 @@ class VintedScraper:
                 print(f"Error processing image {image_path}: {str(e)}")
                 continue
 
-        final_detected_objects = {class_name: max(counts) if counts else 0 for class_name, counts in detected_objects.items()}
+        # Finalize counts (max across images)
+        final_detected_objects = {
+            class_name: max(counts) if counts else 0 
+            for class_name, counts in detected_objects.items()
+        }
         
-        final_detected_objects = self.handle_mutually_exclusive_items_vinted(final_detected_objects, confidences)
+        # Handle mutually exclusive items
+        confidences_for_exclusive = {
+            item: max_confidence_per_class[item] 
+            for item in ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 
+                        'lite_box', 'switch_in_tv', 'oled_in_tv']
+        }
+        final_detected_objects = self.handle_mutually_exclusive_items_vinted(
+            final_detected_objects, 
+            confidences_for_exclusive
+        )
         
+        # Apply game deduplication
         vinted_game_classes = [
             '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
             'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
@@ -6307,6 +6428,7 @@ class VintedScraper:
             for game, original_count in games_before_cap.items():
                 print(f"  • {game}: {original_count} → 1")
         
+        # Apply price threshold filtering
         try:
             listing_price = getattr(self, 'current_listing_price_float', 0.0)
             
@@ -6319,12 +6441,11 @@ class VintedScraper:
                         max_confidence_per_class[switch_class] = 0.0
                 
                 if filtered_classes:
-                    print(f"🚫 PRICE FILTER: Removed Nintendo Switch detections due to low price (£{listing_price:.2f} < £{PRICE_THRESHOLD:.2f})")
-                    print(f"    Filtered classes: {', '.join(filtered_classes)}")
-        
+                    print(f"🚫 PRICE FILTER: Removed Nintendo Switch detections (£{listing_price:.2f} < £{PRICE_THRESHOLD:.2f})")
         except Exception as price_filter_error:
             print(f"⚠️ Warning: Price filtering failed: {price_filter_error}")
         
+        # CRITICAL FIX: Calculate per-item revenue HERE using detected counts
         all_prices = self.fetch_all_prices()
         item_revenues = {}
         
@@ -6333,8 +6454,12 @@ class VintedScraper:
                 item_price = all_prices[item]
                 item_revenue = item_price * count
                 item_revenues[item] = item_revenue
+                
+                # DEBUG OUTPUT
+                if print_debug:
+                    print(f"💰 REVENUE: {item} × {count} = £{item_revenue:.2f} (confidence: {max_confidence_per_class[item]:.2%})")
         
-        # FIXED: Return max_confidence_per_class properly populated
+        # Return: detected_objects, processed_images, confidences, revenues
         return final_detected_objects, processed_images, max_confidence_per_class, item_revenues
 
     def download_images_for_listing(self, driver, listing_dir):
@@ -6891,7 +7016,7 @@ class VintedScraper:
         is_first_refresh = True
         
         # NEW: Driver restart tracking
-        DRIVER_RESTART_INTERVAL = 100
+        DRIVER_RESTART_INTERVAL = 100000
         cycles_since_restart = 0
 
         # Main scanning loop with refresh functionality AND driver restart
@@ -6996,10 +7121,12 @@ class VintedScraper:
                     overall_listing_counter += 1
 
 
-                    # Process the listing (using current_driver instead of driver)
                     current_driver.execute_script("window.open();")
                     current_driver.switch_to.window(current_driver.window_handles[-1])
                     current_driver.get(url)
+
+                    # TIMESTAMP: Record when we navigated to the listing
+                    self.record_listing_timestamp(url, 'navigated')
 
                     try:
                         listing_start_time = time.time()
@@ -7024,18 +7151,33 @@ class VintedScraper:
                         # Perform object detection and get processed images
                         detected_objects = {}
                         processed_images = []
+                        all_confidences = {}  # NEW
+                        item_revenues = {}     # NEW
+
                         if model and image_paths:
-                            detected_objects, processed_images, all_confidences, item_revenues = self.perform_detection_on_listing_images(model, listing_dir)
+                            # FIXED: Capture ALL return values including confidences and revenues
+                            detected_objects, processed_images, all_confidences, item_revenues = \
+                                self.perform_detection_on_listing_images(model, listing_dir)
                             
-                            # Print detected objects
+                            # Print detected objects with confidence and revenue
                             detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
                             if detected_classes:
+                                print("📊 DETECTED ITEMS:")
                                 for cls in sorted(detected_classes):
-                                    print(f"  • {cls}: {detected_objects[cls]}")
+                                    confidence = all_confidences.get(cls, 0.0)
+                                    revenue = item_revenues.get(cls, 0.0)
+                                    print(f"  • {cls}: count={detected_objects[cls]} conf={confidence:.1%} rev=£{revenue:.2f}")
 
-                        # Process listing for pygame display
-                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url, all_confidences, item_revenues)
-
+                        # Process listing - FIXED: Pass confidences and revenues
+                        self.process_vinted_listing(
+                            details, 
+                            detected_objects, 
+                            processed_images, 
+                            overall_listing_counter, 
+                            url, 
+                            all_confidences,  # PASS THIS
+                            item_revenues     # PASS THIS
+                        )
                         # Mark this listing as scanned
                         if listing_id:
                             scanned_ids.add(listing_id)
