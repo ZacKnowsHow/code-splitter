@@ -97,7 +97,7 @@ NINTENDO_SWITCH_CLASSES = [
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = True
+VINTED_SHOW_ALL_LISTINGS = False
 misc_games_cap = 5
 print_debug = False
 print_images_backend_info = False
