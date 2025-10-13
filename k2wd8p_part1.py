@@ -97,7 +97,7 @@ NINTENDO_SWITCH_CLASSES = [
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = True
 misc_games_cap = 5
 print_debug = False
 print_images_backend_info = False
@@ -121,6 +121,7 @@ should_send_fail_bookmark_notification = True
 
 current_item_confidences = {}  # NEW: Track confidence for each detected item
 current_item_revenues = {}     # NEW: Track revenue for each detected item
+current_listing_timestamps = {}  # NEW: Track timestamps for listing events
 
 purchase_unsuccessful_detected_urls = {}  # Track URLs waiting for "Purchase unsuccessful" detection
 # Config
@@ -1692,8 +1693,9 @@ def execute_vm_bookmark_process(driver, url, driver_number):
         }
         
         # Execute the main bookmark sequences using existing logic
-        success = execute_vm_bookmark_sequences(driver, url, username, step_log)
-        
+        # Pass vinted_scraper_instance for timestamp tracking
+        scraper_instance = globals().get('vinted_scraper_instance', None)
+        success = execute_vm_bookmark_sequences(driver, url, username, step_log, scraper_instance)        
         if success:
             step_log['success'] = True
             print(f"✅ DRIVER {driver_number}: Bookmark process completed successfully")
@@ -1716,7 +1718,7 @@ def execute_vm_bookmark_process(driver, url, driver_number):
         return False
 
 # 4. VM-specific bookmark sequences (adapted from existing VintedScraper methods)
-def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
+def execute_vm_bookmark_sequences(driver, listing_url, username, step_log, scraper_instance=None):
     """
     Execute bookmark sequences for VM drivers using existing bookmark logic
     """
@@ -1733,7 +1735,7 @@ def execute_vm_bookmark_sequences(driver, listing_url, username, step_log):
         driver.get(listing_url)
         
         # Execute first buy sequence (critical for bookmarking)
-        success = execute_vm_first_buy_sequence(driver, step_log)
+        success = execute_vm_first_buy_sequence(driver, step_log, scraper_instance)
         
         if success:
             print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence completed - moving to next driver")
@@ -1763,7 +1765,7 @@ def execute_vm_first_buy_sequence(driver, step_log):
 
 
 # 5. VM-specific first buy sequence (using EXACT main program logic)
-def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log):
+def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log, scraper_instance=None):    
     """
     Modified first buy sequence - JavaScript-first clicking
     """
@@ -1779,6 +1781,9 @@ def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log):
         
         print(f"✅ JAVASCRIPT-FIRST: Buy button found and clicked using: {buy_selector}")
         step_log['steps_completed'].append(f"javascript_first_buy_button_clicked - {time.time() - step_log['start_time']:.2f}s")
+        # TIMESTAMP: Record when buy button was clicked
+        if scraper_instance and 'actual_url' in step_log:
+            scraper_instance.record_listing_timestamp(step_log['actual_url'], 'buy_clicked')
         
         # Wait for pay button to appear using existing logic
         print(f"💳 JAVASCRIPT-FIRST: Waiting for pay button...")
@@ -1799,11 +1804,9 @@ def execute_vm_first_buy_sequence_with_shadow_dom(driver, step_log):
         step_log['steps_completed'].append(f"javascript_first_pay_button_found - {time.time() - step_log['start_time']:.2f}s")
         
         # Handle shipping options (same as main scraper)
-        handle_vm_shipping_options(driver, step_log)
-        
+        handle_vm_shipping_options(driver, step_log, scraper_instance)    
         # Execute critical pay sequence (same timing as main scraper)
-        return execute_vm_critical_pay_sequence(driver, pay_button, step_log)
-        
+        return execute_vm_critical_pay_sequence(driver, pay_button, step_log, scraper_instance)        
     except Exception as e:
         print(f"❌ JAVASCRIPT-FIRST: First buy sequence error: {e}")
         return False
@@ -1929,7 +1932,7 @@ def vm_log_step(step_log, step_name, success=True, error_msg=None):
         print(f"❌ DRIVER {step_log['driver_number']}: {step_name} - {error_msg}")
 
 # 6. VM-specific shipping options handler
-def handle_vm_shipping_options(driver, step_log):
+def handle_vm_shipping_options(driver, step_log, scraper_instance=None):
     """
     Handle shipping options for VM driver (adapted from main scraper)
     """
@@ -1950,13 +1953,21 @@ def handle_vm_shipping_options(driver, step_log):
                 print(f"🏠 DRIVER {step_log['driver_number']}: Switching to Ship to home...")
                 
                 # Click "Ship to home"
+                # Click "Ship to home"
                 ship_home = driver.find_element(
                     By.XPATH,
                     '//h2[@class="web_ui__Text__text web_ui__Text__title web_ui__Text__left" and text()="Ship to home"]'
                 )
                 ship_home.click()
-                
+
                 print(f"✅ DRIVER {step_log['driver_number']}: Switched to Ship to home, waiting 3 seconds...")
+                # TIMESTAMP: Record when ship to home was clicked
+                if scraper_instance and 'actual_url' in step_log:
+                    scraper_instance.record_listing_timestamp(step_log['actual_url'], 'ship_to_home_clicked')
+
+                # TIMESTAMP: Record ship to home click (need scraper instance passed through)
+                # This will be handled in Step 7B
+
                 time.sleep(3)
             except:
                 print(f"✅ DRIVER {step_log['driver_number']}: Pickup point ready")
@@ -1968,7 +1979,7 @@ def handle_vm_shipping_options(driver, step_log):
         print(f"⚠️ DRIVER {step_log['driver_number']}: Shipping options error: {e}")
 
 # 7. VM-specific critical pay sequence (EXACT same timing as main scraper)
-def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
+def execute_vm_critical_pay_sequence(driver, pay_button, step_log, scraper_instance=None):
     """
     MODIFIED: Now stops the timer when pay button is clicked
     Execute critical pay sequence with EXACT same timing as main scraper
@@ -1977,6 +1988,8 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
         print(f"💳 DRIVER {step_log['driver_number']}: Executing critical pay sequence...")
         
         # Get the URL from step_log to track timer
+        listing_url = step_log.get('actual_url', None)
+        # Get URL from step_log for timestamp tracking
         listing_url = step_log.get('actual_url', None)
         
         # Click pay button using multiple methods (same as main scraper)
@@ -1989,6 +2002,10 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                     print('1')
                     pay_button.click()
             pay_clicked = True
+            # TIMESTAMP: Record when pay button was clicked (direct method)
+            if scraper_instance and 'actual_url' in step_log:
+                scraper_instance.record_listing_timestamp(step_log['actual_url'], 'pay_clicked')
+
             print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (direct)")
         except:
             # Method 2: JavaScript click
@@ -1998,6 +2015,9 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                         print('1')
                         driver.execute_script("arguments[0].click();", pay_button)
                 pay_clicked = True
+                # TIMESTAMP: Record when pay button was clicked (JavaScript method)
+                if scraper_instance and 'actual_url' in step_log:
+                    scraper_instance.record_listing_timestamp(step_log['actual_url'], 'pay_clicked')
                 print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (JavaScript)")
             except:
                 # Method 3: Force enable and click
@@ -2010,6 +2030,9 @@ def execute_vm_critical_pay_sequence(driver, pay_button, step_log):
                                 arguments[0].click();
                             """, pay_button)
                     pay_clicked = True
+                    # TIMESTAMP: Record when pay button was clicked (force method)
+                    if scraper_instance and 'actual_url' in step_log:
+                        scraper_instance.record_listing_timestamp(step_log['actual_url'], 'pay_clicked')
                     print(f"✅ DRIVER {step_log['driver_number']}: Pay button clicked (force)")
                 except Exception as final_error:
                     print(f"❌ DRIVER {step_log['driver_number']}: All pay click methods failed")
@@ -2175,26 +2198,3 @@ def clear_browser_data_universal(vm_ip_address, config):
         print("Step 3: Waiting for page to load...")
         time.sleep(2)  # Wait for Shadow DOM to initialize
         
-        print("Step 4: Accessing Shadow DOM to find clear button...")
-        
-        # JavaScript to navigate Shadow DOM and click the clear button
-        shadow_dom_script = """
-        function findAndClickClearButton() {
-            // Multiple strategies to find the clear button in Shadow DOM
-            
-            // Strategy 1: Direct access via settings-ui
-            let settingsUi = document.querySelector('settings-ui');
-            if (settingsUi && settingsUi.shadowRoot) {
-                let clearBrowserData = settingsUi.shadowRoot.querySelector('settings-main')?.shadowRoot
-                    ?.querySelector('settings-basic-page')?.shadowRoot
-                    ?.querySelector('settings-section[section="privacy"]')?.shadowRoot
-                    ?.querySelector('settings-clear-browsing-data-dialog');
-                
-                if (clearBrowserData && clearBrowserData.shadowRoot) {
-                    let clearButton = clearBrowserData.shadowRoot.querySelector('#clearButton');
-                    if (clearButton) {
-                        console.log('Found clear button via strategy 1');
-                        clearButton.click();
-                        return true;
-                    }
-                }

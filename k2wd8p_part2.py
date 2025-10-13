@@ -1,4 +1,27 @@
 # Continuation from line 2201
+        print("Step 4: Accessing Shadow DOM to find clear button...")
+        
+        # JavaScript to navigate Shadow DOM and click the clear button
+        shadow_dom_script = """
+        function findAndClickClearButton() {
+            // Multiple strategies to find the clear button in Shadow DOM
+            
+            // Strategy 1: Direct access via settings-ui
+            let settingsUi = document.querySelector('settings-ui');
+            if (settingsUi && settingsUi.shadowRoot) {
+                let clearBrowserData = settingsUi.shadowRoot.querySelector('settings-main')?.shadowRoot
+                    ?.querySelector('settings-basic-page')?.shadowRoot
+                    ?.querySelector('settings-section[section="privacy"]')?.shadowRoot
+                    ?.querySelector('settings-clear-browsing-data-dialog');
+                
+                if (clearBrowserData && clearBrowserData.shadowRoot) {
+                    let clearButton = clearBrowserData.shadowRoot.querySelector('#clearButton');
+                    if (clearButton) {
+                        console.log('Found clear button via strategy 1');
+                        clearButton.click();
+                        return true;
+                    }
+                }
             }
             
             // Strategy 2: Search all shadow roots recursively
@@ -2176,26 +2199,3 @@ def render_main_page():
                     <p><span class="header">Listing URL: </span><span class="content-url">{listing_url}</span></p>
                 </div>
             </div>
-        </body>
-        </html>
-        '''
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        print(f"ERROR in render_main_page: {e}")
-        print(f"Traceback: {error_details}")
-        return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
-class VintedScraper:
-
-    def restart_driver_if_dead(self, driver):
-        """If driver is dead, create a new one. That's it."""
-        try:
-            driver.current_url  # Simple test
-            return driver  # Driver is fine
-        except:
-            print("🔄 Driver crashed, restarting...")
-            try:
-                driver.quit()
-            except:
-                pass
-            return self.setup_driver()

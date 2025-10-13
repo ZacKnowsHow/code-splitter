@@ -1,4 +1,129 @@
 # Continuation from line 6601
+                print(f"  ▶ STEP 2: Clicking first listing image to open carousel...")
+                
+                # Scroll into view
+                driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", first_listing_image)
+                time.sleep(0.5)
+                
+                # Try multiple click methods
+                clicked = False
+                
+                # Method 1: Direct click
+                try:
+                    first_listing_image.click()
+                    clicked = True
+                    print(f"  ▶ ✅ Clicked image (direct click)")
+                except Exception as e1:
+                    print(f"  ▶ ⚠️ Direct click failed: {e1}")
+                    
+                    # Method 2: JavaScript click
+                    try:
+                        driver.execute_script("arguments[0].click();", first_listing_image)
+                        clicked = True
+                        print(f"  ▶ ✅ Clicked image (JavaScript click)")
+                    except Exception as e2:
+                        print(f"  ▶ ⚠️ JavaScript click failed: {e2}")
+                        
+                        # Method 3: ActionChains click
+                        try:
+                            from selenium.webdriver.common.action_chains import ActionChains
+                            ActionChains(driver).move_to_element(first_listing_image).click().perform()
+                            clicked = True
+                            print(f"  ▶ ✅ Clicked image (ActionChains click)")
+                        except Exception as e3:
+                            print(f"  ▶ ❌ All click methods failed: {e3}")
+                
+                if not clicked:
+                    print(f"  ▶ ❌ Failed to click image - falling back to normal mode")
+                    # Fallback to normal mode logic - but avoid infinite recursion
+                    # Just use the listing images we already found
+                    valid_urls = []
+                    seen_urls = set()
+                    
+                    for img in listing_images:
+                        src = img.get_attribute("src")
+                        if src and src.startswith('http'):
+                            normalized_url = src.split('?')[0].split('#')[0]
+                            if normalized_url not in seen_urls:
+                                seen_urls.add(normalized_url)
+                                valid_urls.append(src)
+                else:
+                    # STEP 4: Wait for carousel to appear
+                    print(f"  ▶ STEP 3: Waiting for carousel to appear...")
+                    time.sleep(1.5)  # Give carousel time to animate
+                    
+                    # STEP 5: Find all carousel images
+                    print(f"  ▶ STEP 4: Scanning for carousel images...")
+                    
+                    carousel_selectors = [
+                        'img[data-testid="image-carousel-image"]',
+                        'img.image-carousel__image',
+                        'img[alt="post"]',
+                    ]
+                    
+                    carousel_images = []
+                    for selector in carousel_selectors:
+                        carousel_images = driver.find_elements(By.CSS_SELECTOR, selector)
+                        if carousel_images:
+                            print(f"  ▶ Found {len(carousel_images)} carousel images using selector: {selector}")
+                            break
+                    
+                    if not carousel_images:
+                        print(f"  ▶ ⚠️ No carousel images found - using listing images as fallback")
+                        # Use the listing images we already found
+                        valid_urls = []
+                        seen_urls = set()
+                        
+                        for img in listing_images:
+                            src = img.get_attribute("src")
+                            if src and src.startswith('http'):
+                                normalized_url = src.split('?')[0].split('#')[0]
+                                if normalized_url not in seen_urls:
+                                    seen_urls.add(normalized_url)
+                                    valid_urls.append(src)
+                    else:
+                        # STEP 6: Extract URLs from carousel images
+                        valid_urls = []
+                        seen_urls = set()
+                        
+                        print(f"  ▶ STEP 5: Extracting URLs from {len(carousel_images)} carousel images...")
+                        
+                        for idx, img in enumerate(carousel_images):
+                            src = img.get_attribute("src")
+                            
+                            if src and src.startswith('http'):
+                                # Remove query parameters and fragments for duplicate detection
+                                normalized_url = src.split('?')[0].split('#')[0]
+                                
+                                if normalized_url in seen_urls:
+                                    if print_images_backend_info:
+                                        print(f"    ⏭️  Skipping duplicate carousel URL: {normalized_url[:50]}...")
+                                    continue
+                                
+                                seen_urls.add(normalized_url)
+                                
+                                # Carousel images are always valid listing images, no filtering needed
+                                valid_urls.append(src)
+                                if print_images_backend_info:
+                                    print(f"    ✅ Added carousel image URL {idx+1}: {src[:50]}...")
+                        
+                        # OPTIMIZATION: No need to close carousel - tab will be closed immediately after this
+                        print(f"  ▶ STEP 6: Carousel will be closed when tab closes (optimization)")
+            
+            except Exception as carousel_error:
+                print(f"  ▶ ❌ Carousel mode error: {carousel_error}")
+                print(f"  ▶ Falling back to listing images...")
+                import traceback
+                traceback.print_exc()
+                # Fallback: use the listing images we already found
+                valid_urls = []
+                seen_urls = set()
+                
+                for img in listing_images:
+                    src = img.get_attribute("src")
+                    if src and src.startswith('http'):
+                        normalized_url = src.split('?')[0].split('#')[0]
+                        if normalized_url not in seen_urls:
                             seen_urls.add(normalized_url)
                             valid_urls.append(src)
         
@@ -292,7 +417,7 @@
         is_first_refresh = True
         
         # NEW: Driver restart tracking
-        DRIVER_RESTART_INTERVAL = 100
+        DRIVER_RESTART_INTERVAL = 100000
         cycles_since_restart = 0
 
         # Main scanning loop with refresh functionality AND driver restart
@@ -397,10 +522,12 @@
                     overall_listing_counter += 1
 
 
-                    # Process the listing (using current_driver instead of driver)
                     current_driver.execute_script("window.open();")
                     current_driver.switch_to.window(current_driver.window_handles[-1])
                     current_driver.get(url)
+
+                    # TIMESTAMP: Record when we navigated to the listing
+                    self.record_listing_timestamp(url, 'navigated')
 
                     try:
                         listing_start_time = time.time()
@@ -425,18 +552,33 @@
                         # Perform object detection and get processed images
                         detected_objects = {}
                         processed_images = []
+                        all_confidences = {}  # NEW
+                        item_revenues = {}     # NEW
+
                         if model and image_paths:
-                            detected_objects, processed_images, all_confidences, item_revenues = self.perform_detection_on_listing_images(model, listing_dir)
+                            # FIXED: Capture ALL return values including confidences and revenues
+                            detected_objects, processed_images, all_confidences, item_revenues = \
+                                self.perform_detection_on_listing_images(model, listing_dir)
                             
-                            # Print detected objects
+                            # Print detected objects with confidence and revenue
                             detected_classes = [cls for cls, count in detected_objects.items() if count > 0]
                             if detected_classes:
+                                print("📊 DETECTED ITEMS:")
                                 for cls in sorted(detected_classes):
-                                    print(f"  • {cls}: {detected_objects[cls]}")
+                                    confidence = all_confidences.get(cls, 0.0)
+                                    revenue = item_revenues.get(cls, 0.0)
+                                    print(f"  • {cls}: count={detected_objects[cls]} conf={confidence:.1%} rev=£{revenue:.2f}")
 
-                        # Process listing for pygame display
-                        self.process_vinted_listing(details, detected_objects, processed_images, overall_listing_counter, url, all_confidences, item_revenues)
-
+                        # Process listing - FIXED: Pass confidences and revenues
+                        self.process_vinted_listing(
+                            details, 
+                            detected_objects, 
+                            processed_images, 
+                            overall_listing_counter, 
+                            url, 
+                            all_confidences,  # PASS THIS
+                            item_revenues     # PASS THIS
+                        )
                         # Mark this listing as scanned
                         if listing_id:
                             scanned_ids.add(listing_id)
