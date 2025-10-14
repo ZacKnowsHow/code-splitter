@@ -1735,7 +1735,7 @@ def execute_vm_bookmark_sequences(driver, listing_url, username, step_log, scrap
         driver.get(listing_url)
         
         # Execute first buy sequence (critical for bookmarking)
-        success = execute_vm_first_buy_sequence(driver, step_log, scraper_instance)
+        success = execute_vm_first_buy_sequence(driver, step_log)
         
         if success:
             print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence completed - moving to next driver")
