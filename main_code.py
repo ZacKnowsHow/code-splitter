@@ -1720,39 +1720,35 @@ def execute_vm_bookmark_process(driver, url, driver_number):
 # 4. VM-specific bookmark sequences (adapted from existing VintedScraper methods)
 def execute_vm_bookmark_sequences(driver, listing_url, username, step_log, scraper_instance=None):
     """
-    Execute bookmark sequences for VM drivers using existing bookmark logic
+    Execute bookmark sequences - FIXED argument count
     """
     try:
-        # Create new tab and navigate (using existing logic)
         print(f"🔖 DRIVER {step_log['driver_number']}: Creating new tab...")
-        stopwatch_start = time.time()
         driver.execute_script("window.open('');")
         new_tab = driver.window_handles[-1]
         driver.switch_to.window(new_tab)
         
-        # Navigate to listing
         print(f"🔖 DRIVER {step_log['driver_number']}: Navigating to listing...")
         driver.get(listing_url)
         
-        # Execute first buy sequence (critical for bookmarking)
+        # FIXED: Only pass 2 arguments (driver, step_log)
         success = execute_vm_first_buy_sequence(driver, step_log)
         
         if success:
-            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence completed - moving to next driver")
+            print(f"🔖 DRIVER {step_log['driver_number']}: Sequence completed")
             return True
         else:
-            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence failed")
+            print(f"🔖 DRIVER {step_log['driver_number']}: Sequence failed")
             return False
             
     except Exception as e:
-        print(f"❌ DRIVER {step_log['driver_number']}: Sequence execution error: {e}")
+        print(f"❌ DRIVER {step_log['driver_number']}: Error: {e}")
         return False
     finally:
-        # Always switch back to main tab
         try:
             if len(driver.window_handles) > 1:
-                driver.close()  # Close bookmark tab
-                driver.switch_to.window(driver.window_handles[0])  # Return to main tab
+                driver.close()
+                driver.switch_to.window(driver.window_handles[0])
         except:
             pass
 
@@ -4785,7 +4781,7 @@ class VintedScraper:
             'join_date': pygame.font.Font(None, 28),
             'revenue': pygame.font.Font(None, 36),
             'profit': pygame.font.Font(None, 36),
-            'items': pygame.font.Font(None, 24),  # CHANGED: Reduced from 30 to 24 for more data
+            'items': pygame.font.Font(None, 24),
             'click': pygame.font.Font(None, 28),
             'suitability': pygame.font.Font(None, 28),
             'reviews': pygame.font.Font(None, 28),
@@ -4813,6 +4809,7 @@ class VintedScraper:
                             current_listing = suitable_listings[current_listing_index]
                             stored_images = current_listing.get('processed_images', [])
                             
+                            # CRITICAL FIX: Pass ALL parameters including confidence and revenue
                             self.update_listing_details(
                                 title=current_listing['title'],
                                 description=current_listing['description'],
@@ -4827,7 +4824,9 @@ class VintedScraper:
                                 suitability=current_listing.get('suitability'),
                                 seller_reviews=current_listing.get('seller_reviews'),
                                 bookmark_status=current_listing.get('bookmark_status'),
-                                listing_timestamps=current_listing.get('listing_timestamps')  # NEW: Pass timestamps
+                                item_confidences=current_listing.get('item_confidences', {}),  # ADDED
+                                item_revenues=current_listing.get('item_revenues', {}),        # ADDED
+                                listing_timestamps=current_listing.get('listing_timestamps', {})
                             )
                     elif event.key == pygame.K_LEFT:
                         if suitable_listings:
@@ -4835,6 +4834,7 @@ class VintedScraper:
                             current_listing = suitable_listings[current_listing_index]
                             stored_images = current_listing.get('processed_images', [])
                             
+                            # CRITICAL FIX: Pass ALL parameters including confidence and revenue
                             self.update_listing_details(
                                 title=current_listing['title'],
                                 description=current_listing['description'],
@@ -4849,7 +4849,9 @@ class VintedScraper:
                                 suitability=current_listing.get('suitability'),
                                 seller_reviews=current_listing.get('seller_reviews'),
                                 bookmark_status=current_listing.get('bookmark_status'),
-                                listing_timestamps=current_listing.get('listing_timestamps')  # NEW: Pass timestamps
+                                item_confidences=current_listing.get('item_confidences', {}),  # ADDED
+                                item_revenues=current_listing.get('item_revenues', {}),        # ADDED
+                                listing_timestamps=current_listing.get('listing_timestamps', {})
                             )
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
@@ -4897,13 +4899,13 @@ class VintedScraper:
                 number_rect = number_text.get_rect(topright=(rect.right - 5, rect.top + 5))
                 screen.blit(number_text, number_rect)
 
-                if i == 2:  # Rectangle 3 (index 2) - Title
+                if i == 2:  # Rectangle 3 - Title
                     self.render_text_in_rect(screen, fonts['title'], current_listing_title, rect, (0, 0, 0))
-                elif i == 1:  # Rectangle 2 (index 1) - Price
+                elif i == 1:  # Rectangle 2 - Price
                     self.render_text_in_rect(screen, fonts['price'], current_listing_price, rect, (0, 0, 255))
-                elif i == 7:  # Rectangle 8 (index 7) - Description
+                elif i == 7:  # Rectangle 8 - Description
                     self.render_multiline_text(screen, fonts['description'], current_listing_description, rect, (0, 0, 0))
-                elif i == 8:  # Rectangle 9 (index 8) - Join Date + Bookmark Status
+                elif i == 8:  # Rectangle 9 - Join Date + Bookmark Status
                     time_label = "Appended:"
                     combined_text = f"{time_label}\n{current_listing_join_date}\n\n{current_bookmark_status}"
                     
@@ -4915,21 +4917,20 @@ class VintedScraper:
                         status_color = (100, 100, 100)
                     
                     self.render_text_in_rect(screen, fonts['bookmark_status'], combined_text, rect, status_color)
-                elif i == 4:  # Rectangle 5 (index 4) - Expected Revenue
+                elif i == 4:  # Rectangle 5 - Expected Revenue
                     self.render_text_in_rect(screen, fonts['revenue'], current_expected_revenue, rect, (0, 128, 0))
-                elif i == 9:  # Rectangle 10 (index 9) - Profit
+                elif i == 9:  # Rectangle 10 - Profit
                     self.render_text_in_rect(screen, fonts['profit'], current_profit, rect, (128, 0, 128))
-                elif i == 0:  # Rectangle 1 (index 0) - Detected Items WITH confidence, count, and revenue
-                    # NEW: Format detected items with confidence, count, and revenue
+                elif i == 0:  # Rectangle 1 - Detected Items WITH confidence, count, and revenue
+                    # CRITICAL: Access global current_item_confidences and current_item_revenues
                     if isinstance(current_detected_items, dict):
                         formatted_lines = []
                         for item_name, count in current_detected_items.items():
                             if count > 0:
-                                # Get confidence if available
+                                # Get confidence and revenue from GLOBAL variables
                                 confidence_val = current_item_confidences.get(item_name, 0.0)
                                 confidence_pct = confidence_val * 100
                                 
-                                # Get revenue if available
                                 revenue_val = current_item_revenues.get(item_name, 0.0)
                                 
                                 # Format: "item_name: conf=85.2% cnt=2 rev=£45.50"
@@ -4942,41 +4943,35 @@ class VintedScraper:
                         display_text = "No items detected"
                     
                     self.render_multiline_text(screen, fonts['items'], display_text, rect, (0, 0, 0))
-                elif i == 10:  # Rectangle 11 (index 10) - Images
+                elif i == 10:  # Rectangle 11 - Images
                     self.render_images(screen, current_listing_images, rect, current_bounding_boxes)
-                elif i == 3:  # Rectangle 4 (index 3) - Click to open
+                elif i == 3:  # Rectangle 4 - Click to open
                     click_text = "CLICK TO OPEN LISTING IN CHROME"
                     self.render_text_in_rect(screen, fonts['click'], click_text, rect, (255, 0, 0))
-                elif i == 5:  # Rectangle 6 (index 5) - Suitability Reason + Timestamps
-                    # Format suitability with timestamps below
+                elif i == 5:  # Rectangle 6 - Suitability Reason + Timestamps
                     timestamp_lines = []
                     
                     if current_listing_timestamps:
                         timestamp_lines.append("\n--- TIMINGS ---")
                         
-                        # Navigated timestamp
                         if 'navigated' in current_listing_timestamps:
                             timestamp_lines.append(f"Navigated: {current_listing_timestamps['navigated']}")
                         
-                        # Marked suitable timestamp
                         if 'marked_suitable' in current_listing_timestamps:
                             timestamp_lines.append(f"Marked suitable: {current_listing_timestamps['marked_suitable']}")
                         else:
                             timestamp_lines.append("Marked suitable: N/A (unsuitable)")
                         
-                        # Buy button clicked timestamp
                         if 'buy_clicked' in current_listing_timestamps:
                             timestamp_lines.append(f"Buy clicked: {current_listing_timestamps['buy_clicked']}")
                         else:
                             timestamp_lines.append("Buy clicked: Never clicked")
                         
-                        # Ship to home timestamp
                         if 'ship_to_home_clicked' in current_listing_timestamps:
                             timestamp_lines.append(f"Ship to home: {current_listing_timestamps['ship_to_home_clicked']}")
                         else:
                             timestamp_lines.append("Ship to home: Not clicked")
                         
-                        # Pay button clicked timestamp
                         if 'pay_clicked' in current_listing_timestamps:
                             timestamp_lines.append(f"Pay clicked: {current_listing_timestamps['pay_clicked']}")
                         else:
@@ -4985,11 +4980,10 @@ class VintedScraper:
                         timestamp_lines.append("\n--- TIMINGS ---")
                         timestamp_lines.append("No timing data available")
                     
-                    # Combine suitability with timestamps
                     combined_text = current_suitability + "\n" + "\n".join(timestamp_lines)
                     
                     self.render_text_in_rect(screen, fonts['suitability'], combined_text, rect, (255, 0, 0) if "Unsuitable" in current_suitability else (0, 255, 0))
-                elif i == 6:  # Rectangle 7 (index 6) - Seller Reviews
+                elif i == 6:  # Rectangle 7 - Seller Reviews
                     self.render_text_in_rect(screen, fonts['reviews'], current_seller_reviews, rect, (0, 0, 128))
 
             screen.blit(fonts['title'].render("LOCKED" if LOCK_POSITION else "UNLOCKED", True, (255, 0, 0) if LOCK_POSITION else (0, 255, 0)), (10, 10))
@@ -5225,16 +5219,21 @@ class VintedScraper:
    
             raise
 
-    def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None, bookmark_status=None, item_confidences=None, item_revenues=None, listing_timestamps=None):
+    def update_listing_details(self, title, description, join_date, price, expected_revenue, 
+                            profit, detected_items, processed_images, bounding_boxes, 
+                            url=None, suitability=None, seller_reviews=None, 
+                            bookmark_status=None, item_confidences=None, item_revenues=None, 
+                            listing_timestamps=None):
         """
-        FIXED: Properly initialize and update all confidence and revenue tracking when switching listings
+        FIXED: Properly updates global variables including confidence and revenue
         """
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
         global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
-        global current_bookmark_status, current_item_confidences, current_item_revenues, current_listing_timestamps
+        global current_bookmark_status, current_item_confidences, current_item_revenues
+        global current_listing_timestamps
 
-        # CRITICAL FIX: Always initialize these dictionaries
+        # Initialize if None
         if item_confidences is None:
             item_confidences = {}
         if item_revenues is None:
@@ -5244,40 +5243,33 @@ class VintedScraper:
         if bookmark_status:
             current_bookmark_status = bookmark_status
 
-        # CRITICAL FIX: Ensure ALL detected items have entries in both dictionaries
+        # CRITICAL: Initialize confidence/revenue for all detected items
         if detected_items and isinstance(detected_items, dict):
             for item_name, count in detected_items.items():
                 if count > 0:
-                    # If confidence not provided, default to 0.0
                     if item_name not in item_confidences:
                         item_confidences[item_name] = 0.0
-                    # If revenue not provided, default to 0.0
                     if item_name not in item_revenues:
                         item_revenues[item_name] = 0.0
 
-        # CRITICAL FIX: Update global dictionaries (these feed the pygame display)
-        # Use .copy() to ensure we get a fresh dict, not a reference
-        current_item_confidences = item_confidences.copy()
-        current_item_revenues = item_revenues.copy()
+        # CRITICAL: Update GLOBAL dicts with deep copies
+        current_item_confidences = {}
+        current_item_revenues = {}
+        
+        for item, conf in item_confidences.items():
+            current_item_confidences[item] = float(conf)
+        
+        for item, rev in item_revenues.items():
+            current_item_revenues[item] = float(rev)
 
-        # DEBUG: Print what we're setting
-        if print_debug:
-            print(f"🔄 UPDATE_LISTING_DETAILS: Setting confidences for {len(current_item_confidences)} items")
-            print(f"🔄 UPDATE_LISTING_DETAILS: Setting revenues for {len(current_item_revenues)} items")
-            for item in detected_items if detected_items else []:
-                if isinstance(detected_items, dict) and detected_items.get(item, 0) > 0:
-                    conf = current_item_confidences.get(item, 0.0)
-                    rev = current_item_revenues.get(item, 0.0)
-                    print(f"   • {item}: conf={conf:.2%}, rev=£{rev:.2f}")
-
-        # Handle images (existing code preserved)
+        # Handle images
         if processed_images:
-            if 'current_listing_images' in globals():
+            if 'current_listing_images' in globals() and current_listing_images:
                 for img in current_listing_images:
                     try:
                         img.close()
-                    except Exception as e:
-                        print(f"Error closing image: {str(e)}")
+                    except:
+                        pass
                 current_listing_images.clear()
 
             for img in processed_images:
@@ -5293,7 +5285,7 @@ class VintedScraper:
             'detected_objects': bounding_boxes.get('detected_objects', {}) if bounding_boxes else {}
         }
 
-        # Handle detected_items for Box 1
+        # Handle detected_items formatting
         if isinstance(detected_items, dict):
             formatted_detected_items = {}
             for item, count in detected_items.items():
@@ -5311,7 +5303,7 @@ class VintedScraper:
 
         stored_append_time = join_date if join_date else "No timestamp"
 
-        # Set all global variables
+        # Update ALL global variables
         current_detected_items = formatted_detected_items
         current_listing_title = title[:50] + '...' if len(title) > 50 else title
         current_listing_description = description[:200] + '...' if len(description) > 200 else description if description else "No description"
@@ -5322,13 +5314,14 @@ class VintedScraper:
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
-        
-        # Store timestamps globally for pygame display
         current_listing_timestamps = listing_timestamps if listing_timestamps else {}
-
-        # FINAL DEBUG: Verify globals are set
+        
+        # DEBUG: Verify data was stored
         if print_debug:
-            print(f"✅ GLOBALS SET: {len(current_item_confidences)} confidences, {len(current_item_revenues)} revenues")
+            print(f"🐛 STORED {len(current_item_confidences)} confidences:")
+            for item, conf in current_item_confidences.items():
+                rev = current_item_revenues.get(item, 0.0)
+                print(f"  {item}: conf={conf:.2%}, rev=£{rev:.2f}")
 
 
 
