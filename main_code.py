@@ -97,7 +97,7 @@ NINTENDO_SWITCH_CLASSES = [
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = False
+VINTED_SHOW_ALL_LISTINGS = True
 misc_games_cap = 5
 print_debug = False
 print_images_backend_info = False
@@ -5227,14 +5227,14 @@ class VintedScraper:
 
     def update_listing_details(self, title, description, join_date, price, expected_revenue, profit, detected_items, processed_images, bounding_boxes, url=None, suitability=None, seller_reviews=None, bookmark_status=None, item_confidences=None, item_revenues=None, listing_timestamps=None):
         """
-        FIXED: Properly initialize and update all confidence and revenue tracking
+        FIXED: Properly initialize and update all confidence and revenue tracking when switching listings
         """
         global current_listing_title, current_listing_description, current_listing_join_date, current_listing_price
         global current_expected_revenue, current_profit, current_detected_items, current_listing_images 
         global current_bounding_boxes, current_listing_url, current_suitability, current_seller_reviews
-        global current_bookmark_status, current_item_confidences, current_item_revenues
+        global current_bookmark_status, current_item_confidences, current_item_revenues, current_listing_timestamps
 
-        # FIXED: Initialize if None
+        # CRITICAL FIX: Always initialize these dictionaries
         if item_confidences is None:
             item_confidences = {}
         if item_revenues is None:
@@ -5244,20 +5244,33 @@ class VintedScraper:
         if bookmark_status:
             current_bookmark_status = bookmark_status
 
-        # FIXED: Ensure all detected items have entries in confidence dict
+        # CRITICAL FIX: Ensure ALL detected items have entries in both dictionaries
         if detected_items and isinstance(detected_items, dict):
             for item_name, count in detected_items.items():
                 if count > 0:
+                    # If confidence not provided, default to 0.0
                     if item_name not in item_confidences:
                         item_confidences[item_name] = 0.0
+                    # If revenue not provided, default to 0.0
                     if item_name not in item_revenues:
                         item_revenues[item_name] = 0.0
 
-        # FIXED: Update global dictionaries with actual values
-        current_item_confidences = item_confidences.copy() if item_confidences else {}
-        current_item_revenues = item_revenues.copy() if item_revenues else {}
+        # CRITICAL FIX: Update global dictionaries (these feed the pygame display)
+        # Use .copy() to ensure we get a fresh dict, not a reference
+        current_item_confidences = item_confidences.copy()
+        current_item_revenues = item_revenues.copy()
 
-        # FIXED: Don't clear existing images unnecessarily
+        # DEBUG: Print what we're setting
+        if print_debug:
+            print(f"🔄 UPDATE_LISTING_DETAILS: Setting confidences for {len(current_item_confidences)} items")
+            print(f"🔄 UPDATE_LISTING_DETAILS: Setting revenues for {len(current_item_revenues)} items")
+            for item in detected_items if detected_items else []:
+                if isinstance(detected_items, dict) and detected_items.get(item, 0) > 0:
+                    conf = current_item_confidences.get(item, 0.0)
+                    rev = current_item_revenues.get(item, 0.0)
+                    print(f"   • {item}: conf={conf:.2%}, rev=£{rev:.2f}")
+
+        # Handle images (existing code preserved)
         if processed_images:
             if 'current_listing_images' in globals():
                 for img in current_listing_images:
@@ -5309,9 +5322,14 @@ class VintedScraper:
         current_listing_url = url
         current_suitability = suitability if suitability else "Suitability unknown"
         current_seller_reviews = seller_reviews if seller_reviews else "No reviews yet"
-                # Store timestamps globally for pygame display
-        global current_listing_timestamps
+        
+        # Store timestamps globally for pygame display
         current_listing_timestamps = listing_timestamps if listing_timestamps else {}
+
+        # FINAL DEBUG: Verify globals are set
+        if print_debug:
+            print(f"✅ GLOBALS SET: {len(current_item_confidences)} confidences, {len(current_item_revenues)} revenues")
+
 
 
     # Supporting helper function for better timeout management
