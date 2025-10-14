@@ -1,11 +1,4 @@
 # Continuation from line 6601
-                    if (
-                        '/f800/' in src or 
-                        '/f1200/' in src or 
-                        '/f600/' in src or
-                        (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
-                        not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
-                    ):
                         valid_urls.append(src)
                         if print_images_backend_info:
                             print(f"    ✅ Added valid image URL: {src[:50]}...")

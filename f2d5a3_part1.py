@@ -1720,39 +1720,35 @@ def execute_vm_bookmark_process(driver, url, driver_number):
 # 4. VM-specific bookmark sequences (adapted from existing VintedScraper methods)
 def execute_vm_bookmark_sequences(driver, listing_url, username, step_log, scraper_instance=None):
     """
-    Execute bookmark sequences for VM drivers using existing bookmark logic
+    Execute bookmark sequences - FIXED argument count
     """
     try:
-        # Create new tab and navigate (using existing logic)
         print(f"🔖 DRIVER {step_log['driver_number']}: Creating new tab...")
-        stopwatch_start = time.time()
         driver.execute_script("window.open('');")
         new_tab = driver.window_handles[-1]
         driver.switch_to.window(new_tab)
         
-        # Navigate to listing
         print(f"🔖 DRIVER {step_log['driver_number']}: Navigating to listing...")
         driver.get(listing_url)
         
-        # Execute first buy sequence (critical for bookmarking)
+        # FIXED: Only pass 2 arguments (driver, step_log)
         success = execute_vm_first_buy_sequence(driver, step_log)
         
         if success:
-            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence completed - moving to next driver")
+            print(f"🔖 DRIVER {step_log['driver_number']}: Sequence completed")
             return True
         else:
-            print(f"🔖 DRIVER {step_log['driver_number']}: First buy sequence failed")
+            print(f"🔖 DRIVER {step_log['driver_number']}: Sequence failed")
             return False
             
     except Exception as e:
-        print(f"❌ DRIVER {step_log['driver_number']}: Sequence execution error: {e}")
+        print(f"❌ DRIVER {step_log['driver_number']}: Error: {e}")
         return False
     finally:
-        # Always switch back to main tab
         try:
             if len(driver.window_handles) > 1:
-                driver.close()  # Close bookmark tab
-                driver.switch_to.window(driver.window_handles[0])  # Return to main tab
+                driver.close()
+                driver.switch_to.window(driver.window_handles[0])
         except:
             pass
 
@@ -2198,3 +2194,7 @@ def clear_browser_data_universal(vm_ip_address, config):
         print("Step 3: Waiting for page to load...")
         time.sleep(2)  # Wait for Shadow DOM to initialize
         
+        print("Step 4: Accessing Shadow DOM to find clear button...")
+        
+        # JavaScript to navigate Shadow DOM and click the clear button
+        shadow_dom_script = """
