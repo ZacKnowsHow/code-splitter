@@ -1,8 +1,4 @@
 # Continuation from line 2201
-        print("Step 4: Accessing Shadow DOM to find clear button...")
-        
-        # JavaScript to navigate Shadow DOM and click the clear button
-        shadow_dom_script = """
         function findAndClickClearButton() {
             // Multiple strategies to find the clear button in Shadow DOM
             
@@ -2199,3 +2195,7 @@ def render_main_page():
                     <p><span class="header">Listing URL: </span><span class="content-url">{listing_url}</span></p>
                 </div>
             </div>
+        </body>
+        </html>
+        '''
+    except Exception as e:
