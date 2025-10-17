@@ -7777,7 +7777,7 @@ class VintedScraper:
         print("🧵 MAIN: Main thread will now wait for scraping thread to complete...")
         
         try:
-            # Wait for the scraping thread to complete
+            # Wait for the scraping thread to complet
             scraping_thread.join()
             print("✅ MAIN: Scraping thread completed successfully")
             
