@@ -5746,6 +5746,7 @@ class VintedScraper:
     def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter, all_confidences=None, item_revenues_from_detection=None):
         """
         FIXED: Now accepts and uses the confidences/revenues from detection
+        FIXED: Now filters out listings with 1-3 games and no non-game items (was 1-2)
         """
         global suitable_listings, current_listing_index, recent_listings, current_bookmark_status
 
@@ -5814,6 +5815,7 @@ class VintedScraper:
             print(f"🐛 DEBUG: misc_games = {detected_objects['misc_games']}")
         profit_suitability = self.check_vinted_profit_suitability(total_price, profit_percentage)
 
+        # CRITICAL SECTION - GAME FILTER LOGIC
         game_classes = [
             '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
             'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
@@ -5824,16 +5826,24 @@ class VintedScraper:
             'sword_p', 'tears_z', 'violet_p'
         ]
         game_count = sum(detected_objects.get(game, 0) for game in game_classes)
-        non_game_classes = [cls for cls in detected_objects.keys() 
-                            if cls not in game_classes and detected_objects.get(cls, 0) > 0]
+        
+        # CRITICAL FIX: Exclude misc_games from non-game items
+        # This prevents misc_games from making a "games-only" listing appear suitable
+        non_game_classes = [
+            cls for cls in detected_objects.keys() 
+            if cls not in game_classes 
+            and cls != 'misc_games'  # FIXED: Don't count misc_games as non-game item
+            and detected_objects.get(cls, 0) > 0
+        ]
 
         unsuitability_reasons = []
 
         if "Unsuitable" in suitability_result:
             unsuitability_reasons.append(suitability_result.replace("Unsuitable: ", ""))
 
-        if 1 <= game_count <= 2 and not non_game_classes:
-            unsuitability_reasons.append("1-2 games with no additional non-game items")
+        # CRITICAL FIX: Changed from 1-2 to 1-3 games
+        if 1 <= game_count <= 3 and not non_game_classes:
+            unsuitability_reasons.append("1-3 games with no additional non-game items")
 
         if not profit_suitability:
             unsuitability_reasons.append(
@@ -5917,7 +5927,7 @@ class VintedScraper:
             'bookmark_status': bookmark_status,
             'item_confidences': all_confidences,
             'item_revenues': final_item_revenues,
-            'listing_timestamps': listing_timestamps_data  # NEW: Add timestamps
+            'listing_timestamps': listing_timestamps_data
         }
 
         should_add_to_display = is_suitable or VINTED_SHOW_ALL_LISTINGS
