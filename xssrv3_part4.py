@@ -1,4 +1,28 @@
 # Continuation from line 6601
+                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
+                    if print_images_backend_info:
+                        print(f"    📏 Resized image to: {img.width}x{img.height}")
+                
+                # Convert to RGB if needed
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Save the image
+                save_path = os.path.join(listing_dir, f"{index}.png")
+                img.save(save_path, format="PNG", optimize=True)
+                
+                # Create hash marker file to prevent future duplicates
+                with open(hash_file, 'w') as f:
+                    f.write(f"Downloaded from: {url}")
+                if print_images_backend_info:
+                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
+                return save_path
+                
+            except Exception as e:
+                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
+                return None
+        
+        if print_images_backend_info:
             print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
         
         # Dynamic batch size based on actual image count
