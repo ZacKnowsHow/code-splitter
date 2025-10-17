@@ -6009,7 +6009,7 @@ class VintedScraper:
     def calculate_vinted_revenue(self, detected_objects, listing_price, title, description=""):
         """
         Enhanced revenue calculation with all Facebook logic
-        MODIFIED: Now MODIFIES detected_objects dict to include misc_games for display
+        FIXED: Now checks if detected_objects has ANY items before adding misc_games
         Returns: (total_revenue, expected_profit, profit_percentage, display_objects, item_revenues)
         """
         debug_function_call("calculate_vinted_revenue")
@@ -6027,31 +6027,45 @@ class VintedScraper:
 
         all_prices = self.fetch_all_prices()
 
+        # CRITICAL FIX: Check if detected_objects has ANY non-zero items
+        has_any_detections = any(
+            detected_objects.get(item, 0) > 0 
+            for item in detected_objects.keys()
+        )
+        
         # Count detected games from YOLO
         detected_games_count = sum(detected_objects.get(game, 0) for game in game_classes)
         
         # Extract games mentioned in text
         text_games_count = self.detect_anonymous_games_vinted(title, description)
 
-        # Calculate misc games (text mentions minus detected, capped at misc_games_cap)
-        misc_games_count_uncapped = max(0, text_games_count - detected_games_count)
-        misc_games_count = min(misc_games_count_uncapped, misc_games_cap)
-        
-        if misc_games_count_uncapped > misc_games_cap:
-            print(f"🎮 MISC GAMES CAP APPLIED: {misc_games_count_uncapped} → {misc_games_count} (cap: {misc_games_cap})")
-        
-        # Calculate misc games revenue
-        misc_games_revenue = misc_games_count * miscellaneous_games_price
-        
-        # CRITICAL FIX: Add misc_games to detected_objects so it displays in pygame
-        if misc_games_count > 0:
-            detected_objects['misc_games'] = misc_games_count
-            print(f"🎮 MISC GAMES ADDED TO DETECTED_OBJECTS: {misc_games_count} games = £{misc_games_revenue:.2f}")
+        # CRITICAL FIX: Only calculate misc games if we have ANY detections
+        # This prevents misc_games from being added to completely empty listings
+        if has_any_detections:
+            # Calculate misc games (text mentions minus detected, capped at misc_games_cap)
+            misc_games_count_uncapped = max(0, text_games_count - detected_games_count)
+            misc_games_count = min(misc_games_count_uncapped, misc_games_cap)
+            
+            if misc_games_count_uncapped > misc_games_cap:
+                print(f"🎮 MISC GAMES CAP APPLIED: {misc_games_count_uncapped} → {misc_games_count} (cap: {misc_games_cap})")
+            
+            # Calculate misc games revenue
+            misc_games_revenue = misc_games_count * miscellaneous_games_price
+            
+            # Add misc_games to detected_objects for display
+            if misc_games_count > 0:
+                detected_objects['misc_games'] = misc_games_count
+                print(f"🎮 MISC GAMES ADDED TO DETECTED_OBJECTS: {misc_games_count} games = £{misc_games_revenue:.2f}")
+        else:
+            # FIX: No detections at all - don't add any misc games
+            misc_games_count = 0
+            misc_games_revenue = 0.0
+            print(f"🎮 MISC GAMES SKIPPED: No detections in listing (detected_objects empty)")
         
         # Track per-item revenue
         item_revenues = {}
 
-        # Add misc games revenue to tracking
+        # Add misc games revenue to tracking (only if > 0)
         if misc_games_count > 0:
             item_revenues['misc_games'] = misc_games_revenue
 
@@ -6096,7 +6110,7 @@ class VintedScraper:
                 # Store per-item revenue
                 item_revenues[item] = item_revenue
         
-        # Debug output
+        # Debug output (now only shows items that exist)
         for item, count in detected_objects.items():
             if count > 0:
                 price_info = all_prices.get(item, 'NOT IN PRICES')
