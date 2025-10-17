@@ -1,222 +1,4 @@
 # Continuation from line 4401
-        import traceback
-        error_details = traceback.format_exc()
-        print(f"ERROR in render_main_page: {e}")
-        print(f"Traceback: {error_details}")
-        return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
-class VintedScraper:
-
-    def restart_driver_if_dead(self, driver):
-        """If driver is dead, create a new one. That's it."""
-        try:
-            driver.current_url  # Simple test
-            return driver  # Driver is fine
-        except:
-            print("🔄 Driver crashed, restarting...")
-            try:
-                driver.quit()
-            except:
-                pass
-            return self.setup_driver()
-    # Add this method to the VintedScraper class
-    def send_pushover_notification(self, title, message, api_token, user_key):
-        """
-        Send a notification via Pushover
-        :param title: Notification title
-        :param message: Notification message
-        :param api_token: Pushover API token
-        :param user_key: Pushover user key
-        """
-        try:
-            url = "https://api.pushover.net/1/messages.json"
-            payload = {
-                "token": api_token,
-                "user": user_key,
-                "title": title,
-                "message": message
-            }
-            response = requests.post(url, data=payload)
-            if response.status_code == 200:
-                print(f"Notification sent successfully: {title}")
-            else:
-                print(f"Failed to send notification. Status code: {response.status_code}")
-                print(f"Response: {response.text}")
-        except Exception as e:
-            print(f"Error sending Pushover notification: {str(e)}")
-
-    def fetch_price(self, class_name):
-        if class_name in ['lite_box', 'oled_box', 'oled_in_tv', 'switch_box', 'switch_in_tv', 'other_mario']:
-            return None
-        price = BASE_PRICES.get(class_name, 0)
-        delivery_cost = 5.0 if class_name in ['lite', 'oled', 'switch'] else 3.5
-        final_price = price + delivery_cost
-        return final_price
-    def fetch_all_prices(self):
-        all_prices = {class_name: self.fetch_price(class_name) for class_name in class_names if self.fetch_price(class_name) is not None}
-        all_prices.update({
-            'lite_box': all_prices.get('lite', 0) * 1.05, 
-            'oled_box': all_prices.get('oled', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_white', 0) - 15, 
-            'oled_in_tv': all_prices.get('oled', 0) + all_prices.get('tv_white', 0) - 10, 
-            'switch_box': all_prices.get('switch', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_black', 0) - 5, 
-            'switch_in_tv': all_prices.get('switch', 0) + all_prices.get('tv_black', 0) - 3.5, 
-            'other_mario': 22.5,
-            'anonymous_games': 5  # Add price for anonymous games
-        })
-        return all_prices
-        
-    def login_vm_driver(self, driver):
-        """Login the VM driver and wait on homepage - extracted from main_vm_driver logic"""
-        try:
-            print("🔄 VM LOGIN: Starting login process...")
-            
-            # Clear browser data first
-            print("🔄 VM LOGIN: Clearing cookies...")
-            driver.delete_all_cookies()
-            
-            # Navigate to Vinted
-            print("🔄 VM LOGIN: Navigating to vinted.co.uk...")
-            driver.get("https://vinted.co.uk")
-            
-            # Random delay after page load
-            time.sleep(random.uniform(2, 4))
-            
-            # Wait for and accept cookies
-            print("🔄 VM LOGIN: Accepting cookies...")
-            if wait_and_click(driver, By.ID, "onetrust-accept-btn-handler", 15):
-                print("✅ VM LOGIN: Cookie consent accepted")
-            else:
-                print("⚠️ VM LOGIN: Cookie consent button not found")
-            
-            time.sleep(random.uniform(1, 2))
-            
-            # Click Sign up | Log in button
-            print("🔄 VM LOGIN: Looking for login button...")
-            signup_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
-            )
-            
-            human_like_delay()
-            action = move_to_element_naturally(driver, signup_button)
-            time.sleep(random.uniform(0.1, 0.3))
-            action.click().perform()
-            print("✅ VM LOGIN: Clicked Sign up | Log in button")
-            
-            time.sleep(random.uniform(1, 2))
-            
-            if google_login:
-                print("🔄 VM LOGIN: Using Google login...")
-                google_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
-                )
-                
-                human_like_delay()
-                action = move_to_element_naturally(driver, google_button)
-                time.sleep(random.uniform(0.1, 0.3))
-                action.click().perform()
-                print("✅ VM LOGIN: Clicked Continue with Google")
-                
-            else:
-                print("🔄 VM LOGIN: Using email login...")
-                # ... email login logic stays the same ...
-            
-            # Wait a bit for login process
-            time.sleep(random.uniform(3, 5))
-            
-            # Handle captcha if present
-            result = handle_datadome_audio_captcha(driver)
-
-            if result == "no_captcha":
-                print("✅ VM LOGIN: No captcha present - login successful!")
-                return True
-            elif result == True:
-                print("🔄 VM LOGIN: Captcha detected - handling...")
-                if HAS_PYAUDIO:
-                    detector = AudioNumberDetector(driver=driver)
-                    detector.start_listening()
-                    # Wait for captcha completion
-                    print("⏳ VM LOGIN: Waiting for captcha completion...")
-                    return True
-                else:
-                    print("❌ VM LOGIN: Cannot handle captcha - no audio support")
-                    return False
-            else:
-                print("❌ VM LOGIN: Captcha handling failed")
-                return False
-                
-        except Exception as e:
-            print(f"❌ VM LOGIN: Error during login: {e}")
-            return False
-
-    def execute_bookmark_with_preloaded_driver(self, url):
-        """Execute bookmark using the already logged-in VM driver"""
-        global current_bookmark_status
-        
-        if not self.vm_driver_ready or not self.current_vm_driver:
-            print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
-            current_bookmark_status = "BOOKMARK FAILED: No driver"
-            return False
-        
-        with self.vm_driver_lock:
-            print(f"🔖 BOOKMARK: Using pre-loaded driver for: {url}")
-            
-            try:
-                # Create step log for tracking
-                step_log = {
-                    'start_time': time.time(),
-                    'driver_number': 1,
-                    'steps_completed': [],
-                    'failures': [],
-                    'success': False,
-                    'critical_sequence_completed': False,
-                    'actual_url': url
-                }
-                
-                # Execute the bookmark sequence
-                success = execute_vm_bookmark_sequences(self.current_vm_driver, url, "preloaded_user", step_log)
-                
-                self.vm_driver_ready = False  # Mark as used
-                
-                total_time = time.time() - step_log['start_time']
-                print(f"📊 BOOKMARK ANALYSIS:")
-                print(f"⏱️  Total time: {total_time:.2f}s")
-                print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
-                print(f"❌ Failures: {len(step_log['failures'])}")
-                print(f"🏆 Overall success: {'YES' if success else 'NO'}")
-                
-                # Set bookmark status based on success
-                if success:
-                    current_bookmark_status = "✅ BOOKMARK SUCCEEDED"
-                    print(f"✅ BOOKMARK STATUS: Success")
-                else:
-                    current_bookmark_status = "❌ BOOKMARK FAILED"
-                    print(f"❌ BOOKMARK STATUS: Failed")
-                
-                return success
-                
-            except Exception as e:
-                print(f"❌ BOOKMARK: Error using pre-loaded driver: {e}")
-                current_bookmark_status = f"❌ BOOKMARK FAILED: {str(e)[:30]}"
-                self.vm_driver_ready = False
-                return False
-
-    def prepare_next_vm_driver(self):
-        """Prepare the NEXT VM driver after current one is used"""
-        print("🔄 NEXT DRIVER: Preparing next VM driver...")
-        
-        try:
-            # Close current driver if it exists
-            if self.current_vm_driver:
-                try:
-                    self.current_vm_driver.quit()
-                    print("✅ NEXT DRIVER: Closed previous driver")
-                except:
-                    print("⚠️ NEXT DRIVER: Error closing previous driver")
-            
-            # Clear browser data for new session
-            clear_browser_data_universal("192.168.56.101", {
-                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
-                "profile": "Profile 4", 
-                "port": 9224
             })
             
             time.sleep(1)  # Brief delay
@@ -300,12 +82,17 @@ class VintedScraper:
         current_item_revenues = {}
         
         # Initialize all current listing variables
-        self.current_vm_driver = None
-        self.vm_driver_ready = False
-        self.vm_driver_lock = threading.Lock()
-        
-        print("🔄 STARTUP: Preparing initial VM driver...")
-        self.prepare_next_vm_driver()
+        if VM_DRIVER_USE:
+            self.current_vm_driver = None
+            self.vm_driver_ready = False
+            self.vm_driver_lock = threading.Lock()
+            
+            print("🔄 STARTUP: Preparing initial VM driver...")
+            self.prepare_next_vm_driver()
+        else:
+            self.current_vm_driver = None
+            self.vm_driver_ready = False
+            self.vm_driver_lock = None
         
         current_listing_title = "No title"
         current_listing_description = "No description"
@@ -1667,21 +1454,22 @@ class VintedScraper:
         bookmark_status = "No bookmark attempted"
         
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            start_listing_timer(url)
-            
-            try:
-                success = self.execute_bookmark_with_preloaded_driver(url)
-                bookmark_status = current_bookmark_status
-                if not success:
-                    stop_listing_timer(url, stage='failed')
-            except Exception as vm_error:
-                bookmark_status = f"❌ BOOKMARK FAILED: {str(vm_error)[:30]}"
-                stop_listing_timer(url, stage='error')
-            
-            try:
-                self.prepare_next_vm_driver()
-            except Exception as prep_error:
-                print(f"❌ NEXT DRIVER ERROR: {prep_error}")
+            if VM_DRIVER_USE:
+                start_listing_timer(url)
+                
+                try:
+                    success = self.execute_bookmark_with_preloaded_driver(url)
+                    bookmark_status = current_bookmark_status
+                    if not success:
+                        stop_listing_timer(url, stage='failed')
+                except Exception as vm_error:
+                    bookmark_status = f"❌ BOOKMARK FAILED: {str(vm_error)[:30]}"
+                    stop_listing_timer(url, stage='error')
+                if VM_DRIVER_USE:
+                    try:
+                        self.prepare_next_vm_driver()
+                    except Exception as prep_error:
+                        print(f"❌ NEXT DRIVER ERROR: {prep_error}")
         else:
             bookmark_status = "Unsuitable - no bookmark"
 
@@ -2199,3 +1987,215 @@ class VintedScraper:
                         (('vinted' in src.lower() or 'cloudinary' in src.lower() or 'amazonaws' in src.lower()) and
                         not any(small_size in src for small_size in ['/50x', '/75x', '/100x', '/thumb']))
                     ):
+                        valid_urls.append(src)
+                        if print_images_backend_info:
+                            print(f"    ✅ Added valid image URL: {src[:50]}...")
+        
+        else:
+            # CAROUSEL MODE: 5+ images - click image to open carousel
+            print(f"  ▶ MODE: CAROUSEL (>4 images) - Clicking image to open carousel")
+            
+            try:
+                # STEP 3: Click on the first listing image to open carousel
+                first_listing_image = listing_images[0]
+                print(f"  ▶ STEP 2: Clicking first listing image to open carousel...")
+                
+                # Scroll into view
+                driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", first_listing_image)
+                time.sleep(0.5)
+                
+                # Try multiple click methods
+                clicked = False
+                
+                # Method 1: Direct click
+                try:
+                    first_listing_image.click()
+                    clicked = True
+                    print(f"  ▶ ✅ Clicked image (direct click)")
+                except Exception as e1:
+                    print(f"  ▶ ⚠️ Direct click failed: {e1}")
+                    
+                    # Method 2: JavaScript click
+                    try:
+                        driver.execute_script("arguments[0].click();", first_listing_image)
+                        clicked = True
+                        print(f"  ▶ ✅ Clicked image (JavaScript click)")
+                    except Exception as e2:
+                        print(f"  ▶ ⚠️ JavaScript click failed: {e2}")
+                        
+                        # Method 3: ActionChains click
+                        try:
+                            from selenium.webdriver.common.action_chains import ActionChains
+                            ActionChains(driver).move_to_element(first_listing_image).click().perform()
+                            clicked = True
+                            print(f"  ▶ ✅ Clicked image (ActionChains click)")
+                        except Exception as e3:
+                            print(f"  ▶ ❌ All click methods failed: {e3}")
+                
+                if not clicked:
+                    print(f"  ▶ ❌ Failed to click image - falling back to normal mode")
+                    # Fallback to normal mode logic - but avoid infinite recursion
+                    # Just use the listing images we already found
+                    valid_urls = []
+                    seen_urls = set()
+                    
+                    for img in listing_images:
+                        src = img.get_attribute("src")
+                        if src and src.startswith('http'):
+                            normalized_url = src.split('?')[0].split('#')[0]
+                            if normalized_url not in seen_urls:
+                                seen_urls.add(normalized_url)
+                                valid_urls.append(src)
+                else:
+                    # STEP 4: Wait for carousel to appear
+                    print(f"  ▶ STEP 3: Waiting for carousel to appear...")
+                    time.sleep(1.5)  # Give carousel time to animate
+                    
+                    # STEP 5: Find all carousel images
+                    print(f"  ▶ STEP 4: Scanning for carousel images...")
+                    
+                    carousel_selectors = [
+                        'img[data-testid="image-carousel-image"]',
+                        'img.image-carousel__image',
+                        'img[alt="post"]',
+                    ]
+                    
+                    carousel_images = []
+                    for selector in carousel_selectors:
+                        carousel_images = driver.find_elements(By.CSS_SELECTOR, selector)
+                        if carousel_images:
+                            print(f"  ▶ Found {len(carousel_images)} carousel images using selector: {selector}")
+                            break
+                    
+                    if not carousel_images:
+                        print(f"  ▶ ⚠️ No carousel images found - using listing images as fallback")
+                        # Use the listing images we already found
+                        valid_urls = []
+                        seen_urls = set()
+                        
+                        for img in listing_images:
+                            src = img.get_attribute("src")
+                            if src and src.startswith('http'):
+                                normalized_url = src.split('?')[0].split('#')[0]
+                                if normalized_url not in seen_urls:
+                                    seen_urls.add(normalized_url)
+                                    valid_urls.append(src)
+                    else:
+                        # STEP 6: Extract URLs from carousel images
+                        valid_urls = []
+                        seen_urls = set()
+                        
+                        print(f"  ▶ STEP 5: Extracting URLs from {len(carousel_images)} carousel images...")
+                        
+                        for idx, img in enumerate(carousel_images):
+                            src = img.get_attribute("src")
+                            
+                            if src and src.startswith('http'):
+                                # Remove query parameters and fragments for duplicate detection
+                                normalized_url = src.split('?')[0].split('#')[0]
+                                
+                                if normalized_url in seen_urls:
+                                    if print_images_backend_info:
+                                        print(f"    ⏭️  Skipping duplicate carousel URL: {normalized_url[:50]}...")
+                                    continue
+                                
+                                seen_urls.add(normalized_url)
+                                
+                                # Carousel images are always valid listing images, no filtering needed
+                                valid_urls.append(src)
+                                if print_images_backend_info:
+                                    print(f"    ✅ Added carousel image URL {idx+1}: {src[:50]}...")
+                        
+                        # OPTIMIZATION: No need to close carousel - tab will be closed immediately after this
+                        print(f"  ▶ STEP 6: Carousel will be closed when tab closes (optimization)")
+            
+            except Exception as carousel_error:
+                print(f"  ▶ ❌ Carousel mode error: {carousel_error}")
+                print(f"  ▶ Falling back to listing images...")
+                import traceback
+                traceback.print_exc()
+                # Fallback: use the listing images we already found
+                valid_urls = []
+                seen_urls = set()
+                
+                for img in listing_images:
+                    src = img.get_attribute("src")
+                    if src and src.startswith('http'):
+                        normalized_url = src.split('?')[0].split('#')[0]
+                        if normalized_url not in seen_urls:
+                            seen_urls.add(normalized_url)
+                            valid_urls.append(src)
+        
+        # STEP 7/8: Download images (same for both modes)
+        if not valid_urls:
+            print(f"  ▶ No valid product images found after filtering")
+            return []
+
+        if print_images_backend_info:
+            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
+        
+        os.makedirs(listing_dir, exist_ok=True)
+        
+        def download_single_image(args):
+            """Download a single image with enhanced duplicate detection"""
+            url, index = args
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
+                'Referer': driver.current_url
+            }
+            
+            try:
+                resp = requests.get(url, timeout=10, headers=headers)
+                resp.raise_for_status()
+                
+                # Use content hash to detect identical images with different URLs
+                content_hash = hashlib.md5(resp.content).hexdigest()
+                
+                # Check if we've already downloaded this exact image content
+                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
+                if os.path.exists(hash_file):
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
+                    return None
+                
+                img = Image.open(BytesIO(resp.content))
+                
+                # Skip very small images (likely icons or profile pics that got through)
+                if img.width < 200 or img.height < 200:
+                    if print_images_backend_info:
+                        print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
+                    return None
+                
+                # Resize image for YOLO detection optimization
+                MAX_SIZE = (1000, 1000)
+                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
+                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
+                    if print_images_backend_info:
+                        print(f"    📏 Resized image to: {img.width}x{img.height}")
+                
+                # Convert to RGB if needed
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Save the image
+                save_path = os.path.join(listing_dir, f"{index}.png")
+                img.save(save_path, format="PNG", optimize=True)
+                
+                # Create hash marker file to prevent future duplicates
+                with open(hash_file, 'w') as f:
+                    f.write(f"Downloaded from: {url}")
+                if print_images_backend_info:
+                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
+                return save_path
+                
+            except Exception as e:
+                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
+                return None
+        
+        if print_images_backend_info:

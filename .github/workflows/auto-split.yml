@@ -106,7 +106,7 @@ jobs:
         part4_link = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/{part4_filename}"
         part5_link = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/{part5_filename}"
         
-        final_message = f"I have a vinted web scraper. The following 4 files show you the code of my scraper, the first link shows the first 2200 lines, the second shows lines 2201-4400, the third shows lines 4401-6600 and the fourth file shows lines 6601-8800: line 0-2200: {part1_link} line 2201-4400: {part2_link} line 4401-6600: {part3_link} line 6601-8800: {part4_link} line 8801-11000: {part5_link}"
+        final_message = f"I have a vinted web scraper. The following 4 files show you the code of my scraper, the first link shows the first 2200 lines, the second shows lines 2201-4400, the third shows lines 4401-6600 and the fourth file shows lines 6601-8800: line 0-2200: {part1_link} line 2201-4400: {part2_link} line 4401-6600: {part3_link} line 6601-8800: {part4_link}"
 
         print(f"Split complete: {len(part1_lines)} + {len(part2_lines)} + {len(part3_lines)} + {len(part4_lines)} + {len(part5_lines)} lines")
         print(f"Part 1 (0-2200): {part1_filename}")
