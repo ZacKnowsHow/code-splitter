@@ -1347,6 +1347,7 @@
     def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter, all_confidences=None, item_revenues_from_detection=None):
         """
         FIXED: Now accepts and uses the confidences/revenues from detection
+        FIXED: Now filters out listings with 1-3 games and no non-game items (was 1-2)
         """
         global suitable_listings, current_listing_index, recent_listings, current_bookmark_status
 
@@ -1415,6 +1416,7 @@
             print(f"🐛 DEBUG: misc_games = {detected_objects['misc_games']}")
         profit_suitability = self.check_vinted_profit_suitability(total_price, profit_percentage)
 
+        # CRITICAL SECTION - GAME FILTER LOGIC
         game_classes = [
             '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
             'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
@@ -1425,16 +1427,24 @@
             'sword_p', 'tears_z', 'violet_p'
         ]
         game_count = sum(detected_objects.get(game, 0) for game in game_classes)
-        non_game_classes = [cls for cls in detected_objects.keys() 
-                            if cls not in game_classes and detected_objects.get(cls, 0) > 0]
+        
+        # CRITICAL FIX: Exclude misc_games from non-game items
+        # This prevents misc_games from making a "games-only" listing appear suitable
+        non_game_classes = [
+            cls for cls in detected_objects.keys() 
+            if cls not in game_classes 
+            and cls != 'misc_games'  # FIXED: Don't count misc_games as non-game item
+            and detected_objects.get(cls, 0) > 0
+        ]
 
         unsuitability_reasons = []
 
         if "Unsuitable" in suitability_result:
             unsuitability_reasons.append(suitability_result.replace("Unsuitable: ", ""))
 
-        if 1 <= game_count <= 2 and not non_game_classes:
-            unsuitability_reasons.append("1-2 games with no additional non-game items")
+        # CRITICAL FIX: Changed from 1-2 to 1-3 games
+        if 1 <= game_count <= 3 and not non_game_classes:
+            unsuitability_reasons.append("1-3 games with no additional non-game items")
 
         if not profit_suitability:
             unsuitability_reasons.append(
@@ -1518,7 +1528,7 @@
             'bookmark_status': bookmark_status,
             'item_confidences': all_confidences,
             'item_revenues': final_item_revenues,
-            'listing_timestamps': listing_timestamps_data  # NEW: Add timestamps
+            'listing_timestamps': listing_timestamps_data
         }
 
         should_add_to_display = is_suitable or VINTED_SHOW_ALL_LISTINGS
@@ -1610,7 +1620,7 @@
     def calculate_vinted_revenue(self, detected_objects, listing_price, title, description=""):
         """
         Enhanced revenue calculation with all Facebook logic
-        MODIFIED: Now MODIFIES detected_objects dict to include misc_games for display
+        FIXED: Now checks if detected_objects has ANY items before adding misc_games
         Returns: (total_revenue, expected_profit, profit_percentage, display_objects, item_revenues)
         """
         debug_function_call("calculate_vinted_revenue")
@@ -1628,31 +1638,45 @@
 
         all_prices = self.fetch_all_prices()
 
+        # CRITICAL FIX: Check if detected_objects has ANY non-zero items
+        has_any_detections = any(
+            detected_objects.get(item, 0) > 0 
+            for item in detected_objects.keys()
+        )
+        
         # Count detected games from YOLO
         detected_games_count = sum(detected_objects.get(game, 0) for game in game_classes)
         
         # Extract games mentioned in text
         text_games_count = self.detect_anonymous_games_vinted(title, description)
 
-        # Calculate misc games (text mentions minus detected, capped at misc_games_cap)
-        misc_games_count_uncapped = max(0, text_games_count - detected_games_count)
-        misc_games_count = min(misc_games_count_uncapped, misc_games_cap)
-        
-        if misc_games_count_uncapped > misc_games_cap:
-            print(f"🎮 MISC GAMES CAP APPLIED: {misc_games_count_uncapped} → {misc_games_count} (cap: {misc_games_cap})")
-        
-        # Calculate misc games revenue
-        misc_games_revenue = misc_games_count * miscellaneous_games_price
-        
-        # CRITICAL FIX: Add misc_games to detected_objects so it displays in pygame
-        if misc_games_count > 0:
-            detected_objects['misc_games'] = misc_games_count
-            print(f"🎮 MISC GAMES ADDED TO DETECTED_OBJECTS: {misc_games_count} games = £{misc_games_revenue:.2f}")
+        # CRITICAL FIX: Only calculate misc games if we have ANY detections
+        # This prevents misc_games from being added to completely empty listings
+        if has_any_detections:
+            # Calculate misc games (text mentions minus detected, capped at misc_games_cap)
+            misc_games_count_uncapped = max(0, text_games_count - detected_games_count)
+            misc_games_count = min(misc_games_count_uncapped, misc_games_cap)
+            
+            if misc_games_count_uncapped > misc_games_cap:
+                print(f"🎮 MISC GAMES CAP APPLIED: {misc_games_count_uncapped} → {misc_games_count} (cap: {misc_games_cap})")
+            
+            # Calculate misc games revenue
+            misc_games_revenue = misc_games_count * miscellaneous_games_price
+            
+            # Add misc_games to detected_objects for display
+            if misc_games_count > 0:
+                detected_objects['misc_games'] = misc_games_count
+                print(f"🎮 MISC GAMES ADDED TO DETECTED_OBJECTS: {misc_games_count} games = £{misc_games_revenue:.2f}")
+        else:
+            # FIX: No detections at all - don't add any misc games
+            misc_games_count = 0
+            misc_games_revenue = 0.0
+            print(f"🎮 MISC GAMES SKIPPED: No detections in listing (detected_objects empty)")
         
         # Track per-item revenue
         item_revenues = {}
 
-        # Add misc games revenue to tracking
+        # Add misc games revenue to tracking (only if > 0)
         if misc_games_count > 0:
             item_revenues['misc_games'] = misc_games_revenue
 
@@ -1697,7 +1721,7 @@
                 # Store per-item revenue
                 item_revenues[item] = item_revenue
         
-        # Debug output
+        # Debug output (now only shows items that exist)
         for item, count in detected_objects.items():
             if count > 0:
                 price_info = all_prices.get(item, 'NOT IN PRICES')
@@ -2175,27 +2199,3 @@
                 # Resize image for YOLO detection optimization
                 MAX_SIZE = (1000, 1000)
                 if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
-                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
-                    if print_images_backend_info:
-                        print(f"    📏 Resized image to: {img.width}x{img.height}")
-                
-                # Convert to RGB if needed
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                
-                # Save the image
-                save_path = os.path.join(listing_dir, f"{index}.png")
-                img.save(save_path, format="PNG", optimize=True)
-                
-                # Create hash marker file to prevent future duplicates
-                with open(hash_file, 'w') as f:
-                    f.write(f"Downloaded from: {url}")
-                if print_images_backend_info:
-                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
-                return save_path
-                
-            except Exception as e:
-                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
-                return None
-        
-        if print_images_backend_info:
