@@ -136,6 +136,9 @@ PRICE_TO = 510
 CURRENCY = "GBP"
 ORDER = "newest_first"
 
+import pyaudiowpatch as pyaudio
+HAS_PYAUDIO = True
+
 # Where to dump your images
 DOWNLOAD_ROOT = "vinted_photos"
 
@@ -369,13 +372,6 @@ if VM_DRIVER_USE:
         HAS_NOISEREDUCE = False
         print("noisereduce not available - install with: pip install noisereduce")
     
-    try:
-        import pyaudiowpatch as pyaudio
-        HAS_PYAUDIO = True
-    except ImportError:
-        HAS_PYAUDIO = False
-        print("pyaudiowpatch not available - install with: pip install PyAudioWPatch")
-
 
 def send_keypress_with_pyautogui(key, hold_time=None):
     """Send keypress using PyAutoGUI"""
@@ -1457,217 +1453,6 @@ def move_to_element_naturally(driver, element):
     action.move_to_element(element)
     time.sleep(random.uniform(0.2, 0.5))
     return action
-
-# 2. Modified main_vm_driver function (replace your existing main_vm_driver function)
-def main_vm_driver():
-    """Main VM driver function - Enhanced to run 5 drivers sequentially with URL bookmarking"""
-    # VM IP address - change this to your VM's IP
-    vm_ip_address = "192.168.56.101"
-    
-    # Driver configurations
-    driver_configs = [
-        {"user_data_dir": "C:\\VintedScraper_Default6_Bookmark", "profile": "Profile 17", "port": 9223},
-        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9224},
-        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9226},
-        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9227},
-        {"user_data_dir": "C:\\VintedScraper_Default_Bookmark", "profile": "Profile 4", "port": 9228}
-    ]
-    
-    print(f"\n🔖 BOOKMARKING: Will bookmark {len(VM_BOOKMARK_URLS)} URLs across 5 drivers:")
-    for i, url in enumerate(VM_BOOKMARK_URLS, 1):
-        print(f"  Driver {i}: {url}")
-    
-    # Run all 5 drivers sequentially with URL bookmarking
-    for i, config in enumerate(driver_configs, 1):
-        print(f"\n{'='*60}")
-        print(f"STARTING DRIVER {i}/5")
-        print(f"User Data: {config['user_data_dir']}")
-        print(f"Profile: {config['profile']}")
-        print(f"Assigned URL: {VM_BOOKMARK_URLS[i-1]}")
-        print(f"{'='*60}")
-        
-        # Clear browser data for this driver
-        clear_browser_data_universal(vm_ip_address, config)
-        
-        # Small delay before creating driver
-        time.sleep(1)
-        
-        driver = setup_driver_universal(vm_ip_address, config)
-        
-        if not driver:
-            print(f"Failed to create VM driver {i} - continuing to next")
-            continue
-        
-        detector = None
-        
-        try:
-            print(f"Navigating to vinted.co.uk with driver {i}...")
-            driver.get("https://vinted.co.uk")
-            
-            # Random delay after page load
-            human_like_delay()
-            
-            # Wait for and accept cookies
-            print("Waiting for cookie consent button...")
-            if wait_and_click(driver, By.ID, "onetrust-accept-btn-handler", 15):
-                print("Cookie consent accepted")
-            else:
-                print("Cookie consent button not found, continuing...")
-            
-            # Small delay after cookie acceptance
-            time.sleep(random.uniform(1, 2))
-            
-            # Click Sign up | Log in button
-            print("Looking for Sign up | Log in button...")
-            signup_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
-            )
-            
-            human_like_delay()
-            action = move_to_element_naturally(driver, signup_button)
-            time.sleep(random.uniform(0.1, 0.3))
-            action.click().perform()
-            print("Clicked Sign up | Log in button")
-            
-            # Wait for the login/signup modal to appear
-            time.sleep(random.uniform(1, 2))
-            
-            if google_login:
-                print("Using Google login...")
-                # Click Continue with Google
-                google_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
-                )
-                
-                human_like_delay()
-                action = move_to_element_naturally(driver, google_button)
-                time.sleep(random.uniform(0.1, 0.3))
-                action.click().perform()
-                print("Clicked Continue with Google")
-                
-            else:
-                print("Using email login...")
-                
-                # Click "Log in" text
-                login_text = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//span[contains(@class, 'web_ui__Text__underline') and text()='Log in']"))
-                )
-                
-                human_like_delay()
-                action = move_to_element_naturally(driver, login_text)
-                time.sleep(random.uniform(0.1, 0.3))
-                action.click().perform()
-                print("Clicked Log in")
-                
-                # Wait a bit for the form to update
-                time.sleep(random.uniform(0.5, 1))
-                
-                # Click "email" text
-                email_text = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//span[contains(@class, 'web_ui__Text__underline') and text()='email']"))
-                )
-                
-                human_like_delay()
-                action = move_to_element_naturally(driver, email_text)
-                time.sleep(random.uniform(0.1, 0.3))
-                action.click().perform()
-                print("Clicked email")
-                
-                # Wait a bit for the form to update
-                time.sleep(random.uniform(0.5, 1))
-                
-                # Click Continue button
-                continue_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[@type='submit']//span[text()='Continue']"))
-                )
-                
-                human_like_delay()
-                action = move_to_element_naturally(driver, continue_button)
-                time.sleep(random.uniform(0.1, 0.3))
-                action.click().perform()
-                print("Clicked Continue")
-            
-            # Wait a bit for any redirects or page loads after login flow
-            time.sleep(random.uniform(3, 5))
-            
-            # Handle captcha using only the working method
-            result = handle_datadome_audio_captcha(driver)
-
-            if result == "no_captcha":
-                print("No captcha present - login successful!")
-                print(f"Driver {i} login completed successfully.")
-                
-                # NEW: LOGIN SUCCESSFUL - NOW BOOKMARK THE ASSIGNED URL
-                assigned_url = VM_BOOKMARK_URLS[i-1]  # Get URL for this driver (0-indexed)
-                print(f"\n🔖 BOOKMARKING: Driver {i} starting bookmark process for:")
-                print(f"🔗 URL: {assigned_url}")
-                # Execute bookmark using existing logic
-                bookmark_success = execute_vm_bookmark_process(driver, assigned_url, i)
-                
-                if bookmark_success:
-                    print(f"✅ BOOKMARKING: Driver {i} successfully bookmarked URL!")
-                else:
-                    print(f"❌ BOOKMARKING: Driver {i} failed to bookmark URL")
-                
-            elif result == True:
-                print("Audio captcha button clicked successfully!")
-                print("="*60)
-                print("STARTING AUDIO DETECTION...")
-                print("="*60)
-                
-                # Initialize and start audio detection with driver reference
-                if HAS_PYAUDIO:
-                    detector = AudioNumberDetector(driver=driver)
-                    detector.start_listening()
-                    
-                    # After captcha is solved, proceed with bookmarking
-                    print(f"\n🔖 BOOKMARKING: Driver {i} captcha solved, starting bookmark process...")
-                    assigned_url = VM_BOOKMARK_URLS[i-1]
-                    print(f"🔗 URL: {assigned_url}")
-                    
-                    bookmark_success = execute_vm_bookmark_process(driver, assigned_url, i)
-                    
-                    if bookmark_success:
-                        print(f"✅ BOOKMARKING: Driver {i} successfully bookmarked URL!")
-                    else:
-                        print(f"❌ BOOKMARKING: Driver {i} failed to bookmark URL")
-                        
-                else:
-                    print("ERROR: Cannot start audio detection - pyaudiowpatch not available")
-            else:
-                print("Failed to click audio captcha button")
-            
-            print(f"Driver {i} completed!")
-            
-            # Keep browser open for a bit to see the result
-            time.sleep(10)
-            
-        except KeyboardInterrupt:
-            print(f"\n\nStopping driver {i}...")
-            if detector:
-                detector.stop()
-        except Exception as e:
-            print(f"An error occurred in driver {i}: {e}")
-            import traceback
-            traceback.print_exc()
-        
-        finally:
-            if detector:
-                try:
-                    detector.stop()
-                except:
-                    pass
-            # Close current driver
-            try:
-                driver.quit()
-                print(f"Driver {i} closed successfully")
-            except:
-                print(f"Error closing driver {i}")
-    
-    print("\n" + "="*60)
-    print("ALL 5 DRIVERS COMPLETED SUCCESSFULLY")
-    print("URL BOOKMARKING PROCESS COMPLETE")
-    print("="*60)
 
 # 3. New function to execute bookmark process for VM drivers
 def execute_vm_bookmark_process(driver, url, driver_number):
@@ -2874,9 +2659,6 @@ class HIDKeyboard:
 class AudioNumberDetector:
     def __init__(self, driver=None):
         self.driver = driver
-        if not HAS_PYAUDIO:
-            print("ERROR: pyaudiowpatch not available - audio detection will not work")
-            return
             
         self.recognizer = sr.Recognizer()
         
@@ -4699,12 +4481,17 @@ class VintedScraper:
         current_item_revenues = {}
         
         # Initialize all current listing variables
-        self.current_vm_driver = None
-        self.vm_driver_ready = False
-        self.vm_driver_lock = threading.Lock()
-        
-        print("🔄 STARTUP: Preparing initial VM driver...")
-        self.prepare_next_vm_driver()
+        if VM_DRIVER_USE:
+            self.current_vm_driver = None
+            self.vm_driver_ready = False
+            self.vm_driver_lock = threading.Lock()
+            
+            print("🔄 STARTUP: Preparing initial VM driver...")
+            self.prepare_next_vm_driver()
+        else:
+            self.current_vm_driver = None
+            self.vm_driver_ready = False
+            self.vm_driver_lock = None
         
         current_listing_title = "No title"
         current_listing_description = "No description"
@@ -6066,21 +5853,22 @@ class VintedScraper:
         bookmark_status = "No bookmark attempted"
         
         if is_suitable or VINTED_SHOW_ALL_LISTINGS:
-            start_listing_timer(url)
-            
-            try:
-                success = self.execute_bookmark_with_preloaded_driver(url)
-                bookmark_status = current_bookmark_status
-                if not success:
-                    stop_listing_timer(url, stage='failed')
-            except Exception as vm_error:
-                bookmark_status = f"❌ BOOKMARK FAILED: {str(vm_error)[:30]}"
-                stop_listing_timer(url, stage='error')
-            
-            try:
-                self.prepare_next_vm_driver()
-            except Exception as prep_error:
-                print(f"❌ NEXT DRIVER ERROR: {prep_error}")
+            if VM_DRIVER_USE:
+                start_listing_timer(url)
+                
+                try:
+                    success = self.execute_bookmark_with_preloaded_driver(url)
+                    bookmark_status = current_bookmark_status
+                    if not success:
+                        stop_listing_timer(url, stage='failed')
+                except Exception as vm_error:
+                    bookmark_status = f"❌ BOOKMARK FAILED: {str(vm_error)[:30]}"
+                    stop_listing_timer(url, stage='error')
+                if VM_DRIVER_USE:
+                    try:
+                        self.prepare_next_vm_driver()
+                    except Exception as prep_error:
+                        print(f"❌ NEXT DRIVER ERROR: {prep_error}")
         else:
             bookmark_status = "Unsuitable - no bookmark"
 
@@ -7030,6 +6818,20 @@ class VintedScraper:
         DRIVER_RESTART_INTERVAL = 100000
         cycles_since_restart = 0
 
+        # INITIAL NAVIGATION: Navigate to Vinted search on first startup
+        params = {
+            "search_text": search_query,
+            "price_from": PRICE_FROM,
+            "price_to": PRICE_TO,
+            "currency": CURRENCY,
+            "order": ORDER,
+        }
+        print("🔄 Initial navigation to Vinted catalog...")
+        current_driver.get(f"{BASE_URL}?{urlencode(params)}")
+        print("✅ Navigated to Vinted catalog successfully")
+        time.sleep(2)
+
+
         # Main scanning loop with refresh functionality AND driver restart
         while True:
             print(f"\n{'='*60}")
@@ -7777,7 +7579,7 @@ class VintedScraper:
         print("🧵 MAIN: Main thread will now wait for scraping thread to complete...")
         
         try:
-            # Wait for the scraping thread to complet
+            # Wait for the scraping thread to complete
             scraping_thread.join()
             print("✅ MAIN: Scraping thread completed successfully")
             
@@ -7800,14 +7602,7 @@ class VintedScraper:
             sys.exit(0)
 
 if __name__ == "__main__":
-    if VM_DRIVER_USE:
-        print("VM_DRIVER_USE = True - Running VM driver script instead of main scraper")
-        if not HAS_PYAUDIO:
-            print("WARNING: pyaudiowpatch not available - audio features may not work")
-            print("Install with: pip install PyAudioWPatch")
-        main_vm_driver()
-    else:
-        print("VM_DRIVER_USE = False - Running main Vinted scraper")
-        scraper = VintedScraper()
-        globals()['vinted_scraper_instance'] = scraper
-        scraper.run()
+
+    scraper = VintedScraper()
+    globals()['vinted_scraper_instance'] = scraper
+    scraper.run()
