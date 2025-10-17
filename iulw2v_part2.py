@@ -1,219 +1,4 @@
 # Continuation from line 2201
-        function findAndClickClearButton() {
-            // Multiple strategies to find the clear button in Shadow DOM
-            
-            // Strategy 1: Direct access via settings-ui
-            let settingsUi = document.querySelector('settings-ui');
-            if (settingsUi && settingsUi.shadowRoot) {
-                let clearBrowserData = settingsUi.shadowRoot.querySelector('settings-main')?.shadowRoot
-                    ?.querySelector('settings-basic-page')?.shadowRoot
-                    ?.querySelector('settings-section[section="privacy"]')?.shadowRoot
-                    ?.querySelector('settings-clear-browsing-data-dialog');
-                
-                if (clearBrowserData && clearBrowserData.shadowRoot) {
-                    let clearButton = clearBrowserData.shadowRoot.querySelector('#clearButton');
-                    if (clearButton) {
-                        console.log('Found clear button via strategy 1');
-                        clearButton.click();
-                        return true;
-                    }
-                }
-            }
-            
-            // Strategy 2: Search all shadow roots recursively
-            function searchShadowRoots(element) {
-                if (element.shadowRoot) {
-                    let clearButton = element.shadowRoot.querySelector('#clearButton');
-                    if (clearButton) {
-                        console.log('Found clear button via recursive search');
-                        clearButton.click();
-                        return true;
-                    }
-                    
-                    // Search nested shadow roots
-                    let shadowElements = element.shadowRoot.querySelectorAll('*');
-                    for (let el of shadowElements) {
-                        if (searchShadowRoots(el)) return true;
-                    }
-                }
-                return false;
-            }
-            
-            let allElements = document.querySelectorAll('*');
-            for (let el of allElements) {
-                if (searchShadowRoots(el)) return true;
-            }
-            
-            // Strategy 3: Look for cr-button elements in shadow roots
-            function findCrButton(element) {
-                if (element.shadowRoot) {
-                    let crButtons = element.shadowRoot.querySelectorAll('cr-button');
-                    for (let btn of crButtons) {
-                        if (btn.id === 'clearButton' || btn.textContent.includes('Delete data')) {
-                            console.log('Found cr-button via strategy 3');
-                            btn.click();
-                            return true;
-                        }
-                    }
-                    
-                    let shadowElements = element.shadowRoot.querySelectorAll('*');
-                    for (let el of shadowElements) {
-                        if (findCrButton(el)) return true;
-                    }
-                }
-                return false;
-            }
-            
-            for (let el of allElements) {
-                if (findCrButton(el)) return true;
-            }
-            
-            console.log('Clear button not found in any shadow root');
-            return false;
-        }
-        
-        return findAndClickClearButton();
-        """
-        
-        # Execute the Shadow DOM navigation script
-        result = clear_driver.execute_script(shadow_dom_script)
-        
-        if result:
-            print("✓ Successfully clicked clear data button via Shadow DOM!")
-            print("Step 5: Waiting for data clearing to complete...")
-            time.sleep(2)  # Wait for clearing process
-            print("✓ Browser data clearing completed successfully!")
-        else:
-            print("✗ Failed to find clear button in Shadow DOM")
-            
-            # Fallback: Try to trigger clear via keyboard shortcut
-            print("Attempting fallback: Ctrl+Shift+Delete shortcut...")
-            try:
-                from selenium.webdriver.common.keys import Keys
-                body = clear_driver.find_element(By.TAG_NAME, "body")
-                body.send_keys(Keys.CONTROL + Keys.SHIFT + Keys.DELETE)
-                time.sleep(1)
-                # Try to press Enter to confirm
-                body.send_keys(Keys.ENTER)
-                time.sleep(1)
-                print("✓ Fallback keyboard shortcut attempted")
-            except Exception as fallback_error:
-                print(f"✗ Fallback also failed: {fallback_error}")
-        
-    except Exception as e:
-        print(f"✗ Browser data clearing failed: {str(e)}")
-        print("Continuing with main execution anyway...")
-        import traceback
-        traceback.print_exc()
-    
-    finally:
-        if clear_driver:
-            try:
-                print("Step 6: Closing temporary driver...")
-                clear_driver.quit()
-                print("✓ Temporary driver closed successfully")
-            except Exception as e:
-                print(f"Warning: Failed to close temporary driver: {e}")
-        
-        print("=" * 50)
-        print("BROWSER DATA CLEAR COMPLETE")
-        print("=" * 50)
-        time.sleep(0.5)  # Brief pause before continuing
-
-def setup_driver_universal(vm_ip_address, config):
-    """Universal setup function for any driver configuration"""
-    
-    # Session cleanup (existing code)
-    try:
-        import requests
-        status_response = requests.get(f"http://{vm_ip_address}:4444/status", timeout=5)
-        status_data = status_response.json()
-        
-        if 'value' in status_data and 'nodes' in status_data['value']:
-            for node in status_data['value']['nodes']:
-                if 'slots' in node:
-                    for slot in node['slots']:
-                        if slot.get('session'):
-                            session_id = slot['session']['sessionId']
-                            print(f"Found existing session: {session_id}")
-                            delete_response = requests.delete(
-                                f"http://{vm_ip_address}:4444/session/{session_id}",
-                                timeout=10
-                            )
-                            print(f"Cleaned up session: {session_id}")
-    
-    except Exception as e:
-        print(f"Session cleanup failed: {e}")
-    
-    # Chrome options for the VM instance
-    chrome_options = ChromeOptions()
-    chrome_options.add_argument(f"--user-data-dir={config['user_data_dir']}")
-    chrome_options.add_argument(f"--profile-directory={config['profile']}")
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    
-    # VM-specific optimizations
-    chrome_options.add_argument('--force-device-scale-factor=1')
-    chrome_options.add_argument('--high-dpi-support=1')
-    chrome_options.add_argument(f"--remote-debugging-port={config['port']}")
-    chrome_options.add_argument('--remote-allow-origins=*')
-    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-extensions')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument("--start-maximized")
-    chrome_options.add_argument('--disable-web-security')
-    chrome_options.add_argument('--allow-running-insecure-content')
-
-    
-    print(f"Chrome options configured: {len(chrome_options.arguments)} arguments")
-    
-    driver = None
-    
-    try:
-        print("Attempting to connect to remote WebDriver...")
-        
-        driver = webdriver.Remote(
-            command_executor=f'http://{vm_ip_address}:4444',
-            options=chrome_options
-        )
-        
-        print(f"✓ Successfully created remote WebDriver connection")
-        print(f"Session ID: {driver.session_id}")
-        
-        print("Applying stealth modifications...")
-        stealth_script = """
-        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-        Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-        window.chrome = {runtime: {}};
-        Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
-        
-        Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 4});
-        Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
-        Object.defineProperty(screen, 'colorDepth', {get: () => 24});
-        """
-        driver.execute_script(stealth_script)
-        print("✓ Stealth script applied successfully")
-        
-        print(f"✓ Successfully connected to VM Chrome with clean profile")
-        return driver
-        
-    except Exception as e:
-        print(f"✗ Failed to connect to VM WebDriver")
-        print(f"Error: {str(e)}")
-        
-        if driver:
-            try:
-                driver.quit()
-            except:
-                pass
-        
-        return None
-
-def find_buy_button_with_shadow_dom(driver):
     """
     Enhanced buy now button finder - JavaScript click first approach
     Finds button and immediately clicks with JavaScript for reliability
@@ -675,9 +460,6 @@ class HIDKeyboard:
 class AudioNumberDetector:
     def __init__(self, driver=None):
         self.driver = driver
-        if not HAS_PYAUDIO:
-            print("ERROR: pyaudiowpatch not available - audio detection will not work")
-            return
             
         self.recognizer = sr.Recognizer()
         
@@ -2199,3 +1981,221 @@ def render_main_page():
         </html>
         '''
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in render_main_page: {e}")
+        print(f"Traceback: {error_details}")
+        return f"<html><body><h1>Error in render_main_page</h1><pre>{error_details}</pre></body></html>"
+class VintedScraper:
+
+    def restart_driver_if_dead(self, driver):
+        """If driver is dead, create a new one. That's it."""
+        try:
+            driver.current_url  # Simple test
+            return driver  # Driver is fine
+        except:
+            print("🔄 Driver crashed, restarting...")
+            try:
+                driver.quit()
+            except:
+                pass
+            return self.setup_driver()
+    # Add this method to the VintedScraper class
+    def send_pushover_notification(self, title, message, api_token, user_key):
+        """
+        Send a notification via Pushover
+        :param title: Notification title
+        :param message: Notification message
+        :param api_token: Pushover API token
+        :param user_key: Pushover user key
+        """
+        try:
+            url = "https://api.pushover.net/1/messages.json"
+            payload = {
+                "token": api_token,
+                "user": user_key,
+                "title": title,
+                "message": message
+            }
+            response = requests.post(url, data=payload)
+            if response.status_code == 200:
+                print(f"Notification sent successfully: {title}")
+            else:
+                print(f"Failed to send notification. Status code: {response.status_code}")
+                print(f"Response: {response.text}")
+        except Exception as e:
+            print(f"Error sending Pushover notification: {str(e)}")
+
+    def fetch_price(self, class_name):
+        if class_name in ['lite_box', 'oled_box', 'oled_in_tv', 'switch_box', 'switch_in_tv', 'other_mario']:
+            return None
+        price = BASE_PRICES.get(class_name, 0)
+        delivery_cost = 5.0 if class_name in ['lite', 'oled', 'switch'] else 3.5
+        final_price = price + delivery_cost
+        return final_price
+    def fetch_all_prices(self):
+        all_prices = {class_name: self.fetch_price(class_name) for class_name in class_names if self.fetch_price(class_name) is not None}
+        all_prices.update({
+            'lite_box': all_prices.get('lite', 0) * 1.05, 
+            'oled_box': all_prices.get('oled', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_white', 0) - 15, 
+            'oled_in_tv': all_prices.get('oled', 0) + all_prices.get('tv_white', 0) - 10, 
+            'switch_box': all_prices.get('switch', 0) + all_prices.get('comfort_h', 0) + all_prices.get('tv_black', 0) - 5, 
+            'switch_in_tv': all_prices.get('switch', 0) + all_prices.get('tv_black', 0) - 3.5, 
+            'other_mario': 22.5,
+            'anonymous_games': 5  # Add price for anonymous games
+        })
+        return all_prices
+        
+    def login_vm_driver(self, driver):
+        """Login the VM driver and wait on homepage - extracted from main_vm_driver logic"""
+        try:
+            print("🔄 VM LOGIN: Starting login process...")
+            
+            # Clear browser data first
+            print("🔄 VM LOGIN: Clearing cookies...")
+            driver.delete_all_cookies()
+            
+            # Navigate to Vinted
+            print("🔄 VM LOGIN: Navigating to vinted.co.uk...")
+            driver.get("https://vinted.co.uk")
+            
+            # Random delay after page load
+            time.sleep(random.uniform(2, 4))
+            
+            # Wait for and accept cookies
+            print("🔄 VM LOGIN: Accepting cookies...")
+            if wait_and_click(driver, By.ID, "onetrust-accept-btn-handler", 15):
+                print("✅ VM LOGIN: Cookie consent accepted")
+            else:
+                print("⚠️ VM LOGIN: Cookie consent button not found")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            # Click Sign up | Log in button
+            print("🔄 VM LOGIN: Looking for login button...")
+            signup_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="header--login-button"]'))
+            )
+            
+            human_like_delay()
+            action = move_to_element_naturally(driver, signup_button)
+            time.sleep(random.uniform(0.1, 0.3))
+            action.click().perform()
+            print("✅ VM LOGIN: Clicked Sign up | Log in button")
+            
+            time.sleep(random.uniform(1, 2))
+            
+            if google_login:
+                print("🔄 VM LOGIN: Using Google login...")
+                google_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="google-oauth-button"]'))
+                )
+                
+                human_like_delay()
+                action = move_to_element_naturally(driver, google_button)
+                time.sleep(random.uniform(0.1, 0.3))
+                action.click().perform()
+                print("✅ VM LOGIN: Clicked Continue with Google")
+                
+            else:
+                print("🔄 VM LOGIN: Using email login...")
+                # ... email login logic stays the same ...
+            
+            # Wait a bit for login process
+            time.sleep(random.uniform(3, 5))
+            
+            # Handle captcha if present
+            result = handle_datadome_audio_captcha(driver)
+
+            if result == "no_captcha":
+                print("✅ VM LOGIN: No captcha present - login successful!")
+                return True
+            elif result == True:
+                print("🔄 VM LOGIN: Captcha detected - handling...")
+                if HAS_PYAUDIO:
+                    detector = AudioNumberDetector(driver=driver)
+                    detector.start_listening()
+                    # Wait for captcha completion
+                    print("⏳ VM LOGIN: Waiting for captcha completion...")
+                    return True
+                else:
+                    print("❌ VM LOGIN: Cannot handle captcha - no audio support")
+                    return False
+            else:
+                print("❌ VM LOGIN: Captcha handling failed")
+                return False
+                
+        except Exception as e:
+            print(f"❌ VM LOGIN: Error during login: {e}")
+            return False
+
+    def execute_bookmark_with_preloaded_driver(self, url):
+        """Execute bookmark using the already logged-in VM driver"""
+        global current_bookmark_status
+        
+        if not self.vm_driver_ready or not self.current_vm_driver:
+            print("❌ BOOKMARK: No VM driver ready - cannot bookmark")
+            current_bookmark_status = "BOOKMARK FAILED: No driver"
+            return False
+        
+        with self.vm_driver_lock:
+            print(f"🔖 BOOKMARK: Using pre-loaded driver for: {url}")
+            
+            try:
+                # Create step log for tracking
+                step_log = {
+                    'start_time': time.time(),
+                    'driver_number': 1,
+                    'steps_completed': [],
+                    'failures': [],
+                    'success': False,
+                    'critical_sequence_completed': False,
+                    'actual_url': url
+                }
+                
+                # Execute the bookmark sequence
+                success = execute_vm_bookmark_sequences(self.current_vm_driver, url, "preloaded_user", step_log)
+                
+                self.vm_driver_ready = False  # Mark as used
+                
+                total_time = time.time() - step_log['start_time']
+                print(f"📊 BOOKMARK ANALYSIS:")
+                print(f"⏱️  Total time: {total_time:.2f}s")
+                print(f"✅ Steps completed: {len(step_log['steps_completed'])}")
+                print(f"❌ Failures: {len(step_log['failures'])}")
+                print(f"🏆 Overall success: {'YES' if success else 'NO'}")
+                
+                # Set bookmark status based on success
+                if success:
+                    current_bookmark_status = "✅ BOOKMARK SUCCEEDED"
+                    print(f"✅ BOOKMARK STATUS: Success")
+                else:
+                    current_bookmark_status = "❌ BOOKMARK FAILED"
+                    print(f"❌ BOOKMARK STATUS: Failed")
+                
+                return success
+                
+            except Exception as e:
+                print(f"❌ BOOKMARK: Error using pre-loaded driver: {e}")
+                current_bookmark_status = f"❌ BOOKMARK FAILED: {str(e)[:30]}"
+                self.vm_driver_ready = False
+                return False
+
+    def prepare_next_vm_driver(self):
+        """Prepare the NEXT VM driver after current one is used"""
+        print("🔄 NEXT DRIVER: Preparing next VM driver...")
+        
+        try:
+            # Close current driver if it exists
+            if self.current_vm_driver:
+                try:
+                    self.current_vm_driver.quit()
+                    print("✅ NEXT DRIVER: Closed previous driver")
+                except:
+                    print("⚠️ NEXT DRIVER: Error closing previous driver")
+            
+            # Clear browser data for new session
+            clear_browser_data_universal("192.168.56.101", {
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
+                "profile": "Profile 4", 
+                "port": 9224

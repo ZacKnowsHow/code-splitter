@@ -1,216 +1,4 @@
 # Continuation from line 6601
-                        valid_urls.append(src)
-                        if print_images_backend_info:
-                            print(f"    ✅ Added valid image URL: {src[:50]}...")
-        
-        else:
-            # CAROUSEL MODE: 5+ images - click image to open carousel
-            print(f"  ▶ MODE: CAROUSEL (>4 images) - Clicking image to open carousel")
-            
-            try:
-                # STEP 3: Click on the first listing image to open carousel
-                first_listing_image = listing_images[0]
-                print(f"  ▶ STEP 2: Clicking first listing image to open carousel...")
-                
-                # Scroll into view
-                driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", first_listing_image)
-                time.sleep(0.5)
-                
-                # Try multiple click methods
-                clicked = False
-                
-                # Method 1: Direct click
-                try:
-                    first_listing_image.click()
-                    clicked = True
-                    print(f"  ▶ ✅ Clicked image (direct click)")
-                except Exception as e1:
-                    print(f"  ▶ ⚠️ Direct click failed: {e1}")
-                    
-                    # Method 2: JavaScript click
-                    try:
-                        driver.execute_script("arguments[0].click();", first_listing_image)
-                        clicked = True
-                        print(f"  ▶ ✅ Clicked image (JavaScript click)")
-                    except Exception as e2:
-                        print(f"  ▶ ⚠️ JavaScript click failed: {e2}")
-                        
-                        # Method 3: ActionChains click
-                        try:
-                            from selenium.webdriver.common.action_chains import ActionChains
-                            ActionChains(driver).move_to_element(first_listing_image).click().perform()
-                            clicked = True
-                            print(f"  ▶ ✅ Clicked image (ActionChains click)")
-                        except Exception as e3:
-                            print(f"  ▶ ❌ All click methods failed: {e3}")
-                
-                if not clicked:
-                    print(f"  ▶ ❌ Failed to click image - falling back to normal mode")
-                    # Fallback to normal mode logic - but avoid infinite recursion
-                    # Just use the listing images we already found
-                    valid_urls = []
-                    seen_urls = set()
-                    
-                    for img in listing_images:
-                        src = img.get_attribute("src")
-                        if src and src.startswith('http'):
-                            normalized_url = src.split('?')[0].split('#')[0]
-                            if normalized_url not in seen_urls:
-                                seen_urls.add(normalized_url)
-                                valid_urls.append(src)
-                else:
-                    # STEP 4: Wait for carousel to appear
-                    print(f"  ▶ STEP 3: Waiting for carousel to appear...")
-                    time.sleep(1.5)  # Give carousel time to animate
-                    
-                    # STEP 5: Find all carousel images
-                    print(f"  ▶ STEP 4: Scanning for carousel images...")
-                    
-                    carousel_selectors = [
-                        'img[data-testid="image-carousel-image"]',
-                        'img.image-carousel__image',
-                        'img[alt="post"]',
-                    ]
-                    
-                    carousel_images = []
-                    for selector in carousel_selectors:
-                        carousel_images = driver.find_elements(By.CSS_SELECTOR, selector)
-                        if carousel_images:
-                            print(f"  ▶ Found {len(carousel_images)} carousel images using selector: {selector}")
-                            break
-                    
-                    if not carousel_images:
-                        print(f"  ▶ ⚠️ No carousel images found - using listing images as fallback")
-                        # Use the listing images we already found
-                        valid_urls = []
-                        seen_urls = set()
-                        
-                        for img in listing_images:
-                            src = img.get_attribute("src")
-                            if src and src.startswith('http'):
-                                normalized_url = src.split('?')[0].split('#')[0]
-                                if normalized_url not in seen_urls:
-                                    seen_urls.add(normalized_url)
-                                    valid_urls.append(src)
-                    else:
-                        # STEP 6: Extract URLs from carousel images
-                        valid_urls = []
-                        seen_urls = set()
-                        
-                        print(f"  ▶ STEP 5: Extracting URLs from {len(carousel_images)} carousel images...")
-                        
-                        for idx, img in enumerate(carousel_images):
-                            src = img.get_attribute("src")
-                            
-                            if src and src.startswith('http'):
-                                # Remove query parameters and fragments for duplicate detection
-                                normalized_url = src.split('?')[0].split('#')[0]
-                                
-                                if normalized_url in seen_urls:
-                                    if print_images_backend_info:
-                                        print(f"    ⏭️  Skipping duplicate carousel URL: {normalized_url[:50]}...")
-                                    continue
-                                
-                                seen_urls.add(normalized_url)
-                                
-                                # Carousel images are always valid listing images, no filtering needed
-                                valid_urls.append(src)
-                                if print_images_backend_info:
-                                    print(f"    ✅ Added carousel image URL {idx+1}: {src[:50]}...")
-                        
-                        # OPTIMIZATION: No need to close carousel - tab will be closed immediately after this
-                        print(f"  ▶ STEP 6: Carousel will be closed when tab closes (optimization)")
-            
-            except Exception as carousel_error:
-                print(f"  ▶ ❌ Carousel mode error: {carousel_error}")
-                print(f"  ▶ Falling back to listing images...")
-                import traceback
-                traceback.print_exc()
-                # Fallback: use the listing images we already found
-                valid_urls = []
-                seen_urls = set()
-                
-                for img in listing_images:
-                    src = img.get_attribute("src")
-                    if src and src.startswith('http'):
-                        normalized_url = src.split('?')[0].split('#')[0]
-                        if normalized_url not in seen_urls:
-                            seen_urls.add(normalized_url)
-                            valid_urls.append(src)
-        
-        # STEP 7/8: Download images (same for both modes)
-        if not valid_urls:
-            print(f"  ▶ No valid product images found after filtering")
-            return []
-
-        if print_images_backend_info:
-            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
-        
-        os.makedirs(listing_dir, exist_ok=True)
-        
-        def download_single_image(args):
-            """Download a single image with enhanced duplicate detection"""
-            url, index = args
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Cache-Control': 'no-cache',
-                'Referer': driver.current_url
-            }
-            
-            try:
-                resp = requests.get(url, timeout=10, headers=headers)
-                resp.raise_for_status()
-                
-                # Use content hash to detect identical images with different URLs
-                content_hash = hashlib.md5(resp.content).hexdigest()
-                
-                # Check if we've already downloaded this exact image content
-                hash_file = os.path.join(listing_dir, f".hash_{content_hash}")
-                if os.path.exists(hash_file):
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping duplicate content (hash: {content_hash[:8]}...)")
-                    return None
-                
-                img = Image.open(BytesIO(resp.content))
-                
-                # Skip very small images (likely icons or profile pics that got through)
-                if img.width < 200 or img.height < 200:
-                    if print_images_backend_info:
-                        print(f"    ⏭️  Skipping small image: {img.width}x{img.height}")
-                    return None
-                
-                # Resize image for YOLO detection optimization
-                MAX_SIZE = (1000, 1000)
-                if img.width > MAX_SIZE[0] or img.height > MAX_SIZE[1]:
-                    img.thumbnail(MAX_SIZE, Image.LANCZOS)
-                    if print_images_backend_info:
-                        print(f"    📏 Resized image to: {img.width}x{img.height}")
-                
-                # Convert to RGB if needed
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                
-                # Save the image
-                save_path = os.path.join(listing_dir, f"{index}.png")
-                img.save(save_path, format="PNG", optimize=True)
-                
-                # Create hash marker file to prevent future duplicates
-                with open(hash_file, 'w') as f:
-                    f.write(f"Downloaded from: {url}")
-                if print_images_backend_info:
-                    print(f"    ✅ Downloaded unique image {index}: {img.width}x{img.height} (hash: {content_hash[:8]}...)")
-                return save_path
-                
-            except Exception as e:
-                print(f"    ❌ Failed to download image from {url[:50]}...: {str(e)}")
-                return None
-        
-        if print_images_backend_info:
             print(f"  ▶ Downloading {len(valid_urls)} product images concurrently...")
         
         # Dynamic batch size based on actual image count
@@ -430,6 +218,20 @@
         # NEW: Driver restart tracking
         DRIVER_RESTART_INTERVAL = 100000
         cycles_since_restart = 0
+
+        # INITIAL NAVIGATION: Navigate to Vinted search on first startup
+        params = {
+            "search_text": search_query,
+            "price_from": PRICE_FROM,
+            "price_to": PRICE_TO,
+            "currency": CURRENCY,
+            "order": ORDER,
+        }
+        print("🔄 Initial navigation to Vinted catalog...")
+        current_driver.get(f"{BASE_URL}?{urlencode(params)}")
+        print("✅ Navigated to Vinted catalog successfully")
+        time.sleep(2)
+
 
         # Main scanning loop with refresh functionality AND driver restart
         while True:
@@ -1178,7 +980,7 @@
         print("🧵 MAIN: Main thread will now wait for scraping thread to complete...")
         
         try:
-            # Wait for the scraping thread to complet
+            # Wait for the scraping thread to complete
             scraping_thread.join()
             print("✅ MAIN: Scraping thread completed successfully")
             
@@ -1201,14 +1003,7 @@
             sys.exit(0)
 
 if __name__ == "__main__":
-    if VM_DRIVER_USE:
-        print("VM_DRIVER_USE = True - Running VM driver script instead of main scraper")
-        if not HAS_PYAUDIO:
-            print("WARNING: pyaudiowpatch not available - audio features may not work")
-            print("Install with: pip install PyAudioWPatch")
-        main_vm_driver()
-    else:
-        print("VM_DRIVER_USE = False - Running main Vinted scraper")
-        scraper = VintedScraper()
-        globals()['vinted_scraper_instance'] = scraper
-        scraper.run()
+
+    scraper = VintedScraper()
+    globals()['vinted_scraper_instance'] = scraper
+    scraper.run()
