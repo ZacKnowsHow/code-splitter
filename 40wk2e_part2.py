@@ -1,4 +1,6 @@
 # Continuation from line 2201
+
+def find_buy_button_with_shadow_dom(driver):
     """
     Enhanced buy now button finder - JavaScript click first approach
     Finds button and immediately clicks with JavaScript for reliability
@@ -2197,5 +2199,3 @@ class VintedScraper:
             # Clear browser data for new session
             clear_browser_data_universal("192.168.56.101", {
                 "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
-                "profile": "Profile 4", 
-                "port": 9224
