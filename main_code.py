@@ -90,14 +90,21 @@ TEST_SUITABLE_URLS = [
 # tests the number of listings found by the search
 TEST_NUMBER_OF_LISTINGS = False
 
-PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
+PRICE_THRESHOLD = 30.0
+OLED_PRICE_THRESHOLD = 50.0  # Higher threshold for OLED models  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
     'controller','tv_black', 'switch_screen'
     'tv_white', 'comfort_h', 'lite', 'lite_box', 'lite_in_tv', 'oled', 'oled_box', 'oled_in_tv',
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = False
+
+OLED_CLASSES = [
+    'oled', 'oled_box', 'oled_in_tv'
+]
+
+VINTED_SHOW_ALL_LISTINGS = True
+MIN_PRICE_FOR_CONSOLE_KEYWORD_DETECTION = 40.0  # Set to your desired minimum price
 misc_games_cap = 5
 print_debug = False
 print_images_backend_info = False
@@ -289,11 +296,7 @@ capped_classes = [
    'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_in_tv', 'switch_sports',
    'sword_p', 'tears_z', 'tv_black', 'tv_white', 'violet_p'
 ]
-BANNED_PRICES = {
-    59.00,
-    49.00,
-    17.00
-}
+
 MESSAGE_2_WORDS = {
     'cash only', 'must collect', 'only cash', 'no post', 'no delivery', 'pickup only', 'collect only',
     'pick up only', 'cash on collection', 'cash on pick up', 'cash on pickup', 'cash collection',
@@ -359,7 +362,6 @@ vinted_description_forbidden_words = ['faulty', 'jailbreak', 'visit us', 'openin
 
 vinted_min_price = 14
 vinted_max_price = 500
-vinted_banned_prices = {59.00, 49.00, 17.00}
 
 if VM_DRIVER_USE:
     
@@ -5364,14 +5366,14 @@ class VintedScraper:
                     detected_objects[new] = 1
         
         return detected_objects
-    
+        
     def check_vinted_listing_suitability(self, listing_info):
         """
         Check if a Vinted listing meets all suitability criteria
         FIXED: Properly extract review count from seller_reviews field
         """
         debug_function_call("check_vinted_listing_suitability")
-        import re  # FIXED: Import re at function level
+        import re
         
         title = listing_info.get("title", "").lower()
         description = listing_info.get("description", "").lower()
@@ -5383,35 +5385,29 @@ class VintedScraper:
         except (ValueError, TypeError):
             return "Unsuitable: Unable to parse price"
         
-        # FIXED: Extract number of reviews from seller_reviews - this was the bug!
+        # Extract number of reviews from seller_reviews
         reviews_count = 0
         if seller_reviews and seller_reviews != "No reviews yet":
-            # Handle multiple formats that might come from scrape_item_details
             reviews_text = str(seller_reviews).strip()
             
-            # Debug print to see what we're getting
             if print_debug:
                 print(f"DEBUG: Raw seller_reviews value: '{reviews_text}'")
             
-            # Try multiple extraction methods
             if reviews_text.startswith("Reviews: "):
-                # Format: "Reviews: 123"
                 try:
                     reviews_count = int(reviews_text.replace("Reviews: ", ""))
                 except ValueError:
                     reviews_count = 0
             elif reviews_text.isdigit():
-                # Format: "123" (just the number)
                 reviews_count = int(reviews_text)
             else:
-                # Try to extract any number from the string
                 match = re.search(r'\d+', reviews_text)
                 if match:
                     reviews_count = int(match.group())
                 else:
                     reviews_count = 0
         
-        if print_debug:# Debug print to see final extracted count
+        if print_debug:
             print(f"DEBUG: Extracted reviews_count: {reviews_count} (review_min: {review_min})")
         
         checks = [
@@ -5426,9 +5422,7 @@ class VintedScraper:
             (lambda: price_float < vinted_min_price or price_float > vinted_max_price,
             f"Price £{price_float} is outside the range £{vinted_min_price}-£{vinted_max_price}"),
             (lambda: len(re.findall(r'[£$]\s*\d+|\d+\s*[£$]', description)) >= 3,
-            "Too many $ symbols in description"),
-            (lambda: price_float in vinted_banned_prices,
-            "Price in banned prices list")
+            "Too many $ symbols in description")
         ]
         
         for check, message in checks:
@@ -5745,8 +5739,8 @@ class VintedScraper:
                 
     def process_listing_immediately_with_vm(self, url, details, detected_objects, processed_images, listing_counter, all_confidences=None, item_revenues_from_detection=None):
         """
-        FIXED: Now accepts and uses the confidences/revenues from detection
-        FIXED: Now filters out listings with 1-3 games and no non-game items (was 1-2)
+        FIXED: Now properly checks for misc_games when evaluating game-only listings
+        EXCEPTION: If listing has 3 actual detected games AND misc_games, it should NOT be marked unsuitable
         """
         global suitable_listings, current_listing_index, recent_listings, current_bookmark_status
 
@@ -5780,15 +5774,30 @@ class VintedScraper:
 
         suitability_result = self.check_vinted_listing_suitability(listing_info)
 
-        detected_console = self.detect_console_keywords_vinted(
-            details.get("title", ""),
-            details.get("description", "")
-        )
-        if detected_console:
-            mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 
-                                        'lite_box', 'switch_in_tv', 'oled_in_tv']
-            for item in mutually_exclusive_items:
-                detected_objects[item] = 1 if item == detected_console else 0
+        # ========================================================================
+        # CRITICAL FIX: Only apply console keyword detection if price is high enough
+        # This prevents false positives from text mentions on low-priced game-only listings
+        # ========================================================================
+        detected_console = None
+        
+        # Only run keyword detection if price meets threshold
+        if total_price >= MIN_PRICE_FOR_CONSOLE_KEYWORD_DETECTION:
+            detected_console = self.detect_console_keywords_vinted(
+                details.get("title", ""),
+                details.get("description", "")
+            )
+            
+            if detected_console:
+                print(f"💰 CONSOLE KEYWORD: Found '{detected_console}' in text (price £{total_price:.2f} >= £{MIN_PRICE_FOR_CONSOLE_KEYWORD_DETECTION})")
+                mutually_exclusive_items = ['switch', 'oled', 'lite', 'switch_box', 'oled_box', 
+                                            'lite_box', 'switch_in_tv', 'oled_in_tv']
+                for item in mutually_exclusive_items:
+                    detected_objects[item] = 1 if item == detected_console else 0
+            else:
+                print(f"💰 CONSOLE KEYWORD: No keywords found (price £{total_price:.2f} >= threshold)")
+        else:
+            print(f"⏭️ CONSOLE KEYWORD: Skipped (price £{total_price:.2f} < £{MIN_PRICE_FOR_CONSOLE_KEYWORD_DETECTION})")
+            # Don't run keyword detection at all for low-priced listings
 
         detected_objects = self.handle_oled_title_conversion_vinted(
             detected_objects,
@@ -5799,23 +5808,26 @@ class VintedScraper:
         # Calculate revenue (this creates a NEW item_revenues dict)
         total_revenue, expected_profit, profit_percentage, display_objects, item_revenues_from_calc = \
             self.calculate_vinted_revenue(
-                detected_objects,  # This dict gets MODIFIED by the function
+                detected_objects,
                 total_price, 
                 details.get("title", ""), 
                 details.get("description", "")
             )
 
         final_item_revenues = {}
-        final_item_revenues.update(item_revenues_from_calc)  # Start with calculated (includes misc_games)
-        final_item_revenues.update(item_revenues_from_detection)  # Overwrite with detection values
+        final_item_revenues.update(item_revenues_from_calc)
+        final_item_revenues.update(item_revenues_from_detection)
 
-        # DEBUG: Print what we're passing (AFTER revenue calculation)
-        print(f"🐛 DEBUG: detected_objects after revenue calc has {len(detected_objects)} items")
-        if 'misc_games' in detected_objects:
-            print(f"🐛 DEBUG: misc_games = {detected_objects['misc_games']}")
+        if print_debug:
+            print(f"🐛 DEBUG: detected_objects after revenue calc has {len(detected_objects)} items")
+            if 'misc_games' in detected_objects:
+                print(f"🐛 DEBUG: misc_games = {detected_objects['misc_games']}")
+
         profit_suitability = self.check_vinted_profit_suitability(total_price, profit_percentage)
 
-        # CRITICAL SECTION - GAME FILTER LOGIC
+        # ========================================================================
+        # CRITICAL SECTION - GAME FILTER LOGIC WITH EXCEPTION FOR MISC_GAMES
+        # ========================================================================
         game_classes = [
             '1_2_switch', 'animal_crossing', 'arceus_p', 'bow_z', 'bros_deluxe_m', 'crash_sand',
             'dance', 'diamond_p', 'evee', 'fifa_23', 'fifa_24', 'gta', 'just_dance', 'kart_m', 'kirby',
@@ -5825,14 +5837,18 @@ class VintedScraper:
             'snap_p', 'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_sports',
             'sword_p', 'tears_z', 'violet_p'
         ]
+        
+        # Count actual detected games (not including misc_games)
         game_count = sum(detected_objects.get(game, 0) for game in game_classes)
         
-        # CRITICAL FIX: Exclude misc_games from non-game items
-        # This prevents misc_games from making a "games-only" listing appear suitable
+        # Count misc_games separately
+        misc_games_count = detected_objects.get('misc_games', 0)
+        
+        # Get non-game classes (excluding misc_games)
         non_game_classes = [
             cls for cls in detected_objects.keys() 
             if cls not in game_classes 
-            and cls != 'misc_games'  # FIXED: Don't count misc_games as non-game item
+            and cls != 'misc_games'
             and detected_objects.get(cls, 0) > 0
         ]
 
@@ -5841,9 +5857,23 @@ class VintedScraper:
         if "Unsuitable" in suitability_result:
             unsuitability_reasons.append(suitability_result.replace("Unsuitable: ", ""))
 
-        # CRITICAL FIX: Changed from 1-2 to 1-3 games
+        # ========================================================================
+        # CRITICAL FIX: Exception for listings with exactly 3 games + misc_games
+        # ========================================================================
+        # Original rule: 1-3 games with no additional non-game items = unsuitable
+        # Exception: If game_count == 3 AND misc_games > 0, then it IS suitable
+        
         if 1 <= game_count <= 3 and not non_game_classes:
-            unsuitability_reasons.append("1-3 games with no additional non-game items")
+            # Check for the exception: exactly 3 detected games WITH misc_games
+            if game_count == 3 and misc_games_count > 0:
+                # EXCEPTION APPLIES - this listing is suitable
+                print(f"✅ EXCEPTION: 3 detected games + {misc_games_count} misc_games = SUITABLE")
+            else:
+                # No exception - apply original unsuitable rule
+                unsuitability_reasons.append(
+                    f"{game_count} game(s) with no additional non-game items"
+                )
+                print(f"❌ UNSUITABLE: {game_count} game(s), no misc_games or < 3 detected games")
 
         if not profit_suitability:
             unsuitability_reasons.append(
@@ -5874,6 +5904,7 @@ class VintedScraper:
                 except Exception as vm_error:
                     bookmark_status = f"❌ BOOKMARK FAILED: {str(vm_error)[:30]}"
                     stop_listing_timer(url, stage='error')
+            
                 if VM_DRIVER_USE:
                     try:
                         self.prepare_next_vm_driver()
@@ -5896,16 +5927,15 @@ class VintedScraper:
             except Exception as e:
                 print(f"Error copying image: {e}")
 
-        # DEBUG: Print what we're passing
-        print(f"🐛 DEBUG: Confidences dict has {len(all_confidences)} items")
-        print(f"🐛 DEBUG: Revenues dict has {len(final_item_revenues)} items")
-        for item in detected_objects:
-            if detected_objects[item] > 0:
-                conf = all_confidences.get(item, 0.0)
-                rev = final_item_revenues.get(item, 0.0)
-                print(f"🐛 DEBUG: {item} -> conf={conf:.2%}, rev=£{rev:.2f}")
+        if print_debug:
+            print(f"🐛 DEBUG: Confidences dict has {len(all_confidences)} items")
+            print(f"🐛 DEBUG: Revenues dict has {len(final_item_revenues)} items")
+            for item in detected_objects:
+                if detected_objects[item] > 0:
+                    conf = all_confidences.get(item, 0.0)
+                    rev = final_item_revenues.get(item, 0.0)
+                    print(f"🐛 DEBUG: {item} -> conf={conf:.2%}, rev=£{rev:.2f}")
 
-        # Get timestamps for this listing
         listing_timestamps_data = {}
         with self.listing_timestamps_lock:
             if url in self.listing_timestamps:
