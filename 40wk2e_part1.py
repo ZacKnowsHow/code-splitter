@@ -90,14 +90,21 @@ TEST_SUITABLE_URLS = [
 # tests the number of listings found by the search
 TEST_NUMBER_OF_LISTINGS = False
 
-PRICE_THRESHOLD = 30.0  # Minimum price threshold - items below this won't detect Nintendo Switch classes
+PRICE_THRESHOLD = 30.0
+OLED_PRICE_THRESHOLD = 50.0  # Higher threshold for OLED models  # Minimum price threshold - items below this won't detect Nintendo Switch classes
 NINTENDO_SWITCH_CLASSES = [
     'controller','tv_black', 'switch_screen'
     'tv_white', 'comfort_h', 'lite', 'lite_box', 'lite_in_tv', 'oled', 'oled_box', 'oled_in_tv',
     'comfort_h_joy', 'switch_box', 'switch', 'switch_in_tv',
 ]
 
-VINTED_SHOW_ALL_LISTINGS = False
+
+OLED_CLASSES = [
+    'oled', 'oled_box', 'oled_in_tv'
+]
+
+VINTED_SHOW_ALL_LISTINGS = True
+MIN_PRICE_FOR_CONSOLE_KEYWORD_DETECTION = 40.0  # Set to your desired minimum price
 misc_games_cap = 5
 print_debug = False
 print_images_backend_info = False
@@ -289,11 +296,7 @@ capped_classes = [
    'splatoon_2', 'splatoon_3', 'super_m_party', 'super_mario_3d', 'switch_in_tv', 'switch_sports',
    'sword_p', 'tears_z', 'tv_black', 'tv_white', 'violet_p'
 ]
-BANNED_PRICES = {
-    59.00,
-    49.00,
-    17.00
-}
+
 MESSAGE_2_WORDS = {
     'cash only', 'must collect', 'only cash', 'no post', 'no delivery', 'pickup only', 'collect only',
     'pick up only', 'cash on collection', 'cash on pick up', 'cash on pickup', 'cash collection',
@@ -359,7 +362,6 @@ vinted_description_forbidden_words = ['faulty', 'jailbreak', 'visit us', 'openin
 
 vinted_min_price = 14
 vinted_max_price = 500
-vinted_banned_prices = {59.00, 49.00, 17.00}
 
 if VM_DRIVER_USE:
     
@@ -2196,5 +2198,3 @@ def setup_driver_universal(vm_ip_address, config):
                 pass
         
         return None
-
-def find_buy_button_with_shadow_dom(driver):
