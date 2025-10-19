@@ -1,4 +1,30 @@
 # Continuation from line 6601
+                    src = img.get_attribute("src")
+                    if src and src.startswith('http'):
+                        normalized_url = src.split('?')[0].split('#')[0]
+                        if normalized_url not in seen_urls:
+                            seen_urls.add(normalized_url)
+                            valid_urls.append(src)
+        
+        # STEP 7/8: Download images (same for both modes)
+        if not valid_urls:
+            print(f"  ▶ No valid product images found after filtering")
+            return []
+
+        if print_images_backend_info:
+            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
+        
+        os.makedirs(listing_dir, exist_ok=True)
+        
+        def download_single_image(args):
+            """Download a single image with enhanced duplicate detection"""
+            url, index = args
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
                 'Connection': 'keep-alive',
                 'Cache-Control': 'no-cache',
                 'Referer': driver.current_url

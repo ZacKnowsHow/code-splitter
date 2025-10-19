@@ -1040,9 +1040,10 @@
         OPTIMIZED: Enhanced scraper that collects ALL elements in a SINGLE operation
         Uses JavaScript to gather all data at once for maximum speed
         UPDATED: Now includes username collection AND stores price for threshold filtering
+        ** MODIFIED: Now amends postage price if below £2.99 **
         """
         debug_function_call("scrape_item_details")
-        import re  # FIXED: Import re at function level
+        import re
         
         # Wait for page to be ready
         WebDriverWait(driver, 10).until(
@@ -1190,7 +1191,7 @@
             for key, sel in fields.items():
                 try:
                     if key == "seller_reviews":
-                        # Original seller reviews logic
+                        # [Existing seller reviews logic - kept unchanged]
                         review_selectors = [
                             "span.web_ui__Text__text.web_ui__Text__caption.web_ui__Text__left",
                             "span[class*='caption'][class*='left']",
@@ -1237,7 +1238,7 @@
                                 print("DEBUG: No seller reviews found with any selector")
                             
                     elif key == "username":
-                        # Original username logic
+                        # [Existing username logic - kept unchanged]
                         try:
                             username_element = driver.find_element(By.CSS_SELECTOR, sel)
                             username_text = username_element.text.strip()
@@ -1291,6 +1292,30 @@
                     else:
                         data[key] = None
 
+        # ========================================================================
+        # CRITICAL NEW CODE: POSTAGE PRICE AMENDMENT
+        # ========================================================================
+        # Extract the postage price as a float
+        postage_text = data.get("postage", "£0")
+        postage_value = self.extract_price(postage_text)
+        
+        # CRITICAL: Apply the £2.99 minimum postage rule
+        MIN_POSTAGE = 2.99
+        original_postage = postage_value
+        
+        if postage_value < MIN_POSTAGE:
+            postage_value = MIN_POSTAGE
+            print(f"🔧 POSTAGE AMENDED: £{original_postage:.2f} → £{MIN_POSTAGE:.2f}")
+            
+            # Update the data dict with the amended postage (formatted as text)
+            data["postage"] = f"£{MIN_POSTAGE:.2f}"
+        else:
+            print(f"✅ POSTAGE OK: £{postage_value:.2f} (no amendment needed)")
+        
+        # ========================================================================
+        # END OF POSTAGE AMENDMENT CODE
+        # ========================================================================
+
         # Process seller_reviews value (same logic for both JS and fallback methods)
         if data.get("seller_reviews") and data["seller_reviews"] != "No reviews yet":
             reviews_text = str(data["seller_reviews"]).strip()
@@ -1318,7 +1343,7 @@
 
         # Calculate and store the total price for threshold filtering
         second_price = self.extract_price(data.get("second_price", "0"))
-        postage = self.extract_price(data.get("postage", "0"))
+        postage = self.extract_price(data.get("postage", "0"))  # This now uses the AMENDED postage
         total_price = second_price + postage
         
         # Store the calculated price for use in object detection
@@ -1329,6 +1354,7 @@
             print(f"DEBUG: Final scraped seller_reviews: '{data.get('seller_reviews')}'")
             print(f"DEBUG: Final scraped username: '{data.get('username')}'")
             print(f"DEBUG: Total price calculated: £{total_price:.2f} (stored for threshold filtering)")
+            print(f"DEBUG: Postage used in calculation: £{postage:.2f}")
             
         return data
 
@@ -2173,29 +2199,3 @@
                 seen_urls = set()
                 
                 for img in listing_images:
-                    src = img.get_attribute("src")
-                    if src and src.startswith('http'):
-                        normalized_url = src.split('?')[0].split('#')[0]
-                        if normalized_url not in seen_urls:
-                            seen_urls.add(normalized_url)
-                            valid_urls.append(src)
-        
-        # STEP 7/8: Download images (same for both modes)
-        if not valid_urls:
-            print(f"  ▶ No valid product images found after filtering")
-            return []
-
-        if print_images_backend_info:
-            print(f"  ▶ Final count: {len(valid_urls)} unique, valid product images")
-        
-        os.makedirs(listing_dir, exist_ok=True)
-        
-        def download_single_image(args):
-            """Download a single image with enhanced duplicate detection"""
-            url, index = args
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',

@@ -103,7 +103,7 @@ OLED_CLASSES = [
     'oled', 'oled_box', 'oled_in_tv'
 ]
 
-VINTED_SHOW_ALL_LISTINGS = True
+VINTED_SHOW_ALL_LISTINGS = False
 MIN_PRICE_FOR_CONSOLE_KEYWORD_DETECTION = 40.0  # Set to your desired minimum price
 misc_games_cap = 5
 print_debug = False
@@ -326,20 +326,20 @@ miscellaneous_games_price = 5
 vinted_scraper_instance = None
 
 BASE_PRICES = {
-   '1_2_switch': 6.5, 'animal_crossing': 24, 'arceus_p': 27.5, 'bow_z': 28, 'bros_deluxe_m': 23.5,
-   'comfort_h': 6,
-   'controller': 8.5, 'crash_sand': 11, 'diamond_p': 26, 'evee': 25, 'fifa_23': 7.5, 'fifa_24': 14,
-   'gta': 21, 'just_dance': 5, 'kart_m': 22, 'kirby': 29, 'lets_go_p': 25, 'links_z': 26,
-   'lite': 52, 'luigis': 20, 'mario_maker_2': 19, 'mario_sonic': 14, 'mario_tennis': 12,
-   'minecraft': 14,
-   'minecraft_dungeons': 13, 'minecraft_story': 55, 'miscellanious_sonic': 15, 'odyssey_m': 23,
-   'oled': 142, 'other_mario': 20,
-   'party_m': 27, 'rocket_league': 13, 'scarlet_p': 26.5, 'shield_p': 25.5, 'shining_p': 25,
-   'skywards_z': 26,
-   'smash_bros': 24.5, 'snap_p': 19, 'splatoon_2': 7.5, 'splatoon_3': 25, 'super_m_party': 19.5,
-   'super_mario_3d': 51,
-   'switch': 64, 'switch_sports': 19, 'sword_p': 20, 'tears_z': 29, 'tv_black': 14.5, 'tv_white': 20.5,
-   'violet_p': 26
+   '1_2_switch': 10, 'animal_crossing': 24, 'arceus_p': 27.5, 'bow_z': 27, 'bros_deluxe_m': 24,
+   'comfort_h': 5,
+   'controller': 12, 'crash_sand': 9.5, 'diamond_p': 24, 'evee': 27.5, 'fifa_23': 7.5, 'fifa_24': 10,
+   'gta': 22, 'just_dance': 6, 'kart_m': 22, 'kirby': 29, 'lets_go_p': 22, 'links_z': 25,
+   'lite': 65, 'luigis': 18, 'mario_maker_2': 14.5, 'mario_sonic': 14.5, 'mario_tennis': 16.5,
+   'minecraft': 13.5,
+   'minecraft_dungeons': 11.5, 'minecraft_story': 48.5, 'miscellanious_sonic': 14, 'odyssey_m': 23.5,
+   'oled': 120, 'other_mario': 20,
+   'party_m': 24, 'rocket_league': 14.5, 'scarlet_p': 25.5, 'shield_p': 23, 'shining_p': 24.5,
+   'skywards_z': 25,
+   'smash_bros': 23.5, 'snap_p': 19, 'splatoon_2': 7.5, 'splatoon_3': 22, 'super_m_party': 20,
+   'super_mario_3d': 42,
+   'switch': 73.5, 'switch_sports': 19, 'sword_p': 21, 'tears_z': 28, 'tv_black': 17, 'tv_white': 23,
+   'violet_p': 23.5
 }
 scanned_unique_ids = set()
 
