@@ -1052,7 +1052,7 @@
         scraping_thread.daemon = False
         scraping_thread.start()
 
-        # Start pygame window in separate thread
+        # Start pygame window in separate threa
         pygame_thread = threading.Thread(target=self.run_pygame_window)
         pygame_thread.start()
         
