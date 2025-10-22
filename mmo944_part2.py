@@ -1,4 +1,5 @@
 # Continuation from line 2201
+        return None
 
 def find_buy_button_with_shadow_dom(driver):
     """
@@ -2198,4 +2199,3 @@ class VintedScraper:
             
             # Clear browser data for new session
             clear_browser_data_universal("192.168.56.101", {
-                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 

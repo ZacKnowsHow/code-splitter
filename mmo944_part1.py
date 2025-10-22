@@ -65,6 +65,7 @@ import socket
 import json
 import subprocess
 import pyautogui
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException, WebDriverException
 from scipy import signal
 import wave
 import ctypes
@@ -73,7 +74,7 @@ import ctypes
 
 CLICK_PAY_BUTTON = False
 
-VM_DRIVER_USE = False
+VM_DRIVER_USE = True
 google_login = True
 
 VM_BOOKMARK_URLS = [
@@ -2197,4 +2198,3 @@ def setup_driver_universal(vm_ip_address, config):
             except:
                 pass
         
-        return None
