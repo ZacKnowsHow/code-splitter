@@ -1,4 +1,5 @@
 # Continuation from line 4401
+                "user_data_dir": "C:\\VintedScraper_Default_Bookmark", 
                 "profile": "Profile 4", 
                 "port": 9224
             })
@@ -750,7 +751,7 @@
         options.add_experimental_option("prefs", prefs)
         #options.add_argument("--headless")
 
-
+        options.add_argument("--disable-browser-side-navigation")
         options.add_argument("--max_old_space_size=4096")  # Prevent memory crashes
         options.add_argument("--disable-background-timer-throttling")
         options.add_argument("--disable-renderer-backgrounding")
@@ -2198,4 +2199,3 @@
                 valid_urls = []
                 seen_urls = set()
                 
-                for img in listing_images:
