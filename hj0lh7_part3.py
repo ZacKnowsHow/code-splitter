@@ -1047,7 +1047,7 @@
         import re
         
         # Wait for page to be ready
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 10, poll_frequency=0.05).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
         )
 
@@ -1958,7 +1958,7 @@
         
         # Wait for the page to fully load
         try:
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 10, poll_frequency=0.05).until(
                 EC.presence_of_element_located((By.TAG_NAME, "img"))
             )
         except TimeoutException:

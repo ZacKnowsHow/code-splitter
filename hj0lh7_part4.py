@@ -239,7 +239,7 @@
         
         # Wait for page to load
         try:
-            WebDriverWait(driver, 20).until(
+            WebDriverWait(driver, 20, poll_frequency=0.05).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
             )
             print("✅ Page refreshed and loaded successfully")
@@ -363,7 +363,7 @@
                         current_driver.get(f"{BASE_URL}?{urlencode(params)}")
                         
                         try:
-                            WebDriverWait(current_driver, 20).until(
+                            WebDriverWait(current_driver, 20, poll_frequency=0.05).until(
                                 EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                             )
                             print("✅ RESTART: Page loaded successfully after driver restart")
@@ -382,7 +382,7 @@
                 
                 while True:
                     try:
-                        WebDriverWait(current_driver, 20).until(
+                        WebDriverWait(current_driver, 20, poll_frequency=0.05).until(
                             EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                         )
                     except TimeoutException:
@@ -714,7 +714,7 @@
             
             try:
                 # Wait for page to load
-                WebDriverWait(driver, 20).until(
+                WebDriverWait(driver, 20, poll_frequency=0.05).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                 )
             except TimeoutException:
@@ -860,7 +860,7 @@
             print(f"✅ SIMULATION: Navigated to {url}")
             
             # Wait for page to load
-            WebDriverWait(driver, 8).until(
+            WebDriverWait(driver, 8, poll_frequency=0.05).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             print(f"✅ SIMULATION: Page loaded")

@@ -255,7 +255,7 @@ GAME_CLASSES = [
 
 
 title_must_contain = ["nintendo", "pokemon", "zelda", "mario", "animal crossing", "minecraft", 'oled', 'lite', 'pokémon', 'switch game',
-                    'switch bundle', 'nintendo bundle', 'switch with games', 'modded switch']
+                    'switch bundle', 'labo', 'nintendo bundle', 'switch with games', 'modded switch']
 title_forbidden_words = ['unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
                         'joycon', 'snes', 'gamecube', 'n64', 'damaged', 'circuit', 'kart live', 'ds', 'tablet only', 'ringfit', 'ring fit'
                         'repair', '™', 'each', 'empty game', 'just game case', 'empty case', 'arcade', 'wii', 'tv frame', 'joy-con',
@@ -1647,20 +1647,20 @@ def vm_try_selectors(driver, selector_set_name, operation='find', timeout=5, cli
             # Use appropriate locator strategy (EXACT same as main program)
             if selector.startswith('//'):
                 if operation == 'click':
-                    element = WebDriverWait(driver, timeout).until(
+                    element = WebDriverWait(driver, timeout, poll_frequency=0.05).until(
                         EC.element_to_be_clickable((By.XPATH, selector))
                     )
                 else:
-                    element = WebDriverWait(driver, timeout).until(
+                    element = WebDriverWait(driver, timeout, poll_frequency=0.05).until(
                         EC.presence_of_element_located((By.XPATH, selector))
                     )
             else:
                 if operation == 'click':
-                    element = WebDriverWait(driver, timeout).until(
+                    element = WebDriverWait(driver, timeout, poll_frequency=0.05).until(
                         EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                     )
                 else:
-                    element = WebDriverWait(driver, timeout).until(
+                    element = WebDriverWait(driver, timeout, poll_frequency=0.05).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                     )
             
