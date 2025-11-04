@@ -255,7 +255,7 @@ GAME_CLASSES = [
 
 
 title_must_contain = ["nintendo", "pokemon", "zelda", "mario", "animal crossing", "minecraft", 'oled', 'lite', 'pokémon', 'switch game',
-                    'switch bundle', 'nintendo bundle', 'switch with games', 'modded switch']
+                    'switch bundle', 'labo', 'nintendo bundle', 'switch with games', 'modded switch']
 title_forbidden_words = ['unofficial', 'keyboard', 'mouse', 'ps4', 'ps5', 'sold', 'organizer', 'holder', 'joy con', 'gift', 'read des'
                         'joycon', 'snes', 'gamecube', 'n64', 'damaged', 'circuit', 'kart live', 'ds', 'tablet only', 'ringfit', 'ring fit'
                         'repair', '™', 'each', 'empty game', 'just game case', 'empty case', 'arcade', 'wii', 'tv frame', 'joy-con',
@@ -1647,20 +1647,20 @@ def vm_try_selectors(driver, selector_set_name, operation='find', timeout=5, cli
             # Use appropriate locator strategy (EXACT same as main program)
             if selector.startswith('//'):
                 if operation == 'click':
-                    element = WebDriverWait(driver, timeout).until(
+                    element = WebDriverWait(driver, timeout, poll_frequency=0.05).until(
                         EC.element_to_be_clickable((By.XPATH, selector))
                     )
                 else:
-                    element = WebDriverWait(driver, timeout).until(
+                    element = WebDriverWait(driver, timeout, poll_frequency=0.05).until(
                         EC.presence_of_element_located((By.XPATH, selector))
                     )
             else:
                 if operation == 'click':
-                    element = WebDriverWait(driver, timeout).until(
+                    element = WebDriverWait(driver, timeout, poll_frequency=0.05).until(
                         EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                     )
                 else:
-                    element = WebDriverWait(driver, timeout).until(
+                    element = WebDriverWait(driver, timeout, poll_frequency=0.05).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                     )
             
@@ -5446,7 +5446,7 @@ class VintedScraper:
         import re
         
         # Wait for page to be ready
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 10, poll_frequency=0.05).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "p.web_ui__Text__subtitle"))
         )
 
@@ -6357,7 +6357,7 @@ class VintedScraper:
         
         # Wait for the page to fully load
         try:
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 10, poll_frequency=0.05).until(
                 EC.presence_of_element_located((By.TAG_NAME, "img"))
             )
         except TimeoutException:
@@ -6838,7 +6838,7 @@ class VintedScraper:
         
         # Wait for page to load
         try:
-            WebDriverWait(driver, 20).until(
+            WebDriverWait(driver, 20, poll_frequency=0.05).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
             )
             print("✅ Page refreshed and loaded successfully")
@@ -6962,7 +6962,7 @@ class VintedScraper:
                         current_driver.get(f"{BASE_URL}?{urlencode(params)}")
                         
                         try:
-                            WebDriverWait(current_driver, 20).until(
+                            WebDriverWait(current_driver, 20, poll_frequency=0.05).until(
                                 EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                             )
                             print("✅ RESTART: Page loaded successfully after driver restart")
@@ -6981,7 +6981,7 @@ class VintedScraper:
                 
                 while True:
                     try:
-                        WebDriverWait(current_driver, 20).until(
+                        WebDriverWait(current_driver, 20, poll_frequency=0.05).until(
                             EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                         )
                     except TimeoutException:
@@ -7313,7 +7313,7 @@ class VintedScraper:
             
             try:
                 # Wait for page to load
-                WebDriverWait(driver, 20).until(
+                WebDriverWait(driver, 20, poll_frequency=0.05).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "div.feed-grid"))
                 )
             except TimeoutException:
@@ -7459,7 +7459,7 @@ class VintedScraper:
             print(f"✅ SIMULATION: Navigated to {url}")
             
             # Wait for page to load
-            WebDriverWait(driver, 8).until(
+            WebDriverWait(driver, 8, poll_frequency=0.05).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             print(f"✅ SIMULATION: Page loaded")
